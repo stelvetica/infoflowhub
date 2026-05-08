@@ -1,0 +1,193 @@
+from __future__ import annotations
+
+import sqlite3
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterator
+
+
+UTC = timezone.utc
+
+
+@dataclass(slots=True)
+class LinkRecord:
+    url: str
+    title: str
+    source: str
+    tags: str | None = None
+    status: str = "pending"
+    error_message: str | None = None
+
+
+class DBManager:
+    def __init__(self, db_path: str | Path) -> None:
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_db()
+
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _init_db(self) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS links (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    url TEXT NOT NULL UNIQUE,
+                    title TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    tags TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    pushed_at TEXT,
+                    error_message TEXT,
+                    feishu_record_id TEXT
+                )
+                """
+            )
+            columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(links)").fetchall()
+            }
+            if "feishu_record_id" not in columns:
+                conn.execute("ALTER TABLE links ADD COLUMN feishu_record_id TEXT")
+            if "is_finished" not in columns:
+                conn.execute("ALTER TABLE links ADD COLUMN is_finished INTEGER NOT NULL DEFAULT 0")
+            if "finished_at" not in columns:
+                conn.execute("ALTER TABLE links ADD COLUMN finished_at TEXT")
+            if "feishu_last_synced_at" not in columns:
+                conn.execute("ALTER TABLE links ADD COLUMN feishu_last_synced_at TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_links_status ON links(status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_links_source ON links(source)")
+
+    def upsert_link(self, record: LinkRecord) -> int:
+        now = self._now_iso()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM links WHERE url = ?",
+                (record.url,),
+            ).fetchone()
+
+            if row:
+                conn.execute(
+                    """
+                    UPDATE links
+                    SET title = ?,
+                        source = ?,
+                        tags = COALESCE(?, tags),
+                        updated_at = ?,
+                        error_message = ?
+                    WHERE url = ?
+                    """,
+                    (
+                        record.title,
+                        record.source,
+                        record.tags,
+                        now,
+                        record.error_message,
+                        record.url,
+                    ),
+                )
+                return int(row["id"])
+
+            cursor = conn.execute(
+                """
+                INSERT INTO links (
+                    url, title, source, tags, status, created_at, updated_at, pushed_at, error_message
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.url,
+                    record.title,
+                    record.source,
+                    record.tags,
+                    record.status,
+                    now,
+                    now,
+                    None,
+                    record.error_message,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def list_by_status(self, *statuses: str):
+        if not statuses:
+            statuses = ("pending",)
+        placeholders = ", ".join("?" for _ in statuses)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM links WHERE status IN ({placeholders}) ORDER BY id ASC",
+                statuses,
+            ).fetchall()
+        return list(rows)
+
+    def update_tags(self, url: str, tags: str) -> None:
+        now = self._now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE links SET tags = ?, updated_at = ? WHERE url = ?",
+                (tags, now, url),
+            )
+
+    def mark_pushed(self, url: str, feishu_record_id: str | None = None) -> None:
+        now = self._now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE links
+                SET status = 'pushed',
+                    pushed_at = ?,
+                    updated_at = ?,
+                    error_message = NULL,
+                    feishu_record_id = COALESCE(?, feishu_record_id)
+                WHERE url = ?
+                """,
+                (now, now, feishu_record_id, url),
+            )
+
+    def mark_failed(self, url: str, error_message: str) -> None:
+        now = self._now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE links
+                SET status = 'failed',
+                    updated_at = ?,
+                    error_message = ?
+                WHERE url = ?
+                """,
+                (now, error_message, url),
+            )
+
+    def reset_failed_to_pending(self) -> int:
+        now = self._now_iso()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE links
+                SET status = 'pending',
+                    updated_at = ?,
+                    error_message = NULL
+                WHERE status = 'failed'
+                """,
+                (now,),
+            )
+            return int(cursor.rowcount)
+
+    @staticmethod
+    def now_iso() -> str:
+        return datetime.now(UTC).isoformat(timespec="seconds")
+
+    @staticmethod
+    def _now_iso() -> str:
+        return DBManager.now_iso()
