@@ -36,7 +36,6 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
       <aside className="sidebar">
         <div className="brand">
           <h1>InfoFlowHub</h1>
-          <p>已切换到 Next.js。页面更新与交互不再依赖旧的 Python 模板服务。</p>
         </div>
         <nav className="nav">
           <Link href="/?view=entries" className={view === "entries" ? "active" : ""}>
@@ -52,10 +51,6 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
       </aside>
       <main className="main">
         <div className="stack">
-          <section className="hero">
-            <h2>{view === "entries" ? "订阅内容总览" : view === "laterhub" ? "稍后处理内容" : "运行与源管理"}</h2>
-            <p>{view === "settings" ? "抓取入口、运行状态与订阅源维护都已迁入 Next.js。" : "保留现有数据与抓取能力，只替换旧的页面服务层。"}</p>
-          </section>
           {view === "entries" ? <EntriesPanel params={params} /> : view === "laterhub" ? <LaterhubPanel params={params} /> : <SettingsPanel params={params} />}
         </div>
       </main>
@@ -70,85 +65,69 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
     dir: (one(params.dir) || "desc") as "asc" | "desc"
   });
   return (
-    <>
-      <section className="grid three">
-        <div className="card metric">
-          <div className="label">当前结果</div>
-          <div className="value">{data.total}</div>
-        </div>
-        <div className="card metric">
-          <div className="label">排序方式</div>
-          <div className="value small">{data.sort === "sort_time" ? "按时间" : data.sort === "source_name" ? "按来源" : "按标题"}</div>
-        </div>
-        <div className="card metric">
-          <div className="label">检索条件</div>
-          <div className="value small">{data.q || "全部内容"}</div>
-        </div>
-      </section>
-      <section className="card">
-        <div className="panel-title">
-          <h3>订阅内容</h3>
-          <form className="toolbar">
-            <input type="hidden" name="view" value="entries" />
-            <input type="hidden" name="sort" value={data.sort} />
-            <input type="hidden" name="dir" value={data.dir} />
-            <input className="input" name="q" defaultValue={data.q} placeholder="搜索标题、来源、摘要" />
-            <button className="btn" type="submit">
-              搜索
-            </button>
-          </form>
-        </div>
-        <div className="table-wrap">
-          <table className="entries-table">
-            <colgroup>
-              <col className="col-time" />
-              <col className="col-source" />
-              <col className="col-title" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>
-                  <Link className="sort" href={sortHref("entries", data.sort, data.dir, "sort_time", { q: data.q }, true)}>
-                    时间
-                  </Link>
-                </th>
-                <th>
-                  <Link className="sort" href={sortHref("entries", data.sort, data.dir, "source_name", { q: data.q })}>
-                    来源
-                  </Link>
-                </th>
-                <th>
-                  <Link className="sort" href={sortHref("entries", data.sort, data.dir, "title", { q: data.q })}>
-                    标题
-                  </Link>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.rows.length ? (
-                data.rows.map((item) => (
-                  <tr key={`${item.source_id}-${item.link}`}>
-                    <td className="cell-time">{item.display_time}</td>
-                    <td className="cell-ellipsis" title={item.source_name}>{item.source_name}</td>
-                    <td>
-                      <a className="cell-ellipsis cell-link" href={item.link} target="_blank" rel="noreferrer" title={item.title}>
-                        {item.title}
-                      </a>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={3} className="empty">
-                    没有匹配内容
+    <section className="card">
+      <div className="panel-title">
+        <h3>订阅内容</h3>
+        <form className="toolbar">
+          <input type="hidden" name="view" value="entries" />
+          <input type="hidden" name="sort" value={data.sort} />
+          <input type="hidden" name="dir" value={data.dir} />
+          <input className="input" name="q" defaultValue={data.q} placeholder="搜索标题、来源、摘要" />
+          <button className="btn" type="submit">
+            搜索
+          </button>
+        </form>
+      </div>
+      <div className="table-wrap">
+        <table className="entries-table">
+          <colgroup>
+            <col className="col-time" />
+            <col className="col-source" />
+            <col className="col-title" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>
+                <Link className="sort" href={sortHref("entries", data.sort, data.dir, "sort_time", { q: data.q }, true)}>
+                  时间
+                </Link>
+              </th>
+              <th>
+                <Link className="sort" href={sortHref("entries", data.sort, data.dir, "source_name", { q: data.q })}>
+                  来源
+                </Link>
+              </th>
+              <th>
+                <Link className="sort" href={sortHref("entries", data.sort, data.dir, "title", { q: data.q })}>
+                  标题
+                </Link>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.length ? (
+              data.rows.map((item) => (
+                <tr key={`${item.source_id}-${item.link}`}>
+                  <td className="cell-time">{item.display_time}</td>
+                  <td className="cell-ellipsis" title={item.source_name}>{item.source_name}</td>
+                  <td>
+                    <a className="cell-ellipsis cell-link" href={item.link} target="_blank" rel="noreferrer" title={item.title}>
+                      {item.title}
+                    </a>
                   </td>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={3} className="empty">
+                  没有匹配内容
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
