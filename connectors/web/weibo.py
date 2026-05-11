@@ -9,6 +9,30 @@ from apps.subscriptions.models import FeedEntry, FeedFetchResult
 from connectors.web.common import clean_line, fallback_published, normalize_relative_date, resolve_web_target, result_error
 
 
+def extract_weibo_cards_from_dom(page, limit: int = 8) -> list[dict]:
+    selectors = [
+        '[action-type="feed_list_item"]',
+        '[mid]',
+        "article",
+    ]
+    for selector in selectors:
+        cards = page.locator(selector).evaluate_all(
+            f"""els => els.slice(0, {limit * 4}).map(el => {{
+                const text = (el.innerText || el.textContent || '').trim();
+                const link = el.querySelector('a[href*="/status/"], a[href*="/detail/"]');
+                return {{
+                    text,
+                    href: link ? link.href || '' : '',
+                    mid: el.getAttribute('mid') || el.getAttribute('data-mid') || ''
+                }};
+            }})"""
+        )
+        cards = [item for item in cards if item.get("text")]
+        if cards:
+            return cards
+    return []
+
+
 def is_weibo_date_line(line: str) -> bool:
     text = clean_line(line)
     return bool(
@@ -132,6 +156,51 @@ def parse_weibo_posts(body_text: str, source: dict, uid: str, limit: int = 8) ->
     return entries
 
 
+def parse_weibo_posts_from_cards(cards: list[dict], source: dict, uid: str, limit: int = 8) -> list[FeedEntry]:
+    entries: list[FeedEntry] = []
+    seen_titles: set[str] = set()
+    for card in cards:
+        lines = [clean_line(line) for line in (card.get("text") or "").splitlines()]
+        lines = [line for line in lines if line]
+        if not lines:
+            continue
+        published = ""
+        content_parts: list[str] = []
+        for line in lines:
+            if not published and is_weibo_date_line(line):
+                published = normalize_weibo_date(line)
+                continue
+            if line in {"微博", "全文", "...展开", "置顶", "精选", "视频", "相册", "文章"}:
+                continue
+            if line.startswith("来自 "):
+                continue
+            if re.fullmatch(r"[\d.]+[万亿]?", line):
+                continue
+            content_parts.append(line)
+        title = clean_line(" ".join(content_parts[:2]))
+        summary = clean_line(" ".join(content_parts[:6]))
+        if not title or title in seen_titles:
+            continue
+        seen_titles.add(title)
+        link = (card.get("href") or "").strip()
+        if not link:
+            link_slug = (card.get("mid") or fallback_published(published)).replace("/", "").replace(" ", "").replace(":", "")
+            link = f"https://weibo.com/{uid}/#post-{link_slug}"
+        entries.append(
+            FeedEntry(
+                source_id=source["id"],
+                source_name=source["name"],
+                title=title,
+                link=link,
+                published=fallback_published(published),
+                summary=summary,
+            )
+        )
+        if len(entries) >= limit:
+            break
+    return entries
+
+
 def fetch_weibo_with_page(page, source: dict, timeout_ms: int = 60000) -> FeedFetchResult:
     target = resolve_web_target(source)
     if not target:
@@ -140,14 +209,17 @@ def fetch_weibo_with_page(page, source: dict, timeout_ms: int = 60000) -> FeedFe
         page.goto(target.page_url, wait_until="domcontentloaded", timeout=timeout_ms)
         page.wait_for_timeout(7000)
         body_text = page.locator("body").inner_text()
+        dom_cards = extract_weibo_cards_from_dom(page)
     except PlaywrightTimeoutError as exc:
         return result_error(source, f"微博网页直抓超时: {exc}")
     except Exception as exc:
         return result_error(source, f"微博网页直抓失败: {exc}")
 
-    if "登录/注册" in body_text or "请登录后使用" in body_text:
+    if any(flag in body_text for flag in ["登录/注册", "请登录后使用", "还没有微博？立即注册", "扫码登录更安全"]):
         return result_error(source, "微博公开页被登录墙拦截，当前需要登录态")
-    entries = parse_weibo_posts(body_text, source, target.uid)
+    entries = parse_weibo_posts_from_cards(dom_cards, source, target.uid) if dom_cards else []
+    if not entries:
+        entries = parse_weibo_posts(body_text, source, target.uid)
     return FeedFetchResult(
         source_id=source["id"],
         source_name=source["name"],

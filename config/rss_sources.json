@@ -18,11 +18,11 @@
       "group": "09_自动",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/14089380",
       "site_url": "https://space.bilibili.com/14089380/dynamic",
+      "provider": "web",
+      "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "",
-      "provider": "web",
-      "fetch_via": "web"
+      "note": ""
     },
     {
       "id": "技术-code秘密花园-的-bilibili-动态",
@@ -30,11 +30,11 @@
       "group": "09_自动",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/474921808",
       "site_url": "https://space.bilibili.com/474921808/dynamic",
+      "provider": "web",
+      "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "",
-      "provider": "web",
-      "fetch_via": "web"
+      "note": ""
     },
     {
       "id": "观点-市场-产业跟踪-唐史主任司马迁的微博",
@@ -42,11 +42,11 @@
       "group": "01_新闻",
       "feed_url": "https://rsshub.app/weibo/user/2014433131",
       "site_url": "https://weibo.com/2014433131/",
+      "provider": "web",
+      "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "",
-      "provider": "web",
-      "fetch_via": "web"
+      "note": ""
     },
     {
       "id": "人物-观点-十三邀",
@@ -54,11 +54,11 @@
       "group": "01_新闻",
       "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC7eBKmeAz99qswOcm3VxOow",
       "site_url": "https://www.youtube.com/channel/UC7eBKmeAz99qswOcm3VxOow",
+      "provider": "native",
+      "fetch_via": "direct",
       "kind": "native",
       "enabled": true,
-      "note": "",
-      "provider": "native",
-      "fetch_via": "direct"
+      "note": ""
     },
     {
       "id": "观点-路口大爷聊宏观-的-bilibili-动态",
@@ -66,11 +66,11 @@
       "group": "01_新闻",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/1908067732",
       "site_url": "https://space.bilibili.com/1908067732/dynamic",
+      "provider": "web",
+      "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "",
-      "provider": "web",
-      "fetch_via": "web"
+      "note": ""
     },
     {
       "id": "基金-硬核姬老板-的-bilibili-动态",
@@ -78,11 +78,11 @@
       "group": "01_新闻",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/2117498259",
       "site_url": "https://space.bilibili.com/2117498259/dynamic",
+      "provider": "web",
+      "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "",
-      "provider": "web",
-      "fetch_via": "web"
+      "note": ""
     },
     {
       "id": "外资观点-老厉害",
@@ -90,11 +90,11 @@
       "group": "00_⭐️+微信星标",
       "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC8gZZWIWmBuCb_gzC8DUrvw",
       "site_url": "https://www.youtube.com/channel/UC8gZZWIWmBuCb_gzC8DUrvw",
+      "provider": "native",
+      "fetch_via": "direct",
       "kind": "native",
       "enabled": true,
-      "note": "",
-      "provider": "native",
-      "fetch_via": "direct"
+      "note": ""
     },
     {
       "id": "技术-阮一峰的网络日志",
@@ -102,11 +102,11 @@
       "group": "00_⭐️+微信星标",
       "feed_url": "https://feeds.feedburner.com/ruanyifeng",
       "site_url": "http://www.ruanyifeng.com/blog/",
+      "provider": "native",
+      "fetch_via": "direct",
       "kind": "native",
       "enabled": true,
-      "note": "",
-      "provider": "native",
-      "fetch_via": "direct"
+      "note": ""
     },
     {
       "id": "产业-科普-巫师财经",
@@ -114,11 +114,11 @@
       "group": "00_⭐️+微信星标",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/472747194",
       "site_url": "https://space.bilibili.com/472747194/dynamic",
+      "provider": "web",
+      "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "",
-      "provider": "web",
-      "fetch_via": "web"
+      "note": ""
     },
     {
       "id": "技术-技术爬爬虾-的-bilibili-动态",
@@ -126,11 +126,11 @@
       "group": "00_⭐️+微信星标",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/316183842",
       "site_url": "https://space.bilibili.com/316183842/dynamic",
+      "provider": "web",
+      "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "",
-      "provider": "web",
-      "fetch_via": "web"
+      "note": ""
     },
     {
       "id": "观点-房产-铁锤观察室",
@@ -138,11 +138,11 @@
       "group": "00_⭐️+微信星标",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/1257954297",
       "site_url": "https://space.bilibili.com/1257954297/dynamic",
+      "provider": "web",
+      "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "",
-      "provider": "web",
-      "fetch_via": "web"
+      "note": ""
     },
     {
       "id": "宏观-宏观边际macromargin",
@@ -150,11 +150,11 @@
       "group": "00_⭐️+微信星标",
       "feed_url": "https://rsshub.app/twitter/user/MacroMargin",
       "site_url": "https://x.com/MacroMargin",
+      "provider": "web",
+      "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "",
-      "provider": "web",
-      "fetch_via": "web"
+      "note": ""
     },
     {
       "id": "外资观点-小黄的投资笔记-的-bilibili-动态",
@@ -162,11 +162,11 @@
       "group": "00_⭐️+微信星标",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/381870733",
       "site_url": "https://space.bilibili.com/381870733/dynamic",
+      "provider": "web",
+      "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "",
-      "provider": "web",
-      "fetch_via": "web"
+      "note": ""
     },
     {
       "id": "shawn-weekly",
@@ -174,11 +174,11 @@
       "group": "手动补充",
       "feed_url": "https://lumina.shawnxie.top/backend/api/reviews/rss.xml",
       "site_url": "https://lumina.shawnxie.top/",
+      "provider": "native",
+      "fetch_via": "direct",
       "kind": "native",
       "enabled": true,
-      "note": "用户手动补充",
-      "provider": "native",
-      "fetch_via": "direct"
+      "note": "用户手动补充"
     },
     {
       "id": "foreign-view-bilibili-video",
@@ -186,11 +186,11 @@
       "group": "手动补充",
       "feed_url": "https://rsshub.app/bilibili/user/video/3546909549529340",
       "site_url": "https://space.bilibili.com/3546909549529340",
+      "provider": "web",
+      "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "用户手动补充",
-      "provider": "web",
-      "fetch_via": "web"
+      "note": "用户手动补充"
     },
     {
       "id": "current-affairs-xinghuadabai",

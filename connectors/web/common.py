@@ -11,6 +11,7 @@ from apps.subscriptions.models import FeedFetchResult
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
 BASE_DIR = Path(__file__).resolve().parents[2]
 RUNTIME_DIR = BASE_DIR / "runtime"
+BILIBILI_PROFILE_DIR = RUNTIME_DIR / "browser_profiles" / "pw-bili-profile"
 WEIBO_PROFILE_DIR = RUNTIME_DIR / "browser_profiles" / "pw-weibo-profile"
 X_PROFILE_DIR = RUNTIME_DIR / "browser_profiles" / "pw-x-profile"
 
@@ -36,6 +37,14 @@ def resolve_web_target(source: dict) -> WebSourceTarget | None:
     if match:
         uid = match.group(1)
         return WebSourceTarget(site="x", uid=uid, page_url=f"https://x.com/{uid}")
+    match = re.search(r"youtube\.com/channel/([^/?#]+)", site_url)
+    if match:
+        uid = match.group(1)
+        return WebSourceTarget(site="youtube", uid=uid, page_url=f"https://www.youtube.com/channel/{uid}/videos")
+    match = re.search(r"youtube\.com/@([^/?#]+)", site_url)
+    if match:
+        uid = match.group(1)
+        return WebSourceTarget(site="youtube", uid=uid, page_url=f"https://www.youtube.com/@{uid}/videos")
     return None
 
 
@@ -102,7 +111,9 @@ def normalize_relative_date(text: str) -> str:
 
     match = re.fullmatch(r"(\d{2}:\d{2})", line)
     if match:
-        return now.strftime(f"%Y/%m/%d {match.group(1)}")
+        hour, minute = [int(part) for part in match.group(1).split(":")]
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return now.strftime(f"%Y/%m/%d {match.group(1)}")
 
     return ""
 
@@ -131,6 +142,16 @@ def result_error(source: dict, error: str) -> FeedFetchResult:
         status=0,
         entries=[],
         error=error,
+    )
+
+
+def launch_bilibili_context(playwright, headless: bool):
+    BILIBILI_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    return playwright.chromium.launch_persistent_context(
+        user_data_dir=str(BILIBILI_PROFILE_DIR),
+        headless=headless,
+        args=["--window-size=1440,960"],
+        user_agent=USER_AGENT,
     )
 
 
