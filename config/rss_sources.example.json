@@ -1,0 +1,26 @@
+{
+  "sources": [
+    {
+      "id": "ruanyifeng",
+      "name": "阮一峰的网络日志",
+      "group": "技术",
+      "feed_url": "https://feeds.feedburner.com/ruanyifeng",
+      "site_url": "http://www.ruanyifeng.com/blog/",
+      "provider": "native",
+      "fetch_via": "direct",
+      "kind": "native",
+      "enabled": true
+    },
+    {
+      "id": "nasa-apod",
+      "name": "NASA Astronomy Picture of the Day",
+      "group": "自动",
+      "feed_url": "https://rsshub.app/nasa/apod",
+      "site_url": "https://apod.nasa.gov/apod/archivepix.html",
+      "provider": "rsshub",
+      "fetch_via": "rsshub-public",
+      "kind": "rsshub",
+      "enabled": false
+    }
+  ]
+}

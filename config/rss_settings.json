@@ -1,0 +1,7 @@
+{
+  "rsshub": {
+    "public_base": "https://rsshub.app",
+    "self_hosted_base": "http://127.0.0.1:12673",
+    "prefer_self_hosted": true
+  }
+}

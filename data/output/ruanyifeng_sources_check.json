@@ -1,0 +1,14 @@
+[
+  {
+    "id": "技术-阮一峰的网络日志",
+    "name": "技术 阮一峰的网络日志",
+    "group": "00_⭐️+微信星标",
+    "feed_url": "https://feeds.feedburner.com/ruanyifeng",
+    "site_url": "http://www.ruanyifeng.com/blog/",
+    "kind": "native",
+    "enabled": true,
+    "note": "",
+    "provider": "native",
+    "fetch_via": "direct"
+  }
+]

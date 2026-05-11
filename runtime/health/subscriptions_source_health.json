@@ -1,0 +1,148 @@
+{
+  "sources": {
+    "技术报-hackernews-每日摘要": {
+      "source_name": "技术报 HackerNews 每日摘要",
+      "feed_url": "https://www.supertechfans.com/cn/index.xml",
+      "last_checked_at": "2026-05-11 08:33:35",
+      "last_success_at": "2026-05-11 08:33:35",
+      "last_failed_at": "2026-05-09 20:54:32",
+      "last_error": ""
+    },
+    "算法-labuladong-的-bilibili-动态": {
+      "source_name": "技术 算法 labuladong 的 bilibili 动态",
+      "feed_url": "https://rsshub.app/bilibili/user/dynamic/14089380",
+      "last_checked_at": "2026-05-11 08:33:35",
+      "last_success_at": "2026-05-10 18:02:20",
+      "last_failed_at": "2026-05-11 08:33:35",
+      "last_error": "网页直抓超时: Page.goto: Timeout 60000ms exceeded.\nCall log:\n  - navigating to \"https://space.bilibili.com/14089380/video\", waiting until \"domcontentloaded\"\n"
+    },
+    "技术-code秘密花园-的-bilibili-动态": {
+      "source_name": "技术 code秘密花园 的 bilibili 动态",
+      "feed_url": "https://rsshub.app/bilibili/user/dynamic/474921808",
+      "last_checked_at": "2026-05-11 08:33:35",
+      "last_success_at": "2026-05-10 18:02:20",
+      "last_failed_at": "2026-05-11 08:33:35",
+      "last_error": "网页直抓失败: Page.goto: net::ERR_NETWORK_IO_SUSPENDED at https://space.bilibili.com/474921808/dynamic\nCall log:\n  - navigating to \"https://space.bilibili.com/474921808/dynamic\", waiting until \"domcontentloaded\"\n"
+    },
+    "观点-市场-产业跟踪-唐史主任司马迁的微博": {
+      "source_name": "观点 市场 产业跟踪 唐史主任司马迁的微博",
+      "feed_url": "https://weibo.com/2014433131/",
+      "last_checked_at": "2026-05-11 08:33:35",
+      "last_success_at": "2026-05-11 08:33:35",
+      "last_failed_at": "2026-05-09 22:14:32",
+      "last_error": ""
+    },
+    "人物-观点-十三邀": {
+      "source_name": "人物 观点 十三邀",
+      "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC7eBKmeAz99qswOcm3VxOow",
+      "last_checked_at": "2026-05-11 08:33:35",
+      "last_success_at": "2026-05-11 08:33:35",
+      "last_failed_at": "2026-05-09 15:04:44",
+      "last_error": ""
+    },
+    "观点-路口大爷聊宏观的微博": {
+      "source_name": "观点 路口大爷聊宏观的微博",
+      "feed_url": "https://rsshub.app/weibo/user/7782629809",
+      "last_checked_at": "2026-05-09 21:14:46",
+      "last_success_at": "",
+      "last_failed_at": "2026-05-09 21:14:46",
+      "last_error": "微博公开页被登录墙拦截，当前需要登录态"
+    },
+    "外资观点-老厉害": {
+      "source_name": "外资观点 老厉害",
+      "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC8gZZWIWmBuCb_gzC8DUrvw",
+      "last_checked_at": "2026-05-11 08:33:36",
+      "last_success_at": "2026-05-11 08:33:36",
+      "last_failed_at": "2026-05-10 14:01:53",
+      "last_error": ""
+    },
+    "技术-阮一峰的网络日志": {
+      "source_name": "技术 阮一峰的网络日志",
+      "feed_url": "https://feeds.feedburner.com/ruanyifeng",
+      "last_checked_at": "2026-05-11 08:33:36",
+      "last_success_at": "2026-05-11 08:33:36",
+      "last_failed_at": "",
+      "last_error": ""
+    },
+    "产业-科普-巫师财经": {
+      "source_name": "产业 科普 巫师财经 的 bilibili 动态",
+      "feed_url": "https://rsshub.app/bilibili/user/dynamic/472747194",
+      "last_checked_at": "2026-05-11 08:33:36",
+      "last_success_at": "2026-05-10 18:02:21",
+      "last_failed_at": "2026-05-11 08:33:36",
+      "last_error": "网页直抓失败: Page.goto: net::ERR_NETWORK_IO_SUSPENDED at https://space.bilibili.com/472747194/dynamic\nCall log:\n  - navigating to \"https://space.bilibili.com/472747194/dynamic\", waiting until \"domcontentloaded\"\n"
+    },
+    "技术-技术爬爬虾-的-bilibili-动态": {
+      "source_name": "技术 技术爬爬虾 的 bilibili 动态",
+      "feed_url": "https://rsshub.app/bilibili/user/dynamic/316183842",
+      "last_checked_at": "2026-05-11 08:33:36",
+      "last_success_at": "2026-05-10 20:02:21",
+      "last_failed_at": "2026-05-11 08:33:36",
+      "last_error": "网页直抓失败: Page.goto: net::ERR_NETWORK_IO_SUSPENDED at https://space.bilibili.com/316183842/dynamic\nCall log:\n  - navigating to \"https://space.bilibili.com/316183842/dynamic\", waiting until \"domcontentloaded\"\n"
+    },
+    "观点-房产-铁锤观察室": {
+      "source_name": "观点 房产 铁锤观察室 的 bilibili 动态",
+      "feed_url": "https://rsshub.app/bilibili/user/dynamic/1257954297",
+      "last_checked_at": "2026-05-11 08:33:36",
+      "last_success_at": "2026-05-10 20:02:21",
+      "last_failed_at": "2026-05-11 08:33:36",
+      "last_error": "网页直抓失败: Page.goto: net::ERR_NETWORK_IO_SUSPENDED at https://space.bilibili.com/1257954297/dynamic\nCall log:\n  - navigating to \"https://space.bilibili.com/1257954297/dynamic\", waiting until \"domcontentloaded\"\n"
+    },
+    "宏观-宏观边际macromargin": {
+      "source_name": "宏观 宏观边际MacroMargin",
+      "feed_url": "https://rsshub.app/twitter/user/MacroMargin",
+      "last_checked_at": "2026-05-11 08:33:36",
+      "last_success_at": "2026-05-10 20:02:21",
+      "last_failed_at": "2026-05-11 08:33:36",
+      "last_error": "X 网页直抓失败: Page.goto: net::ERR_NETWORK_IO_SUSPENDED at https://x.com/MacroMargin\nCall log:\n  - navigating to \"https://x.com/MacroMargin\", waiting until \"domcontentloaded\"\n"
+    },
+    "外资观点-小黄的投资笔记-的-bilibili-动态": {
+      "source_name": "外资观点 小黄的投资笔记 的 bilibili 动态",
+      "feed_url": "https://rsshub.app/bilibili/user/dynamic/381870733",
+      "last_checked_at": "2026-05-11 08:33:36",
+      "last_success_at": "2026-05-10 20:02:21",
+      "last_failed_at": "2026-05-11 08:33:36",
+      "last_error": "网页直抓失败: Page.goto: net::ERR_NETWORK_IO_SUSPENDED at https://space.bilibili.com/381870733/dynamic\nCall log:\n  - navigating to \"https://space.bilibili.com/381870733/dynamic\", waiting until \"domcontentloaded\"\n"
+    },
+    "shawn-weekly": {
+      "source_name": "技术 肖恩周刊",
+      "feed_url": "https://lumina.shawnxie.top/backend/api/reviews/rss.xml",
+      "last_checked_at": "2026-05-11 08:33:36",
+      "last_success_at": "2026-05-11 08:33:36",
+      "last_failed_at": "",
+      "last_error": ""
+    },
+    "foreign-view-bilibili-video": {
+      "source_name": "外资观点 小鹿投研日记 的 bilibili 动态",
+      "feed_url": "https://rsshub.app/bilibili/user/video/3546909549529340",
+      "last_checked_at": "2026-05-11 08:33:36",
+      "last_success_at": "2026-05-10 14:01:53",
+      "last_failed_at": "2026-05-11 08:33:36",
+      "last_error": "网页直抓失败: Page.goto: net::ERR_NETWORK_IO_SUSPENDED at https://space.bilibili.com/3546909549529340/dynamic\nCall log:\n  - navigating to \"https://space.bilibili.com/3546909549529340/dynamic\", waiting until \"domcontentloaded\"\n"
+    },
+    "current-affairs-xinghuadabai": {
+      "source_name": "时事 短评 长文视频 星话大白 的 bilibili 动态",
+      "feed_url": "https://rsshub.app/bilibili/user/dynamic/2233213",
+      "last_checked_at": "2026-05-11 08:33:36",
+      "last_success_at": "2026-05-10 20:02:22",
+      "last_failed_at": "2026-05-11 08:33:36",
+      "last_error": "网页直抓失败: Page.goto: net::ERR_NETWORK_IO_SUSPENDED at https://space.bilibili.com/2233213/dynamic\nCall log:\n  - navigating to \"https://space.bilibili.com/2233213/dynamic\", waiting until \"domcontentloaded\"\n"
+    },
+    "基金-硬核姬老板-的-bilibili-动态": {
+      "source_name": "基金 硬核姬老板 的 bilibili 动态",
+      "feed_url": "https://rsshub.app/bilibili/user/dynamic/2117498259",
+      "last_checked_at": "2026-05-11 08:33:35",
+      "last_success_at": "2026-05-10 20:02:21",
+      "last_failed_at": "2026-05-11 08:33:35",
+      "last_error": "网页直抓失败: Page.goto: net::ERR_NETWORK_IO_SUSPENDED at https://space.bilibili.com/2117498259/dynamic\nCall log:\n  - navigating to \"https://space.bilibili.com/2117498259/dynamic\", waiting until \"domcontentloaded\"\n"
+    },
+    "观点-路口大爷聊宏观-的-bilibili-动态": {
+      "source_name": "观点 路口大爷聊宏观 的 bilibili 动态",
+      "feed_url": "https://rsshub.app/bilibili/user/dynamic/1908067732",
+      "last_checked_at": "2026-05-11 08:33:35",
+      "last_success_at": "2026-05-10 20:02:21",
+      "last_failed_at": "2026-05-11 08:33:35",
+      "last_error": "网页直抓失败: Page.goto: net::ERR_NETWORK_IO_SUSPENDED at https://space.bilibili.com/1908067732/dynamic\nCall log:\n  - navigating to \"https://space.bilibili.com/1908067732/dynamic\", waiting until \"domcontentloaded\"\n"
+    }
+  }
+}

@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Follow 订阅分类面板</title>
+  <style>
+    :root {
+      --bg: #f5f1e8;
+      --paper: #fffdf8;
+      --ink: #1f2937;
+      --subtle: #6b7280;
+      --line: #ded6c7;
+      --accent: #9a6a37;
+      --accent-soft: #efe1cf;
+      --tag-subscribe: #dff2e4;
+      --tag-archive: #e3ecfb;
+      --tag-skip: #f7e4e4;
+      --tag-empty: #f7f5f1;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(228, 205, 171, 0.7) 0, transparent 26%),
+        linear-gradient(180deg, #f9f5ee 0%, var(--bg) 100%);
+    }
+
+    .page {
+      max-width: 1680px;
+      margin: 0 auto;
+      padding: 28px 30px 36px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, rgba(154, 106, 55, 0.12), rgba(255, 253, 248, 0.96));
+      border: 1px solid rgba(154, 106, 55, 0.18);
+      border-radius: 22px;
+      padding: 26px 32px;
+      box-shadow: 0 16px 40px rgba(104, 75, 45, 0.08);
+      margin-bottom: 22px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 42px;
+      line-height: 1.1;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--subtle);
+      line-height: 1.8;
+      font-size: 15px;
+    }
+
+    .stats {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+
+    .stat {
+      background: rgba(255,255,255,0.82);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    }
+
+    .toolbar-card {
+      display: grid;
+      grid-template-columns: minmax(420px, 1.4fr) minmax(340px, 0.9fr) auto;
+      gap: 14px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 18px;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.05);
+      margin-bottom: 22px;
+    }
+
+    .toolbar-block {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .toolbar-block.filters {
+      align-content: flex-start;
+    }
+
+    .toolbar-block.actions {
+      justify-content: flex-end;
+      align-items: flex-start;
+    }
+
+    input[type="search"], select {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 14px;
+      padding: 12px 14px;
+      min-height: 48px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    input[type="search"] {
+      width: 100%;
+    }
+
+    .filter-select {
+      min-width: 180px;
+      flex: 1 1 180px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 13px 18px;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    button.secondary {
+      background: #e9decf;
+      color: #5f4630;
+    }
+
+    .table-wrap {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      overflow: hidden;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.05);
+    }
+
+    .table-scroll {
+      max-height: 72vh;
+      overflow: auto;
+    }
+
+    table {
+      width: 100%;
+      min-width: 1520px;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #f8f2e9;
+      font-size: 14px;
+      text-align: left;
+      padding: 16px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    tbody td {
+      vertical-align: top;
+      padding: 14px;
+      border-bottom: 1px solid #efe7db;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    tbody tr:hover {
+      background: #fcf8f1;
+    }
+
+    .name {
+      font-weight: 800;
+      font-size: 18px;
+      margin-bottom: 4px;
+      word-break: break-word;
+      line-height: 1.45;
+    }
+
+    .muted {
+      color: var(--subtle);
+      font-size: 12px;
+      word-break: break-word;
+    }
+
+    .kind {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      border: 1px solid var(--line);
+      background: #f5f5f4;
+    }
+
+    .kind.rsshub {
+      background: #f9eadb;
+      color: #8b5e34;
+    }
+
+    .kind.native {
+      background: #e4f2e7;
+      color: #2f6b45;
+    }
+
+    .row-tag-empty { background: var(--tag-empty); }
+    .row-tag-subscribe { background: var(--tag-subscribe); }
+    .row-tag-archive { background: var(--tag-archive); }
+    .row-tag-skip { background: var(--tag-skip); }
+
+    .tag-select {
+      width: 100%;
+      min-width: 160px;
+    }
+
+    .note-input {
+      width: 100%;
+      min-height: 96px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      resize: vertical;
+      background: #fff;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    a {
+      color: #2563eb;
+      word-break: break-all;
+    }
+
+    .footer-tip {
+      margin-top: 16px;
+      color: var(--subtle);
+      font-size: 13px;
+    }
+
+    @media (max-width: 1200px) {
+      .page {
+        padding: 18px;
+      }
+
+      .toolbar-card {
+        grid-template-columns: 1fr;
+      }
+
+      .toolbar-block.actions {
+        justify-content: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <h1>Follow 订阅分类面板</h1>
+      <p class="subtitle">
+        你可以把每个源标为“后续订阅”“资料收藏”或“暂不处理”。标完后点击“导出结果 HTML”，会下载一个带标签结果的新 HTML。
+        后续你只要把导出的 HTML 路径告诉我，我就能直接读取。
+      </p>
+      <div class="stats" id="stats"></div>
+    </section>
+
+    <section class="toolbar-card">
+      <div class="toolbar-block">
+        <input id="searchInput" type="search" placeholder="搜索名称、分组、域名、链接">
+      </div>
+      <div class="toolbar-block filters">
+        <select id="groupFilter" class="filter-select">
+          <option value="">全部分组</option>
+        </select>
+        <select id="kindFilter" class="filter-select">
+          <option value="">全部类型</option>
+          <option value="native">原生 RSS</option>
+          <option value="rsshub">RSSHub 转换</option>
+        </select>
+        <select id="tagFilter" class="filter-select">
+          <option value="">全部标签</option>
+          <option value="subscribe">后续订阅</option>
+          <option value="archive">资料收藏</option>
+          <option value="skip">暂不处理</option>
+          <option value="untagged">未标注</option>
+        </select>
+      </div>
+      <div class="toolbar-block actions">
+        <button id="exportHtmlBtn">导出结果 HTML</button>
+        <button class="secondary" id="exportJsonBtn">导出 JSON</button>
+        <button class="secondary" id="resetBtn">清空全部标签</button>
+      </div>
+    </section>
+
+    <section class="table-wrap">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 82px;">序号</th>
+              <th style="width: 34%;">名称</th>
+              <th style="width: 11%;">分组</th>
+              <th style="width: 10%;">类型</th>
+              <th style="width: 14%;">域名</th>
+              <th style="width: 28%;">订阅地址</th>
+              <th style="width: 14%;">标签</th>
+              <th style="width: 24%;">备注</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="footer-tip">
+      提示：原生 RSS 一般更稳定；`rsshub.app`、微博、B 站、Twitter、即刻这类源多数属于转换源，后续维护成本更高。
+    </p>
+  </div>
+
+  <script id="seed-data" type="application/json">[{"index": 1, "id": "feed-001", "name": "NASA Astronomy Picture of the Day", "group": "09_自动", "feed_url": "https://rsshub.app/nasa/apod", "site_url": "https://apod.nasa.gov/apod/archivepix.html", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 2, "id": "feed-002", "name": "技术报 HackerNews 每日摘要", "group": "09_自动", "feed_url": "https://www.supertechfans.com/cn/index.xml", "site_url": "https://supertechfans.com/cn/", "host": "www.supertechfans.com", "kind": "native", "tag": "", "note": ""}, {"index": 3, "id": "feed-003", "name": "Python办公 冰冷的希望123", "group": "09_自动", "feed_url": "https://rsshub.app/bilibili/user/dynamic/276278522", "site_url": "https://space.bilibili.com/276278522/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 4, "id": "feed-004", "name": "技术 大河李斯特视频工作室 的 bilibili 动态", "group": "09_自动", "feed_url": "https://rsshub.app/bilibili/user/dynamic/12562485", "site_url": "https://space.bilibili.com/12562485/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 5, "id": "feed-005", "name": "AI 娱乐新闻 赛文乔伊", "group": "09_自动", "feed_url": "https://rsshub.app/bilibili/user/dynamic/39613022", "site_url": "https://space.bilibili.com/39613022/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 6, "id": "feed-006", "name": "算法 labuladong 的 bilibili 动态", "group": "09_自动", "feed_url": "https://rsshub.app/bilibili/user/dynamic/14089380", "site_url": "https://space.bilibili.com/14089380/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 7, "id": "feed-007", "name": "技术 code秘密花园 的 bilibili 动态", "group": "09_自动", "feed_url": "https://rsshub.app/bilibili/user/dynamic/474921808", "site_url": "https://space.bilibili.com/474921808/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 8, "id": "feed-008", "name": "AI 洞察日报 RSS Feed", "group": "09_自动", "feed_url": "https://justlovemaki.github.io/CloudFlare-AI-Insight-Daily/rss.xml", "site_url": "https://ai.hubtoday.app/", "host": "justlovemaki.github.io", "kind": "native", "tag": "", "note": ""}, {"index": 9, "id": "feed-009", "name": "方法论 透明盒子计划", "group": "09_自动", "feed_url": "https://clearbox.substack.com/feed", "site_url": "https://clearbox.substack.com/", "host": "clearbox.substack.com", "kind": "native", "tag": "", "note": ""}, {"index": 10, "id": "feed-010", "name": "外网 不良林", "group": "09_自动", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCbCCUH8S3yhlm7__rhxR2QQ", "site_url": "https://www.youtube.com/channel/UCbCCUH8S3yhlm7__rhxR2QQ", "host": "www.youtube.com", "kind": "native", "tag": "", "note": ""}, {"index": 11, "id": "feed-011", "name": "技术 御风大世界", "group": "09_自动", "feed_url": "https://rsshub.app/bilibili/user/dynamic/193580090", "site_url": "https://space.bilibili.com/193580090/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 12, "id": "feed-012", "name": "技术 原子能 的 bilibili 动态", "group": "09_自动", "feed_url": "https://rsshub.app/bilibili/user/dynamic/162183", "site_url": "https://space.bilibili.com/162183/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 13, "id": "feed-013", "name": "学术软件 青柠学术 的 bilibili 动态", "group": "09_自动", "feed_url": "https://rsshub.app/bilibili/user/dynamic/524598505", "site_url": "https://space.bilibili.com/524598505/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 14, "id": "feed-014", "name": "电脑diy DIY永恒哥", "group": "09_自动", "feed_url": "https://rsshub.app/bilibili/user/dynamic/3493271902882575", "site_url": "https://space.bilibili.com/3493271902882575/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 15, "id": "feed-015", "name": "AI Prompt 李继刚", "group": "09_自动", "feed_url": "http://foxistudy.com:4000/feeds/MP_WXS_3913757353.atom", "site_url": "http://foxistudy.com:4000/feeds/MP_WXS_3913757353.atom", "host": "foxistudy.com:4000", "kind": "native", "tag": "", "note": ""}, {"index": 16, "id": "feed-016", "name": "考研数学 阿风考研数学 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/188015782", "site_url": "https://space.bilibili.com/188015782/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 17, "id": "feed-017", "name": "考研数学 阿七丶牛杂 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/1395703966", "site_url": "https://space.bilibili.com/1395703966/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 18, "id": "feed-018", "name": "学科介绍 取景框看世界", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/40427625", "site_url": "https://space.bilibili.com/40427625/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 19, "id": "feed-019", "name": "英语 英语兔", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/483162496", "site_url": "https://space.bilibili.com/483162496/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 20, "id": "feed-020", "name": "数学 3Blue1Brown 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/88461692", "site_url": "https://space.bilibili.com/88461692/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 21, "id": "feed-021", "name": "考研数学 武忠祥老师 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/688379639", "site_url": "https://space.bilibili.com/688379639/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 22, "id": "feed-022", "name": "哲学 中文马克思主义文库", "group": "02_学科", "feed_url": "https://www.marxists.org/chinese/feed.xml", "site_url": "https://www.marxists.org/chinese/index.html", "host": "www.marxists.org", "kind": "native", "tag": "", "note": ""}, {"index": 23, "id": "feed-023", "name": "考研数学 宇哥考研的微博", "group": "02_学科", "feed_url": "https://rsshub.app/weibo/user/2058586920", "site_url": "https://weibo.com/2058586920/", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 24, "id": "feed-024", "name": "考研 空卡空卡空空卡 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/16671656", "site_url": "https://space.bilibili.com/16671656/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 25, "id": "feed-025", "name": "英语 语法 大道至简英语 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/628822108", "site_url": "https://space.bilibili.com/628822108/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 26, "id": "feed-026", "name": "经管 431金融专硕右岸学长 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/3494379102669190", "site_url": "https://space.bilibili.com/3494379102669190/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 27, "id": "feed-027", "name": "数学 一数 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/14229967", "site_url": "https://space.bilibili.com/14229967/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 28, "id": "feed-028", "name": "考研数学 汤家凤 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/357665034", "site_url": "https://space.bilibili.com/357665034/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 29, "id": "feed-029", "name": "考研数学 宋浩老师官方 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/66607740", "site_url": "https://space.bilibili.com/66607740/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 30, "id": "feed-030", "name": "数学 走向ai的凯子老师 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/1734625176", "site_url": "https://space.bilibili.com/1734625176/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 31, "id": "feed-031", "name": "考研数学 煜神学长 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/1879258215", "site_url": "https://space.bilibili.com/1879258215/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 32, "id": "feed-032", "name": "计算机 单片机 BenBlue 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/413461202", "site_url": "https://space.bilibili.com/413461202/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 33, "id": "feed-033", "name": "考研政治 颉斌斌老师 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/271970833", "site_url": "https://space.bilibili.com/271970833/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 34, "id": "feed-034", "name": "学科 规划 暴叔讲升学规划 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/3493144295377496", "site_url": "https://space.bilibili.com/3493144295377496/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 35, "id": "feed-035", "name": "学科 规划 留学 暴叔讲留学 的 bilibili 动态", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/3493116671690868", "site_url": "https://space.bilibili.com/3493116671690868/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 36, "id": "feed-036", "name": "离岸 卡手机号 涂山晏", "group": "02_学科", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCbP-DhmuPbKh-9Eb6eRX0Ew", "site_url": "https://www.youtube.com/channel/UCbP-DhmuPbKh-9Eb6eRX0Ew", "host": "www.youtube.com", "kind": "native", "tag": "", "note": ""}, {"index": 37, "id": "feed-037", "name": "离岸 朱大善人", "group": "02_学科", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCd7UR-4mHb2x7LQQA4O5Hkg", "site_url": "https://www.youtube.com/channel/UCd7UR-4mHb2x7LQQA4O5Hkg", "host": "www.youtube.com", "kind": "native", "tag": "", "note": ""}, {"index": 38, "id": "feed-038", "name": "离岸 lyon的离岸账户", "group": "02_学科", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCiQFNetKHwkW7KG_8BZkWBw", "site_url": "https://www.youtube.com/channel/UCiQFNetKHwkW7KG_8BZkWBw", "host": "www.youtube.com", "kind": "native", "tag": "", "note": ""}, {"index": 39, "id": "feed-039", "name": "观点 笨笨的韭菜", "group": "02_学科", "feed_url": "https://rsshub.app/bilibili/user/dynamic/11473291", "site_url": "https://space.bilibili.com/11473291/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 40, "id": "feed-040", "name": "Twitter @杰克船长宏观策略", "group": "01_新闻", "feed_url": "https://1016hub.lwt2021.top/twitter/user/yanbojack", "site_url": "https://x.com/yanbojack", "host": "1016hub.lwt2021.top", "kind": "native", "tag": "", "note": ""}, {"index": 41, "id": "feed-041", "name": "产业 医药科普 耿同学讲故事 的 bilibili 动态", "group": "01_新闻", "feed_url": "https://rsshub.app/bilibili/user/dynamic/1732848825", "site_url": "https://space.bilibili.com/1732848825/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 42, "id": "feed-042", "name": "Twitter @Time Horizon📊", "group": "01_新闻", "feed_url": "https://rsshub.app/twitter/user/Time_HorizonX", "site_url": "https://x.com/Time_HorizonX", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 43, "id": "feed-043", "name": "新闻 华尔街日报中文网Twitter", "group": "01_新闻", "feed_url": "https://rsshub.app/twitter/user/ChineseWSJ", "site_url": "https://x.com/ChineseWSJ", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 44, "id": "feed-044", "name": "Major Economic Indicators Latest Numbers", "group": "01_新闻", "feed_url": "https://www.bls.gov/feed/bls_latest.rss", "site_url": "https://www.bls.gov/bls/", "host": "www.bls.gov", "kind": "native", "tag": "", "note": ""}, {"index": 45, "id": "feed-045", "name": "Employment Situation", "group": "01_新闻", "feed_url": "https://www.bls.gov/feed/empsit.rss", "site_url": "https://www.bls.gov/feed/empsit.rss", "host": "www.bls.gov", "kind": "native", "tag": "", "note": ""}, {"index": 46, "id": "feed-046", "name": "观点 市场 产业跟踪 唐史主任司马迁的微博", "group": "01_新闻", "feed_url": "https://rsshub.app/weibo/user/2014433131", "site_url": "https://weibo.com/2014433131/", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 47, "id": "feed-047", "name": "外资观点 财经大咖录", "group": "01_新闻", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCXuFZLC5hWuZ4X3kVNueqyQ", "site_url": "https://www.youtube.com/channel/UCXuFZLC5hWuZ4X3kVNueqyQ", "host": "www.youtube.com", "kind": "native", "tag": "", "note": ""}, {"index": 48, "id": "feed-048", "name": "观点 蚊子很咬 的 bilibili 动态", "group": "01_新闻", "feed_url": "https://rsshub.app/bilibili/user/dynamic/30988485", "site_url": "https://space.bilibili.com/30988485/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 49, "id": "feed-049", "name": "新闻 纽约时报", "group": "01_新闻", "feed_url": "https://feedx.net/rss/nytimes.xml", "site_url": "https://nytimes.com/", "host": "feedx.net", "kind": "native", "tag": "", "note": ""}, {"index": 50, "id": "feed-050", "name": "新闻 晚点 - 最新报道", "group": "01_新闻", "feed_url": "https://rsshub.app/latepost", "site_url": "https://www.latepost.com/", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 51, "id": "feed-051", "name": "新闻 Readhub - 每日早报", "group": "01_新闻", "feed_url": "https://rsshub.app/readhub/daily", "site_url": "https://api.readhub.cn/daily", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 52, "id": "feed-052", "name": "新闻 你不知道的行业内幕 - 即刻圈子", "group": "01_新闻", "feed_url": "https://rsshub.app/jike/topic/5699f451d3e8351200bffdc8", "site_url": "https://m.okjike.com/topics/5699f451d3e8351200bffdc8", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 53, "id": "feed-053", "name": "新闻 华尔街日报 The Wall Street Journal", "group": "01_新闻", "feed_url": "https://the.bi/s/rawcmr772k5ocy", "site_url": "https://the.bi/s", "host": "the.bi", "kind": "native", "tag": "", "note": ""}, {"index": 54, "id": "feed-054", "name": "新闻 Square匕现", "group": "01_新闻", "feed_url": "https://rsshub.app/the/:filter%7B.+%7D", "site_url": "https://the.bi/s/", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 55, "id": "feed-055", "name": "新闻 事件总结 混乱粉笔 的 bilibili 动态", "group": "01_新闻", "feed_url": "https://rsshub.app/bilibili/user/dynamic/93796936", "site_url": "https://space.bilibili.com/93796936/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 56, "id": "feed-056", "name": "外资观点 宏观对冲FICC 的 bilibili 动态", "group": "01_新闻", "feed_url": "https://rsshub.app/bilibili/user/dynamic/3546698007710444", "site_url": "https://space.bilibili.com/3546698007710444/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 57, "id": "feed-057", "name": "外资观点 財经大咖录 的 bilibili 空间", "group": "01_新闻", "feed_url": "https://rsshub.app/bilibili/user/video/3546832705685582", "site_url": "https://space.bilibili.com/3546832705685582", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 58, "id": "feed-058", "name": "Twitter @外汇交易员", "group": "01_新闻", "feed_url": "https://rsshub.app/twitter/user/myfxtrader", "site_url": "https://x.com/myfxtrader", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 59, "id": "feed-059", "name": "新闻 财新周刊", "group": "01_新闻", "feed_url": "https://rsshub.app/caixin/weekly", "site_url": "https://weekly.caixin.com/", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 60, "id": "feed-060", "name": "Twitter @曹山石", "group": "01_新闻", "feed_url": "https://rsshub.app/twitter/user/caolei1", "site_url": "https://x.com/caolei1", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 61, "id": "feed-061", "name": "人物 观点 十三邀", "group": "01_新闻", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC7eBKmeAz99qswOcm3VxOow", "site_url": "https://www.youtube.com/channel/UC7eBKmeAz99qswOcm3VxOow", "host": "www.youtube.com", "kind": "native", "tag": "", "note": ""}, {"index": 62, "id": "feed-062", "name": "Twitter @包叔", "group": "01_新闻", "feed_url": "https://rsshub.app/twitter/user/baoshu88", "site_url": "https://x.com/baoshu88", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 63, "id": "feed-063", "name": "观点 固收 沧海一土狗的个人中心-虎嗅网", "group": "01_新闻", "feed_url": "http://47.116.168.136:1200/huxiu/author/2321131/article", "site_url": "https://www.huxiu.com/member/2321131.html", "host": "47.116.168.136:1200", "kind": "native", "tag": "", "note": ""}, {"index": 64, "id": "feed-064", "name": "外资观点  地平线全球策略", "group": "01_新闻", "feed_url": "https://rsshub.app/bilibili/user/dynamic/3493256927119959", "site_url": "https://space.bilibili.com/3493256927119959/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 65, "id": "feed-065", "name": "观点 吐槽 锹夺天工杨大眼的微博", "group": "01_新闻", "feed_url": "https://rsshub.app/weibo/user/5788727977", "site_url": "https://weibo.com/5788727977/", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 66, "id": "feed-066", "name": "宏观 学习 张涔子沐 的 bilibili 动态", "group": "01_新闻", "feed_url": "https://rsshub.app/bilibili/user/dynamic/471429310", "site_url": "https://space.bilibili.com/471429310/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 67, "id": "feed-067", "name": "外资观点  A股北向资金菲利普 的 bilibili 动态", "group": "01_新闻", "feed_url": "https://rsshub.app/bilibili/user/dynamic/3493284836018843", "site_url": "https://space.bilibili.com/3493284836018843/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 68, "id": "feed-068", "name": "观点 路口大爷聊宏观的微博", "group": "01_新闻", "feed_url": "https://rsshub.app/weibo/user/7782629809", "site_url": "https://weibo.com/7782629809/", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 69, "id": "feed-069", "name": "产业 医药科普 咸鱼堡的医药海滩 的 bilibili 空间", "group": "01_新闻", "feed_url": "https://rsshub.app/bilibili/user/video/18144984", "site_url": "https://space.bilibili.com/18144984", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 70, "id": "feed-070", "name": "基金 硬核姬老板 的 bilibili 空间", "group": "01_新闻", "feed_url": "https://rsshub.app/bilibili/user/video/2117498259", "site_url": "https://space.bilibili.com/2117498259", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 71, "id": "feed-071", "name": "新闻 地缘 战国时代_姜汁汽水 的 bilibili 动态", "group": "01_新闻", "feed_url": "https://rsshub.app/bilibili/user/dynamic/1039025435", "site_url": "https://space.bilibili.com/1039025435/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 72, "id": "feed-072", "name": "⭐️观点 穿透股息 HK 史诗级韭菜", "group": "01_新闻", "feed_url": "https://rsshub.app/bilibili/user/dynamic/322005137", "site_url": "https://space.bilibili.com/322005137/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 73, "id": "feed-073", "name": "外资观点 老厉害", "group": "00_⭐️+微信星标", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC8gZZWIWmBuCb_gzC8DUrvw", "site_url": "https://www.youtube.com/channel/UC8gZZWIWmBuCb_gzC8DUrvw", "host": "www.youtube.com", "kind": "native", "tag": "", "note": ""}, {"index": 74, "id": "feed-074", "name": "技术 阮一峰的网络日志", "group": "00_⭐️+微信星标", "feed_url": "https://feeds.feedburner.com/ruanyifeng", "site_url": "http://www.ruanyifeng.com/blog/", "host": "feeds.feedburner.com", "kind": "native", "tag": "", "note": ""}, {"index": 75, "id": "feed-075", "name": "时事 短评 长文视频 星话大白 的 bilibili 动态", "group": "00_⭐️+微信星标", "feed_url": "https://rsshub.app/bilibili/user/dynamic/2233213", "site_url": "https://space.bilibili.com/2233213/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 76, "id": "feed-076", "name": "产业 科普 巫师财经", "group": "00_⭐️+微信星标", "feed_url": "https://rsshub.app/bilibili/user/dynamic/472747194", "site_url": "https://space.bilibili.com/472747194/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 77, "id": "feed-077", "name": "技术 技术爬爬虾 的 bilibili 动态", "group": "00_⭐️+微信星标", "feed_url": "https://rsshub.app/bilibili/user/dynamic/316183842", "site_url": "https://space.bilibili.com/316183842/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 78, "id": "feed-078", "name": "观点 房产 铁锤观察室", "group": "00_⭐️+微信星标", "feed_url": "https://rsshub.app/bilibili/user/dynamic/1257954297", "site_url": "https://space.bilibili.com/1257954297/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 79, "id": "feed-079", "name": "宏观 宏观边际MacroMargin", "group": "00_⭐️+微信星标", "feed_url": "https://rsshub.app/twitter/user/MacroMargin", "site_url": "https://x.com/MacroMargin", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}, {"index": 80, "id": "feed-080", "name": "外资观点 小黄的投资笔记 的 bilibili 动态", "group": "00_⭐️+微信星标", "feed_url": "https://rsshub.app/bilibili/user/dynamic/381870733", "site_url": "https://space.bilibili.com/381870733/dynamic", "host": "rsshub.app", "kind": "rsshub", "tag": "", "note": ""}]</script>
+  <script>
+    const STORAGE_KEY = "follow-review-state-v1";
+    const seed = JSON.parse(document.getElementById("seed-data").textContent);
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    const rows = Array.isArray(saved) && saved.length === seed.length ? saved : seed;
+
+    const tableBody = document.getElementById("tableBody");
+    const searchInput = document.getElementById("searchInput");
+    const groupFilter = document.getElementById("groupFilter");
+    const kindFilter = document.getElementById("kindFilter");
+    const tagFilter = document.getElementById("tagFilter");
+    const stats = document.getElementById("stats");
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function persist() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
+    }
+
+    function getTagClass(tag) {
+      if (tag === "subscribe") return "row-tag-subscribe";
+      if (tag === "archive") return "row-tag-archive";
+      if (tag === "skip") return "row-tag-skip";
+      return "row-tag-empty";
+    }
+
+    function renderStats() {
+      const subscribe = rows.filter(item => item.tag === "subscribe").length;
+      const archive = rows.filter(item => item.tag === "archive").length;
+      const skip = rows.filter(item => item.tag === "skip").length;
+      const untagged = rows.filter(item => !item.tag).length;
+      stats.innerHTML = [
+        `<span class="stat">总数：${rows.length}</span>`,
+        `<span class="stat">后续订阅：${subscribe}</span>`,
+        `<span class="stat">资料收藏：${archive}</span>`,
+        `<span class="stat">暂不处理：${skip}</span>`,
+        `<span class="stat">未标注：${untagged}</span>`
+      ].join("");
+    }
+
+    function buildFilters() {
+      const groups = [...new Set(rows.map(item => item.group))];
+      groupFilter.innerHTML = '<option value="">全部分组</option>' +
+        groups.map(group => `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`).join("");
+    }
+
+    function matchRow(item) {
+      const keyword = searchInput.value.trim().toLowerCase();
+      const groupOk = !groupFilter.value || item.group === groupFilter.value;
+      const kindOk = !kindFilter.value || item.kind === kindFilter.value;
+
+      let tagOk = true;
+      if (tagFilter.value === "untagged") {
+        tagOk = !item.tag;
+      } else if (tagFilter.value) {
+        tagOk = item.tag === tagFilter.value;
+      }
+
+      if (!groupOk || !kindOk || !tagOk) return false;
+      if (!keyword) return true;
+
+      const haystack = [
+        item.name,
+        item.group,
+        item.host,
+        item.feed_url,
+        item.site_url,
+        item.note
+      ].join("\n").toLowerCase();
+      return haystack.includes(keyword);
+    }
+
+    function renderTable() {
+      const htmlRows = [];
+      rows.forEach((item, index) => {
+        if (!matchRow(item)) return;
+        htmlRows.push(`
+          <tr class="${getTagClass(item.tag)}">
+            <td>${index + 1}</td>
+            <td>
+              <div class="name">${escapeHtml(item.name)}</div>
+              <div class="muted">ID: ${escapeHtml(item.id)}</div>
+            </td>
+            <td>${escapeHtml(item.group)}</td>
+            <td><span class="kind ${escapeHtml(item.kind)}">${item.kind === "rsshub" ? "RSSHub" : "原生"}</span></td>
+            <td class="muted">${escapeHtml(item.host)}</td>
+            <td><a href="${escapeHtml(item.feed_url)}" target="_blank">${escapeHtml(item.feed_url)}</a></td>
+            <td>
+              <select class="tag-select" data-index="${index}" data-role="tag">
+                <option value="">未标注</option>
+                <option value="subscribe" ${item.tag === "subscribe" ? "selected" : ""}>后续订阅</option>
+                <option value="archive" ${item.tag === "archive" ? "selected" : ""}>资料收藏</option>
+                <option value="skip" ${item.tag === "skip" ? "selected" : ""}>暂不处理</option>
+              </select>
+            </td>
+            <td>
+              <textarea class="note-input" data-index="${index}" data-role="note" placeholder="可写备注、原因、用途">${escapeHtml(item.note || "")}</textarea>
+            </td>
+          </tr>
+        `);
+      });
+      tableBody.innerHTML = htmlRows.join("");
+    }
+
+    function refresh() {
+      renderStats();
+      renderTable();
+      persist();
+    }
+
+    function exportJson() {
+      const blob = new Blob([JSON.stringify(rows, null, 2)], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "follow_review_result.json";
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function exportHtml() {
+      const scriptClose = "<" + "/script>";
+      const escapedScriptClose = "<\/" + "script>";
+      const seedText = JSON.stringify(rows).split(scriptClose).join(escapedScriptClose);
+      const seedScript = `<script id="seed-data" type="application/json">${seedText}<\/script>`;
+      const htmlText = document.documentElement.outerHTML.replace(
+        /<script id="seed-data" type="application\/json">[\s\S]*?<\/script>/,
+        seedScript
+      );
+      const blob = new Blob([htmlText], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "follow_review_tagged.html";
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+
+    tableBody.addEventListener("change", event => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.dataset.role === "tag") {
+        const index = Number(target.dataset.index);
+        rows[index].tag = target.value;
+        refresh();
+      }
+    });
+
+    tableBody.addEventListener("input", event => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.dataset.role === "note") {
+        const index = Number(target.dataset.index);
+        rows[index].note = target.value;
+        persist();
+      }
+    });
+
+    searchInput.addEventListener("input", renderTable);
+    groupFilter.addEventListener("change", renderTable);
+    kindFilter.addEventListener("change", renderTable);
+    tagFilter.addEventListener("change", renderTable);
+    document.getElementById("exportJsonBtn").addEventListener("click", exportJson);
+    document.getElementById("exportHtmlBtn").addEventListener("click", exportHtml);
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      if (!confirm("确认清空全部标签和备注？")) return;
+      rows.forEach(item => {
+        item.tag = "";
+        item.note = "";
+      });
+      refresh();
+    });
+
+    buildFilters();
+    refresh();
+  </script>
+</body>
+</html>
