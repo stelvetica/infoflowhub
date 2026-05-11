@@ -40,10 +40,10 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
         </div>
         <nav className="nav">
           <Link href="/?view=entries" className={view === "entries" ? "active" : ""}>
-            Subscriptions 内容
+            订阅内容
           </Link>
           <Link href="/?view=laterhub" className={view === "laterhub" ? "active" : ""}>
-            Laterhub 内容
+            稍后处理
           </Link>
           <Link href="/?view=settings" className={view === "settings" ? "active" : ""}>
             设置
@@ -87,7 +87,7 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
       </section>
       <section className="card">
         <div className="panel-title">
-          <h3>Subscriptions 内容</h3>
+          <h3>订阅内容</h3>
           <form className="toolbar">
             <input type="hidden" name="view" value="entries" />
             <input type="hidden" name="sort" value={data.sort} />
@@ -173,7 +173,7 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
       </section>
       <section className="card">
         <div className="panel-title">
-          <h3>Laterhub 内容</h3>
+          <h3>稍后处理内容</h3>
         </div>
         <form className="filterbar">
           <input type="hidden" name="view" value="laterhub" />
@@ -324,7 +324,7 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
         </div>
         <div className="card">
           <div className="panel-title">
-            <h3>Laterhub 概览</h3>
+            <h3>稍后处理概览</h3>
           </div>
           <p className="subtle">总数：{data.summary.total_count}</p>
           <p className="subtle">未完成：{data.summary.unfinished_count}</p>
@@ -339,7 +339,7 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
       </section>
       <section className="card">
         <div className="panel-title">
-          <h3>Laterhub 来源</h3>
+          <h3>稍后处理来源</h3>
         </div>
         <div className="table-wrap">
           <table>
@@ -474,8 +474,8 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
           <div className="panel-title">
             <h3>系统说明</h3>
           </div>
-          <p className="subtle">Subscriptions 负责 RSS / 网页源 / 抓取结果，页面改为 Next.js 渲染。</p>
-          <p className="subtle">Laterhub 继续复用现有 SQLite 数据，完成状态直接从新界面写回。</p>
+          <p className="subtle">订阅模块负责 RSS、网页源与抓取结果展示，界面已统一迁移到 Next.js。</p>
+          <p className="subtle">稍后处理模块继续复用现有 SQLite 数据，完成状态直接从新界面写回。</p>
           <p className="subtle">Python 现在只保留数据抓取与桥接脚本，不再负责 HTML 模板输出。</p>
         </div>
       </section>

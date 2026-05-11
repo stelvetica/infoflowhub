@@ -133,6 +133,13 @@ export function loadHealth(): HealthPayload {
   return readJson<HealthPayload>(HEALTH_PATH, { sources: {} });
 }
 
+function canonicalFeedUrl(source: SourceItem): string {
+  if (source.site_url && source.provider === "web") {
+    return source.site_url.trim();
+  }
+  return source.feed_url.trim();
+}
+
 export function normalizeSources(): SourceItem[] {
   const payload = readJson<SourcesPayload>(SOURCES_PATH, { sources: [] });
   const health = loadHealth();
@@ -186,10 +193,15 @@ export function normalizeSources(): SourceItem[] {
     if (seenIds.has(source.id) || seenFeeds.has(source.feed_url)) continue;
     seenIds.add(source.id);
     seenFeeds.add(source.feed_url);
-    if (health.sources[source.id] && typeof source.enabled !== "boolean") source.enabled = true;
+    if (health.sources[source.id]) {
+      health.sources[source.id].source_name = source.name;
+      health.sources[source.id].feed_url = canonicalFeedUrl(source);
+      if (typeof source.enabled !== "boolean") source.enabled = true;
+    }
     changed.push(source);
   }
   if (changed.length !== payload.sources.length) saveSources(changed);
+  writeJson(HEALTH_PATH, health);
   return changed;
 }
 

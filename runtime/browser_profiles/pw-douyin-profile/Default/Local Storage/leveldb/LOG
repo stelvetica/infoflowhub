@@ -1,6 +1,0 @@
-2026/05/07-09:58:09.280 9378 Reusing MANIFEST C:\001_TEMP\Playground\pkm_auto_hub\runtime\browser_profiles\pw-douyin-profile\Default\Local Storage\leveldb/MANIFEST-000001
-2026/05/07-09:58:09.287 9378 Recovering log #69
-2026/05/07-09:58:09.292 9378 Reusing old log C:\001_TEMP\Playground\pkm_auto_hub\runtime\browser_profiles\pw-douyin-profile\Default\Local Storage\leveldb/000069.log 
-2026/05/07-09:59:09.307 bd1c Level-0 table #73: started
-2026/05/07-09:59:09.312 bd1c Level-0 table #73: 27072 bytes OK
-2026/05/07-09:59:09.313 bd1c Delete type=0 #69
