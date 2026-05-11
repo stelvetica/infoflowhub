@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Iterable
 
 from apps.subscriptions.models import FeedEntry
+from connectors.web.common import parse_published_datetime
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -20,6 +21,7 @@ CREATE TABLE IF NOT EXISTS rss_entries (
   title TEXT NOT NULL,
   link TEXT NOT NULL,
   published TEXT NOT NULL DEFAULT '',
+  published_at TEXT NOT NULL DEFAULT '',
   summary TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(source_id, link)
@@ -37,7 +39,40 @@ def get_connection() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.executescript(SCHEMA)
+    ensure_schema(conn)
     return conn
+
+
+def ensure_schema(conn: sqlite3.Connection) -> None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(rss_entries)").fetchall()}
+    if "published_at" not in columns:
+        conn.execute("ALTER TABLE rss_entries ADD COLUMN published_at TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+    conn.execute(
+        """
+        UPDATE rss_entries
+        SET published_at = ?
+        WHERE published_at = ? AND 1 = 0
+        """,
+        ("", ""),
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_rss_entries_published_at
+        ON rss_entries(published_at DESC, id DESC)
+        """
+    )
+    conn.commit()
+
+
+def normalize_published_text(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    parsed = parse_published_datetime(text)
+    if not parsed:
+        return text.replace("-", "/")[:16]
+    return parsed.strftime("%Y/%m/%d %H:%M")
 
 
 def list_source_enabled_state() -> dict[str, bool]:
@@ -78,15 +113,17 @@ def save_entries(entries: Iterable[FeedEntry]) -> int:
     inserted = 0
     try:
         for item in entries:
+            normalized_published = normalize_published_text(item.published)
             cursor = conn.execute(
                 """
                 INSERT INTO rss_entries
-                (source_id, source_name, title, link, published, summary)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (source_id, source_name, title, link, published, published_at, summary)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(source_id, link) DO UPDATE SET
                   source_name=excluded.source_name,
                   title=CASE WHEN excluded.title != '' THEN excluded.title ELSE rss_entries.title END,
                   published=CASE WHEN excluded.published != '' THEN excluded.published ELSE rss_entries.published END,
+                  published_at=CASE WHEN excluded.published_at != '' THEN excluded.published_at ELSE rss_entries.published_at END,
                   summary=CASE WHEN excluded.summary != '' THEN excluded.summary ELSE rss_entries.summary END
                 """,
                 (
@@ -94,7 +131,8 @@ def save_entries(entries: Iterable[FeedEntry]) -> int:
                     item.source_name,
                     item.title,
                     item.link,
-                    item.published,
+                    normalized_published,
+                    normalized_published,
                     item.summary,
                 ),
             )
@@ -112,10 +150,10 @@ def list_entries(limit: int = 200, source_id: str = "") -> list[dict]:
         if source_id:
             rows = conn.execute(
                 """
-                SELECT source_id, source_name, title, link, published, summary, created_at
+                SELECT source_id, source_name, title, link, published, published_at, summary, created_at
                 FROM rss_entries
                 WHERE source_id = ?
-                ORDER BY COALESCE(NULLIF(published, ''), created_at) DESC, id DESC
+                ORDER BY COALESCE(NULLIF(published_at, ''), NULLIF(published, ''), created_at) DESC, id DESC
                 LIMIT ?
                 """,
                 (source_id, limit),
@@ -123,9 +161,9 @@ def list_entries(limit: int = 200, source_id: str = "") -> list[dict]:
         else:
             rows = conn.execute(
                 """
-                SELECT source_id, source_name, title, link, published, summary, created_at
+                SELECT source_id, source_name, title, link, published, published_at, summary, created_at
                 FROM rss_entries
-                ORDER BY COALESCE(NULLIF(published, ''), created_at) DESC, id DESC
+                ORDER BY COALESCE(NULLIF(published_at, ''), NULLIF(published, ''), created_at) DESC, id DESC
                 LIMIT ?
                 """,
                 (limit,),
@@ -156,7 +194,8 @@ def list_source_stats() -> list[dict]:
     try:
         rows = conn.execute(
             """
-            SELECT source_id, source_name, COUNT(*) AS entry_count, MAX(created_at) AS last_seen
+            SELECT source_id, source_name, COUNT(*) AS entry_count,
+                   MAX(COALESCE(NULLIF(published_at, ''), NULLIF(published, ''), created_at)) AS last_seen
             FROM rss_entries
             GROUP BY source_id, source_name
             ORDER BY source_name COLLATE NOCASE

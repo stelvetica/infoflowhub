@@ -27,6 +27,10 @@ function sortHref(view: ViewKey, currentSort: string, currentDir: string, nextSo
   return href(view, { ...params, sort: nextSort, dir: nextDir });
 }
 
+function pageHref(view: ViewKey, params: Record<string, string>, page: number) {
+  return href(view, { ...params, page: String(page) });
+}
+
 export default async function Home({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const view = (one(params.view) || "entries") as ViewKey;
@@ -62,8 +66,10 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
   const data = getEntriesView({
     q: one(params.q),
     sort: one(params.sort),
-    dir: (one(params.dir) || "desc") as "asc" | "desc"
+    dir: (one(params.dir) || "desc") as "asc" | "desc",
+    page: one(params.page)
   });
+  const baseParams = { q: data.q };
   return (
     <section className="card">
       <div className="panel-title">
@@ -72,7 +78,7 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
           <input type="hidden" name="view" value="entries" />
           <input type="hidden" name="sort" value={data.sort} />
           <input type="hidden" name="dir" value={data.dir} />
-          <input className="input" name="q" defaultValue={data.q} placeholder="搜索标题、来源、摘要" />
+          <input className="input" name="q" defaultValue={data.q} placeholder="搜索标题、来源" />
           <button className="btn" type="submit">
             搜索
           </button>
@@ -88,17 +94,17 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
           <thead>
             <tr>
               <th>
-                <Link className="sort" href={sortHref("entries", data.sort, data.dir, "sort_time", { q: data.q }, true)}>
+                <Link className="sort" href={sortHref("entries", data.sort, data.dir, "sort_time", baseParams, true)}>
                   时间
                 </Link>
               </th>
               <th>
-                <Link className="sort" href={sortHref("entries", data.sort, data.dir, "source_name", { q: data.q })}>
+                <Link className="sort" href={sortHref("entries", data.sort, data.dir, "source_name", baseParams)}>
                   来源
                 </Link>
               </th>
               <th>
-                <Link className="sort" href={sortHref("entries", data.sort, data.dir, "title", { q: data.q })}>
+                <Link className="sort" href={sortHref("entries", data.sort, data.dir, "title", baseParams)}>
                   标题
                 </Link>
               </th>
@@ -109,7 +115,9 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
               data.rows.map((item) => (
                 <tr key={`${item.source_id}-${item.link}`}>
                   <td className="cell-time">{item.display_time}</td>
-                  <td className="cell-ellipsis" title={item.source_name}>{item.source_name}</td>
+                  <td className="cell-ellipsis" title={item.source_name}>
+                    {item.source_name}
+                  </td>
                   <td>
                     <a className="cell-ellipsis cell-link" href={item.link} target="_blank" rel="noreferrer" title={item.title}>
                       {item.title}
@@ -126,6 +134,23 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
             )}
           </tbody>
         </table>
+      </div>
+      <div className="pagination">
+        <div className="subtle">
+          第 {data.page} / {data.totalPages} 页，共 {data.filteredTotal} 条
+        </div>
+        <div className="toolbar">
+          <Link className={`btn ghost ${data.page <= 1 ? "disabled" : ""}`} href={data.page > 1 ? pageHref("entries", { ...baseParams, sort: data.sort, dir: data.dir }, data.page - 1) : "#"} aria-disabled={data.page <= 1}>
+            上一页
+          </Link>
+          <Link
+            className={`btn ghost ${data.page >= data.totalPages ? "disabled" : ""}`}
+            href={data.page < data.totalPages ? pageHref("entries", { ...baseParams, sort: data.sort, dir: data.dir }, data.page + 1) : "#"}
+            aria-disabled={data.page >= data.totalPages}
+          >
+            下一页
+          </Link>
+        </div>
       </div>
     </section>
   );
@@ -242,11 +267,7 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
                       <form action={finishLaterhubAction}>
                         <input type="hidden" name="id" value={item.id} />
                         <input type="hidden" name="finished" value={item.is_finished ? "0" : "1"} />
-                        <SubmitButton
-                          className={`btn ${item.is_finished ? "secondary" : ""}`}
-                          idleText={item.is_finished ? "标记未完成" : "标记完成"}
-                          pendingText="提交中..."
-                        />
+                        <SubmitButton className={`btn ${item.is_finished ? "secondary" : ""}`} idleText={item.is_finished ? "标记未完成" : "标记完成"} pendingText="提交中..." />
                       </form>
                     </td>
                   </tr>
@@ -301,7 +322,6 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
           <div className="panel-title">
             <h3>手动抓取</h3>
           </div>
-          <p className="subtle">自动抓取逻辑保留，页面层已迁移到 Next.js。这里直接触发 Python 抓取链路。</p>
           <form action={fetchNowAction}>
             <SubmitButton idleText="立即抓取" pendingText="抓取中..." />
           </form>
@@ -454,14 +474,7 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
             <SubmitButton idleText="保存" pendingText="保存中..." />
           </form>
         </div>
-        <div className="card">
-          <div className="panel-title">
-            <h3>系统说明</h3>
-          </div>
-          <p className="subtle">订阅模块负责 RSS、网页源与抓取结果展示，界面已统一迁移到 Next.js。</p>
-          <p className="subtle">稍后处理模块继续复用现有 SQLite 数据，完成状态直接从新界面写回。</p>
-          <p className="subtle">Python 现在只保留数据抓取与桥接脚本，不再负责 HTML 模板输出。</p>
-        </div>
+        <div className="card" />
       </section>
     </>
   );

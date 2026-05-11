@@ -273,9 +273,11 @@ function loadSettingsSnapshot(): SettingsSnapshotPayload {
   return runPythonBridge("settings-snapshot") as SettingsSnapshotPayload;
 }
 
-export type EntriesQuery = { q?: string; sort?: string; dir?: "asc" | "desc" };
+export type EntriesQuery = { q?: string; sort?: string; dir?: "asc" | "desc"; page?: string };
 export type LaterhubQuery = { q?: string; filter_finished?: string; filter_tag?: string; sort?: string; dir?: "asc" | "desc" };
 export type SourcesQuery = { source_q?: string; sort?: string; dir?: "asc" | "desc" };
+
+const ENTRIES_PAGE_SIZE = 50;
 
 export function getEntriesView(query: EntriesQuery) {
   const snapshot = loadEntriesSnapshot();
@@ -283,17 +285,23 @@ export function getEntriesView(query: EntriesQuery) {
   const keyword = normalizeText(query.q || "");
   const sort = query.sort || "sort_time";
   const dir = query.dir || "desc";
-  const rows = snapshot.entries
+  const page = Math.max(Number.parseInt(query.page || "1", 10) || 1, 1);
+  const filteredRows = snapshot.entries
     .filter((item) => enabledIds.has(item.source_id))
     .filter((item) => !keyword || [item.source_name, item.title, item.summary].some((field) => normalizeText(field).includes(keyword)))
     .map((item) => ({
       ...item,
       summary: "",
-      display_time: formatDateTime(item.published || item.created_at),
-      sort_time: toSortableTime(item.published || item.created_at)
+      display_time: formatDateTime(item.published_at || item.published || item.created_at),
+      sort_time: toSortableTime(item.published_at || item.published || item.created_at)
     }))
     .sort((a, b) => compareValue(a[sort as keyof typeof a], b[sort as keyof typeof b], dir));
-  return { rows, total: snapshot.entries_total, sort, dir, q: query.q || "" };
+  const filteredTotal = filteredRows.length;
+  const totalPages = Math.max(Math.ceil(filteredTotal / ENTRIES_PAGE_SIZE), 1);
+  const safePage = Math.min(page, totalPages);
+  const start = (safePage - 1) * ENTRIES_PAGE_SIZE;
+  const rows = filteredRows.slice(start, start + ENTRIES_PAGE_SIZE);
+  return { rows, total: snapshot.entries_total, filteredTotal, totalPages, page: safePage, sort, dir, q: query.q || "" };
 }
 
 export function getLaterhubView(query: LaterhubQuery) {

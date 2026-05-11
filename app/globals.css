@@ -290,6 +290,20 @@ th {
   max-width: 100%;
 }
 
+.pagination {
+  margin-top: 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn.disabled {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
 .sort {
   color: inherit;
 }
@@ -401,5 +415,9 @@ th {
   .grid.three,
   .grid.four {
     grid-template-columns: 1fr;
+  }
+
+  .pagination {
+    align-items: stretch;
   }
 }

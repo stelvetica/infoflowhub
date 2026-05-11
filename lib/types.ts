@@ -6,6 +6,7 @@ export type SubscriptionsEntry = {
   title: string;
   link: string;
   published: string;
+  published_at?: string;
   summary: string;
   created_at: string;
 };

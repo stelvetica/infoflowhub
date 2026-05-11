@@ -127,9 +127,9 @@ def list_entries(limit: int = 500) -> list[dict]:
     try:
         rows = conn.execute(
             """
-            SELECT source_id, source_name, title, link, published, summary, created_at
+            SELECT source_id, source_name, title, link, published, published_at, summary, created_at
             FROM rss_entries
-            ORDER BY COALESCE(NULLIF(published, ''), created_at) DESC, id DESC
+            ORDER BY COALESCE(NULLIF(published_at, ''), NULLIF(published, ''), created_at) DESC, id DESC
             LIMIT ?
             """,
             (limit,),
