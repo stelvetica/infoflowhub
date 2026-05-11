@@ -1,7 +1,7 @@
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$python = "C:\Users\TB14Plus\anaconda3\python.exe"
-$command = "Set-Location '$root'; & '$python' -m web.server"
+$npm = (Get-Command npm.cmd -ErrorAction Stop).Source
+$command = "Set-Location '$root'; & '$npm' run dev"
 
 Start-Process powershell -ArgumentList "-NoProfile", "-WindowStyle", "Hidden", "-Command", $command -WindowStyle Hidden

@@ -4,6 +4,10 @@
 .env.*.local
 !laterhub/.env.example
 
+node_modules/
+.next/
+out/
+
 __pycache__/
 *.py[cod]
 
