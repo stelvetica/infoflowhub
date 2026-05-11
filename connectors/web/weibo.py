@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
-from connectors.web.common import clean_line, fallback_published, normalize_relative_date, resolve_web_target, result_error
+from connectors.web.common import clean_line, fallback_published, normalize_relative_date, parse_published_datetime, resolve_web_target, result_error
 
 
 def extract_weibo_cards_from_dom(page, limit: int = 8) -> list[dict]:
@@ -206,6 +206,19 @@ def parse_weibo_posts_from_cards(cards: list[dict], source: dict, uid: str, limi
     return entries
 
 
+def merge_weibo_entries(primary: list[FeedEntry], secondary: list[FeedEntry], limit: int = 60) -> list[FeedEntry]:
+    merged: list[FeedEntry] = []
+    seen_keys: set[tuple[str, str]] = set()
+    for item in primary + secondary:
+        key = (item.title, item.published)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        merged.append(item)
+    merged.sort(key=lambda item: parse_published_datetime(item.published) or datetime.min, reverse=True)
+    return merged[:limit]
+
+
 def fetch_weibo_with_page(page, source: dict, timeout_ms: int = 60000) -> FeedFetchResult:
     target = resolve_web_target(source)
     if not target:
@@ -222,9 +235,9 @@ def fetch_weibo_with_page(page, source: dict, timeout_ms: int = 60000) -> FeedFe
 
     if any(flag in body_text for flag in ["登录/注册", "请登录后使用", "还没有微博？立即注册", "扫码登录更安全"]):
         return result_error(source, "微博公开页被登录墙拦截，当前需要登录态")
-    entries = parse_weibo_posts_from_cards(dom_cards, source, target.uid) if dom_cards else []
-    if not entries:
-        entries = parse_weibo_posts(body_text, source, target.uid)
+    card_entries = parse_weibo_posts_from_cards(dom_cards, source, target.uid, limit=60) if dom_cards else []
+    body_entries = parse_weibo_posts(body_text, source, target.uid, limit=60)
+    entries = merge_weibo_entries(card_entries, body_entries, limit=60)
     return FeedFetchResult(
         source_id=source["id"],
         source_name=source["name"],

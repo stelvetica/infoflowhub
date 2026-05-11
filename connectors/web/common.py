@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 from apps.subscriptions.models import FeedFetchResult
@@ -131,6 +132,27 @@ def normalize_english_date(text: str) -> str:
         except ValueError:
             continue
     return ""
+
+
+def parse_published_datetime(text: str) -> datetime | None:
+    value = clean_line(text)
+    if not value:
+        return None
+
+    for parser in (
+        lambda item: datetime.strptime(item, "%Y/%m/%d %H:%M"),
+        lambda item: datetime.strptime(item, "%Y/%m/%d %H:%M:%S"),
+        lambda item: datetime.strptime(item, "%Y/%m/%d"),
+        lambda item: datetime.strptime(item, "%Y-%m-%d %H:%M:%S"),
+        lambda item: datetime.strptime(item, "%Y-%m-%d"),
+        lambda item: datetime.fromisoformat(item.replace("Z", "+00:00")).replace(tzinfo=None),
+        lambda item: parsedate_to_datetime(item).replace(tzinfo=None),
+    ):
+        try:
+            return parser(value)
+        except Exception:
+            continue
+    return None
 
 
 def result_error(source: dict, error: str) -> FeedFetchResult:
