@@ -108,7 +108,7 @@ def build_entries_from_bilibili_api(source: dict, target, limit: int, timeout_ms
             continue
         link = str(item.get("link") or item.get("dynamic_link") or target.page_url).strip()
         summary = clean_line(item.get("summary", ""))
-        published = clean_line(item.get("published_text", ""))
+        published = clean_line(item.get("published_at") or item.get("published_text", ""))
         entries.append(
             FeedEntry(
                 source_id=source["id"],

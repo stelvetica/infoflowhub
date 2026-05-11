@@ -245,6 +245,7 @@ textarea {
 table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 th,
@@ -259,6 +260,34 @@ th {
   font-size: 13px;
   color: var(--muted);
   white-space: nowrap;
+}
+
+.entries-table .col-time {
+  width: 132px;
+}
+
+.entries-table .col-source {
+  width: 148px;
+}
+
+.entries-table .col-title {
+  width: auto;
+}
+
+.cell-time {
+  white-space: nowrap;
+}
+
+.cell-ellipsis {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cell-link {
+  max-width: 100%;
 }
 
 .sort {

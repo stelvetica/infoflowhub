@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -218,6 +219,12 @@ def extract_bilibili_dynamic_text(item: dict[str, Any]) -> str:
     return ""
 
 
+def format_bilibili_published(published_ts: int, published_text: str) -> str:
+    if published_ts > 0:
+        return datetime.fromtimestamp(published_ts).strftime("%Y/%m/%d %H:%M")
+    return str(published_text or "").strip()
+
+
 def fetch_bilibili_user_dynamic(
     uid: str,
     *,
@@ -278,6 +285,7 @@ def fetch_bilibili_user_dynamic(
                     "link": link,
                     "dynamic_link": build_bilibili_dynamic_link(item),
                     "published_ts": published_ts,
+                    "published_at": format_bilibili_published(published_ts, published_text),
                     "published_text": published_text,
                     "author": str(author.get("name") or "").strip(),
                     "raw": item,

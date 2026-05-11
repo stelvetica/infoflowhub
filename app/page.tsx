@@ -99,7 +99,12 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
           </form>
         </div>
         <div className="table-wrap">
-          <table>
+          <table className="entries-table">
+            <colgroup>
+              <col className="col-time" />
+              <col className="col-source" />
+              <col className="col-title" />
+            </colgroup>
             <thead>
               <tr>
                 <th>
@@ -123,10 +128,10 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
               {data.rows.length ? (
                 data.rows.map((item) => (
                   <tr key={`${item.source_id}-${item.link}`}>
-                    <td>{item.display_time}</td>
-                    <td>{item.source_name}</td>
+                    <td className="cell-time">{item.display_time}</td>
+                    <td className="cell-ellipsis" title={item.source_name}>{item.source_name}</td>
                     <td>
-                      <a href={item.link} target="_blank" rel="noreferrer">
+                      <a className="cell-ellipsis cell-link" href={item.link} target="_blank" rel="noreferrer" title={item.title}>
                         {item.title}
                       </a>
                     </td>
