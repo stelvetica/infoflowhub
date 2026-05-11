@@ -137,6 +137,9 @@ def parse_weibo_posts(body_text: str, source: dict, uid: str, limit: int = 8) ->
         title = clean_line(" ".join(content_parts[:2]))
         summary = clean_line(" ".join(content_parts[:6]))
         if title and title not in seen_titles:
+            if "置顶" in title or title.startswith("置顶帖"):
+                i = j
+                continue
             seen_titles.add(title)
             published = fallback_published(normalize_weibo_date(lines[date_index]))
             link_slug = published.replace("/", "").replace(" ", "").replace(":", "")
@@ -180,6 +183,8 @@ def parse_weibo_posts_from_cards(cards: list[dict], source: dict, uid: str, limi
         title = clean_line(" ".join(content_parts[:2]))
         summary = clean_line(" ".join(content_parts[:6]))
         if not title or title in seen_titles:
+            continue
+        if "置顶" in title or title.startswith("置顶帖") or any("置顶" in line for line in lines[:4]):
             continue
         seen_titles.add(title)
         link = (card.get("href") or "").strip()

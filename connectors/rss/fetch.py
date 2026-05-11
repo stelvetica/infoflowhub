@@ -11,6 +11,7 @@ from connectors.web.fetch import fetch_web_many, fetch_web_source
 
 
 USER_AGENT = "infoflowhub-subscriptions/0.1"
+DEFAULT_SOURCE_LIMIT = 20
 
 def _build_request(url: str) -> urllib.request.Request:
     return urllib.request.Request(
@@ -49,7 +50,7 @@ def resolve_feed_url(source: dict, settings: dict | None = None) -> str:
     return feed_url
 
 
-def fetch_feed(source_id: str, source_name: str, feed_url: str, timeout: int = 20) -> FeedFetchResult:
+def fetch_feed(source_id: str, source_name: str, feed_url: str, timeout: int = 20, limit: int = DEFAULT_SOURCE_LIMIT) -> FeedFetchResult:
     try:
         with urllib.request.urlopen(_build_request(feed_url), timeout=timeout) as response:
             status = getattr(response, "status", 200)
@@ -69,7 +70,7 @@ def fetch_feed(source_id: str, source_name: str, feed_url: str, timeout: int = 2
     error = str(getattr(parsed, "bozo_exception", "")) if getattr(parsed, "bozo", 0) else ""
 
     entries: List[FeedEntry] = []
-    for item in parsed.entries:
+    for item in parsed.entries[:limit]:
         entries.append(
             FeedEntry(
                 source_id=source_id,
@@ -95,7 +96,7 @@ def fetch_feed(source_id: str, source_name: str, feed_url: str, timeout: int = 2
 def fetch_many(sources: Iterable[dict], timeout: int = 20, settings: dict | None = None) -> List[FeedFetchResult]:
     source_list = list(sources)
     web_sources = [source for source in source_list if source.get("provider") == "web"]
-    web_results = {result.source_id: result for result in fetch_web_many(web_sources)} if web_sources else {}
+    web_results = {result.source_id: result for result in fetch_web_many(web_sources, limit=DEFAULT_SOURCE_LIMIT)} if web_sources else {}
     results: List[FeedFetchResult] = []
     for source in source_list:
         if source.get("provider") == "web":
@@ -107,6 +108,7 @@ def fetch_many(sources: Iterable[dict], timeout: int = 20, settings: dict | None
                 source_name=source["name"],
                 feed_url=resolve_feed_url(source, settings=settings),
                 timeout=timeout,
+                limit=DEFAULT_SOURCE_LIMIT,
             )
         )
     return results
