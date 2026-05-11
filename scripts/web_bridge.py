@@ -139,6 +139,15 @@ def list_entries(limit: int = 500) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def count_entries() -> int:
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM rss_entries").fetchone()
+    finally:
+        conn.close()
+    return int(row[0]) if row else 0
+
+
 def list_laterhub_items(limit: int = 500) -> list[dict]:
     if not LATERHUB_DB_PATH.exists():
         return []
@@ -158,6 +167,18 @@ def list_laterhub_items(limit: int = 500) -> list[dict]:
     finally:
         conn.close()
     return [dict(row) for row in rows]
+
+
+def count_laterhub_items() -> int:
+    if not LATERHUB_DB_PATH.exists():
+        return 0
+    sqlite3 = __import__("sqlite3")
+    conn = sqlite3.connect(LATERHUB_DB_PATH)
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM links").fetchone()
+    finally:
+        conn.close()
+    return int(row[0]) if row else 0
 
 
 def list_laterhub_summary() -> dict:
@@ -255,20 +276,23 @@ def mark_laterhub_finished(link_id: int, finished: bool) -> dict:
 def snapshot() -> dict:
     return {
         "entries": list_entries(500),
+        "entries_total": count_entries(),
         "source_stats": list_source_stats(),
         "laterhub_items": list_laterhub_items(500),
+        "laterhub_total": count_laterhub_items(),
         "laterhub_summary": list_laterhub_summary(),
         "laterhub_source_stats": list_laterhub_source_stats(),
     }
 
 
 def entries_snapshot() -> dict:
-    return {"entries": list_entries(500)}
+    return {"entries": list_entries(500), "entries_total": count_entries()}
 
 
 def laterhub_snapshot() -> dict:
     return {
         "laterhub_items": list_laterhub_items(500),
+        "laterhub_total": count_laterhub_items(),
         "laterhub_summary": list_laterhub_summary(),
         "laterhub_source_stats": list_laterhub_source_stats(),
     }

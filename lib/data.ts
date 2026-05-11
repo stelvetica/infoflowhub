@@ -22,6 +22,7 @@ type SourcesPayload = { sources: SourceItem[] };
 type HealthPayload = { sources: Record<string, SourceHealth> };
 type SnapshotPayload = {
   entries: SubscriptionsEntry[];
+  entries_total: number;
   source_stats: Array<{ source_id: string; source_name: string; entry_count: number; last_seen: string }>;
   laterhub_items: Array<{
     id: number;
@@ -32,12 +33,14 @@ type SnapshotPayload = {
     updated_at: string;
     is_finished: number;
   }>;
+  laterhub_total: number;
   laterhub_summary: LaterhubSummary;
   laterhub_source_stats: LaterhubSourceStats[];
 };
 
 type EntriesSnapshotPayload = {
   entries: SubscriptionsEntry[];
+  entries_total: number;
 };
 
 type LaterhubSnapshotPayload = {
@@ -50,6 +53,7 @@ type LaterhubSnapshotPayload = {
     updated_at: string;
     is_finished: number;
   }>;
+  laterhub_total: number;
   laterhub_summary: LaterhubSummary;
   laterhub_source_stats: LaterhubSourceStats[];
 };
@@ -289,7 +293,7 @@ export function getEntriesView(query: EntriesQuery) {
       sort_time: toSortableTime(item.published || item.created_at)
     }))
     .sort((a, b) => compareValue(a[sort as keyof typeof a], b[sort as keyof typeof b], dir));
-  return { rows, sort, dir, q: query.q || "" };
+  return { rows, total: snapshot.entries_total, sort, dir, q: query.q || "" };
 }
 
 export function getLaterhubView(query: LaterhubQuery) {
@@ -320,7 +324,7 @@ export function getLaterhubView(query: LaterhubQuery) {
   const allTags = [...new Map(allRows.flatMap((item) => item.tag_list).map((tag) => [normalizeText(tag), tag])).values()].sort((a, b) =>
     a.localeCompare(b, "zh-CN")
   );
-  return { rows, allTags, selectedTags, sort, dir, q: query.q || "", filterFinished };
+  return { rows, total: snapshot.laterhub_total, allTags, selectedTags, sort, dir, q: query.q || "", filterFinished };
 }
 
 export function getSettingsView(query: SourcesQuery) {

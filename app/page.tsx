@@ -74,7 +74,7 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
       <section className="grid three">
         <div className="card metric">
           <div className="label">当前结果</div>
-          <div className="value">{data.rows.length}</div>
+          <div className="value">{data.total}</div>
         </div>
         <div className="card metric">
           <div className="label">排序方式</div>
@@ -160,7 +160,7 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
       <section className="grid three">
         <div className="card metric">
           <div className="label">当前条目</div>
-          <div className="value">{data.rows.length}</div>
+          <div className="value">{data.total}</div>
         </div>
         <div className="card metric">
           <div className="label">已选标签</div>
