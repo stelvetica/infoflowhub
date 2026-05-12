@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { deleteSourceAction, fetchNowAction, finishLaterhubAction, saveSourceAction, toggleSourceAction } from "@/app/actions";
+import { EntriesSplitShell } from "@/app/components/entries-split-shell";
 import { EntriesTableClient } from "@/app/components/entries-table-client";
 import { SubmitButton } from "@/app/components/submit-button";
 import { getEntriesView, getLaterhubView, getSettingsView } from "@/lib/data";
@@ -15,6 +16,12 @@ function one(value: string | string[] | undefined): string {
 function href(view: ViewKey, params: Record<string, string>) {
   const search = new URLSearchParams({ view, ...Object.fromEntries(Object.entries(params).filter(([, value]) => value)) });
   return `/?${search.toString()}`;
+}
+
+function rootHref(params: Record<string, string>) {
+  const search = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value)));
+  const query = search.toString();
+  return query ? `/?${query}` : "/";
 }
 
 function sortHref(view: ViewKey, currentSort: string, currentDir: string, nextSort: string, params: Record<string, string>, time = false) {
@@ -35,65 +42,90 @@ function pageHref(view: ViewKey, params: Record<string, string>, page: number) {
 export default async function Home({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const view = (one(params.view) || "entries") as ViewKey;
+  const showSettings = view === "settings";
 
   return (
     <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <h1>InfoFlowHub</h1>
-        </div>
-        <nav className="nav">
-          <Link href="/?view=entries" className={view === "entries" ? "active" : ""}>
-            订阅内容
-          </Link>
-          <Link href="/?view=laterhub" className={view === "laterhub" ? "active" : ""}>
-            稍后处理
-          </Link>
-          <Link href="/?view=settings" className={view === "settings" ? "active" : ""}>
-            设置
-          </Link>
-        </nav>
-      </aside>
       <main className="main">
-        <div className="stack">{view === "entries" ? <EntriesPanel params={params} /> : view === "laterhub" ? <LaterhubPanel params={params} /> : <SettingsPanel params={params} />}</div>
+        <header className="topbar">
+          <div className="brand">
+            <h1>InfoFlowHub</h1>
+          </div>
+          <Link className={`settings-link ${showSettings ? "active" : ""}`} href={showSettings ? "/" : "/?view=settings"} aria-label="设置">
+            <span aria-hidden="true">⚙️</span>
+          </Link>
+        </header>
+        {showSettings ? (
+          <div className="stack">
+            <SettingsPanel params={params} />
+          </div>
+        ) : (
+          <EntriesSplitShell
+            left={<EntriesPanel params={params} />}
+            right={<LaterhubPanel params={params} />}
+            initialCollapsed={one(params.laterhub_collapsed) === "1"}
+          />
+        )}
       </main>
     </div>
   );
 }
 
 async function EntriesPanel({ params }: { params: Record<string, string | string[] | undefined> }) {
+  const laterhubCollapsed = one(params.laterhub_collapsed);
   const data = getEntriesView({
-    q: one(params.q),
-    sort: one(params.sort),
-    dir: (one(params.dir) || "desc") as "asc" | "desc",
-    page: one(params.page)
+    q: one(params.entries_q),
+    sort: one(params.entries_sort),
+    dir: (one(params.entries_dir) || "desc") as "asc" | "desc",
+    page: one(params.entries_page)
   });
-  const baseParams = { q: data.q };
+  const baseParams = {
+    entries_q: data.q,
+    laterhub_q: one(params.laterhub_q),
+    laterhub_filter_finished: one(params.laterhub_filter_finished),
+    laterhub_filter_tag: one(params.laterhub_filter_tag),
+    laterhub_sort: one(params.laterhub_sort),
+    laterhub_dir: one(params.laterhub_dir),
+    laterhub_collapsed: laterhubCollapsed
+  };
 
   return (
-    <section className="card">
+    <section className="card pane-card pane-card-left">
       <div className="panel-title">
         <h3>订阅内容</h3>
         <form className="toolbar">
-          <input type="hidden" name="view" value="entries" />
-          <input type="hidden" name="sort" value={data.sort} />
-          <input type="hidden" name="dir" value={data.dir} />
-          <input className="input" name="q" defaultValue={data.q} placeholder="搜索标题、来源" />
+          <input type="hidden" name="entries_sort" value={data.sort} />
+          <input type="hidden" name="entries_dir" value={data.dir} />
+          <input type="hidden" name="laterhub_q" value={one(params.laterhub_q)} />
+          <input type="hidden" name="laterhub_filter_finished" value={one(params.laterhub_filter_finished)} />
+          <input type="hidden" name="laterhub_filter_tag" value={one(params.laterhub_filter_tag)} />
+          <input type="hidden" name="laterhub_sort" value={one(params.laterhub_sort)} />
+          <input type="hidden" name="laterhub_dir" value={one(params.laterhub_dir)} />
+          <input type="hidden" name="laterhub_collapsed" value={laterhubCollapsed} />
+          <input className="input" name="entries_q" defaultValue={data.q} placeholder="搜索标题、来源" />
           <button className="btn" type="submit">
             搜索
           </button>
         </form>
       </div>
-      <EntriesTableClient rows={data.rows} sort={data.sort} dir={data.dir} q={data.q} />
+      <EntriesTableClient rows={data.rows} sort={data.sort} dir={data.dir} q={data.q} sharedParams={baseParams} />
       <div className="pagination">
         <div className="subtle">
           第 {data.page} / {data.totalPages} 页，共 {data.filteredTotal} 条
         </div>
         <div className="toolbar">
-          <Link className={`btn ghost ${data.page <= 1 ? "disabled" : ""}`} href={data.page > 1 ? pageHref("entries", { ...baseParams, sort: data.sort, dir: data.dir }, data.page - 1) : "#"} aria-disabled={data.page <= 1}>
+          <Link
+            className={`btn ghost ${data.page <= 1 ? "disabled" : ""}`}
+            href={data.page > 1 ? pageHref("entries", { ...baseParams, entries_sort: data.sort, entries_dir: data.dir }, data.page - 1) : "#"}
+            aria-disabled={data.page <= 1}
+          >
             上一页
           </Link>
-          <Link className={`btn ghost ${data.page >= data.totalPages ? "disabled" : ""}`} href={data.page < data.totalPages ? pageHref("entries", { ...baseParams, sort: data.sort, dir: data.dir }, data.page + 1) : "#"} aria-disabled={data.page >= data.totalPages}>
+          <Link
+            className={`btn ghost ${data.page >= data.totalPages ? "disabled" : ""}`}
+            href={data.page < data.totalPages ? pageHref("entries", { ...baseParams, entries_sort: data.sort, entries_dir: data.dir }, data.page + 1) : "#"}
+            aria-disabled={data.page >= data.totalPages}
+          >
             下一页
           </Link>
         </div>
@@ -103,46 +135,76 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
 }
 
 async function LaterhubPanel({ params }: { params: Record<string, string | string[] | undefined> }) {
+  const entriesQ = one(params.entries_q);
+  const entriesSort = one(params.entries_sort);
+  const entriesDir = one(params.entries_dir);
+  const laterhubCollapsed = one(params.laterhub_collapsed);
   const data = getLaterhubView({
-    q: one(params.q),
-    filter_finished: one(params.filter_finished),
-    filter_tag: one(params.filter_tag),
-    sort: one(params.sort),
-    dir: (one(params.dir) || "desc") as "asc" | "desc"
+    q: one(params.laterhub_q),
+    filter_finished: one(params.laterhub_filter_finished),
+    filter_tag: one(params.laterhub_filter_tag),
+    sort: one(params.laterhub_sort),
+    dir: (one(params.laterhub_dir) || "desc") as "asc" | "desc"
   });
 
+  function laterhubRoot(extra: Record<string, string> = {}) {
+    return rootHref({
+      entries_q: entriesQ,
+      entries_sort: entriesSort,
+      entries_dir: entriesDir,
+      laterhub_q: data.q,
+      laterhub_filter_finished: data.filterFinished,
+      laterhub_filter_tag: joinTags(data.selectedTags),
+      laterhub_sort: data.sort,
+      laterhub_dir: data.dir,
+      laterhub_collapsed: laterhubCollapsed,
+      ...extra
+    });
+  }
+
   return (
-    <>
-      <section className="card">
+    <div className="pane-right-stack">
+      <section className="card pane-card pane-card-right">
         <div className="panel-title">
-          <h3>筛选</h3>
+          <h3>稍后处理</h3>
         </div>
         <form className="filterbar">
-          <input type="hidden" name="view" value="laterhub" />
-          <input type="hidden" name="sort" value={data.sort} />
-          <input type="hidden" name="dir" value={data.dir} />
-          <input className="input" name="q" defaultValue={data.q} placeholder="搜索标题或标签" />
-          <select className="select" name="filter_finished" defaultValue={data.filterFinished}>
+          <input type="hidden" name="entries_q" value={entriesQ} />
+          <input type="hidden" name="entries_sort" value={entriesSort} />
+          <input type="hidden" name="entries_dir" value={entriesDir} />
+          <input type="hidden" name="laterhub_sort" value={data.sort} />
+          <input type="hidden" name="laterhub_dir" value={data.dir} />
+          <input type="hidden" name="laterhub_filter_tag" value={joinTags(data.selectedTags)} />
+          <input type="hidden" name="laterhub_collapsed" value={laterhubCollapsed} />
+          <input className="input" name="laterhub_q" defaultValue={data.q} placeholder="搜索标题或标签" />
+          <select className="select" name="laterhub_filter_finished" defaultValue={data.filterFinished}>
             <option value="0">未完成</option>
             <option value="1">已完成</option>
             <option value="">全部</option>
           </select>
-          <input type="hidden" name="filter_tag" value={joinTags(data.selectedTags)} />
           <button className="btn" type="submit">
             搜索
           </button>
-          <Link className="btn ghost" href="/?view=laterhub">
+          <Link
+            className="btn ghost"
+            href={rootHref({
+              entries_q: entriesQ,
+              entries_sort: entriesSort,
+              entries_dir: entriesDir,
+              laterhub_collapsed: laterhubCollapsed
+            })}
+          >
             清空
           </Link>
         </form>
       </section>
-      <section className="card">
+      <section className="card pane-card pane-card-right">
         <div className="panel-title">
           <h3>标签</h3>
           <div className="subtle">已选：{data.selectedTags.length ? data.selectedTags.join("、") : "无"}</div>
         </div>
         <div className="chips">
-          <Link className={`chip ${data.selectedTags.length ? "" : "active"}`} href={href("laterhub", { q: data.q, filter_finished: data.filterFinished, sort: data.sort, dir: data.dir, filter_tag: "" })}>
+          <Link className={`chip ${data.selectedTags.length ? "" : "active"}`} href={laterhubRoot({ laterhub_filter_tag: "" })}>
             全部
           </Link>
           {data.allTags.map((tag) => {
@@ -150,7 +212,7 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
             const active = data.selectedTags.some((item) => normalizeText(item) === key);
             const next = active ? data.selectedTags.filter((item) => normalizeText(item) !== key) : [...data.selectedTags, tag];
             return (
-              <Link key={tag} className={`chip ${active ? "active" : ""}`} href={href("laterhub", { q: data.q, filter_finished: data.filterFinished, sort: data.sort, dir: data.dir, filter_tag: joinTags(next) })}>
+              <Link key={tag} className={`chip ${active ? "active" : ""}`} href={laterhubRoot({ laterhub_filter_tag: joinTags(next) })}>
                 {tag}
               </Link>
             );
@@ -171,7 +233,7 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
           </div>
         </div>
       </section>
-      <section className="card">
+      <section className="card pane-card pane-card-right">
         <div className="table-wrap">
           <table className="laterhub-table">
             <colgroup>
@@ -182,17 +244,56 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
             <thead>
               <tr>
                 <th>
-                  <Link className="sort" href={sortHref("laterhub", data.sort, data.dir, "sort_time", { q: data.q, filter_finished: data.filterFinished, filter_tag: joinTags(data.selectedTags) }, true)}>
+                  <Link
+                    className="sort"
+                    href={rootHref({
+                      entries_q: entriesQ,
+                      entries_sort: entriesSort,
+                      entries_dir: entriesDir,
+                      laterhub_q: data.q,
+                      laterhub_filter_finished: data.filterFinished,
+                      laterhub_filter_tag: joinTags(data.selectedTags),
+                      laterhub_sort: "sort_time",
+                      laterhub_dir: data.sort !== "sort_time" || data.dir === "asc" ? "desc" : "asc",
+                      laterhub_collapsed: laterhubCollapsed
+                    })}
+                  >
                     时间
                   </Link>
                 </th>
                 <th>
-                  <Link className="sort" href={sortHref("laterhub", data.sort, data.dir, "title", { q: data.q, filter_finished: data.filterFinished, filter_tag: joinTags(data.selectedTags) })}>
+                  <Link
+                    className="sort"
+                    href={rootHref({
+                      entries_q: entriesQ,
+                      entries_sort: entriesSort,
+                      entries_dir: entriesDir,
+                      laterhub_q: data.q,
+                      laterhub_filter_finished: data.filterFinished,
+                      laterhub_filter_tag: joinTags(data.selectedTags),
+                      laterhub_sort: "title",
+                      laterhub_dir: data.sort !== "title" || data.dir === "desc" ? "asc" : "desc",
+                      laterhub_collapsed: laterhubCollapsed
+                    })}
+                  >
                     链接
                   </Link>
                 </th>
                 <th>
-                  <Link className="sort" href={sortHref("laterhub", data.sort, data.dir, "finished_text", { q: data.q, filter_finished: data.filterFinished, filter_tag: joinTags(data.selectedTags) })}>
+                  <Link
+                    className="sort"
+                    href={rootHref({
+                      entries_q: entriesQ,
+                      entries_sort: entriesSort,
+                      entries_dir: entriesDir,
+                      laterhub_q: data.q,
+                      laterhub_filter_finished: data.filterFinished,
+                      laterhub_filter_tag: joinTags(data.selectedTags),
+                      laterhub_sort: "finished_text",
+                      laterhub_dir: data.sort !== "finished_text" || data.dir === "desc" ? "asc" : "desc",
+                      laterhub_collapsed: laterhubCollapsed
+                    })}
+                  >
                     完成
                   </Link>
                 </th>
@@ -233,7 +334,7 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
           </table>
         </div>
       </section>
-    </>
+    </div>
   );
 }
 
@@ -277,6 +378,9 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
             <form action={fetchNowAction}>
               <SubmitButton idleText="立即抓取" pendingText="抓取中..." />
             </form>
+            <a className="btn ghost" href="/api/restart-dev?returnTo=%2F%3Fview%3Dsettings">
+              强制重启并清缓存
+            </a>
           </div>
         </div>
         <div className="settings-error-block">

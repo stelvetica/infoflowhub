@@ -16,11 +16,12 @@ type EntriesTableClientProps = {
   sort: string;
   dir: "asc" | "desc";
   q: string;
+  sharedParams?: Record<string, string>;
 };
 
 const STORAGE_KEY = "infoflowhub:read-links";
 
-function sortHref(currentSort: string, currentDir: string, nextSort: string, q: string, time = false) {
+function sortHref(currentSort: string, currentDir: string, nextSort: string, q: string, sharedParams: Record<string, string>, time = false) {
   const nextDir = time
     ? currentSort !== nextSort || currentDir === "asc"
       ? "desc"
@@ -28,12 +29,12 @@ function sortHref(currentSort: string, currentDir: string, nextSort: string, q: 
     : currentSort !== nextSort || currentDir === "desc"
       ? "asc"
       : "desc";
-  const search = new URLSearchParams({ view: "entries", sort: nextSort, dir: nextDir });
-  if (q) search.set("q", q);
+  const search = new URLSearchParams({ ...sharedParams, entries_sort: nextSort, entries_dir: nextDir });
+  if (q) search.set("entries_q", q);
   return `/?${search.toString()}`;
 }
 
-export function EntriesTableClient({ rows, sort, dir, q }: EntriesTableClientProps) {
+export function EntriesTableClient({ rows, sort, dir, q, sharedParams = {} }: EntriesTableClientProps) {
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
   const [readLinks, setReadLinks] = useState<Record<string, boolean>>({});
 
@@ -76,17 +77,17 @@ export function EntriesTableClient({ rows, sort, dir, q }: EntriesTableClientPro
           <thead>
             <tr>
               <th>
-                <Link className="sort" href={sortHref(sort, dir, "sort_time", q, true)}>
+                <Link className="sort" href={sortHref(sort, dir, "sort_time", q, sharedParams, true)}>
                   时间
                 </Link>
               </th>
               <th>
-                <Link className="sort" href={sortHref(sort, dir, "source_name", q)}>
+                <Link className="sort" href={sortHref(sort, dir, "source_name", q, sharedParams)}>
                   来源
                 </Link>
               </th>
               <th>
-                <Link className="sort" href={sortHref(sort, dir, "title", q)}>
+                <Link className="sort" href={sortHref(sort, dir, "title", q, sharedParams)}>
                   标题
                 </Link>
               </th>
