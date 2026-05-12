@@ -45,7 +45,7 @@
       "provider": "web",
       "fetch_via": "web",
       "kind": "web",
-      "enabled": true,
+      "enabled": false,
       "note": ""
     },
     {
@@ -145,18 +145,6 @@
       "note": ""
     },
     {
-      "id": "宏观-宏观边际macromargin",
-      "name": "宏观 宏观边际MacroMargin",
-      "group": "00_⭐️+微信星标",
-      "feed_url": "https://rsshub.app/twitter/user/MacroMargin",
-      "site_url": "https://x.com/MacroMargin",
-      "provider": "web",
-      "fetch_via": "web",
-      "kind": "web",
-      "enabled": true,
-      "note": ""
-    },
-    {
       "id": "外资观点-小黄的投资笔记-的-bilibili-动态",
       "name": "外资观点 小黄的投资笔记 的 bilibili 动态",
       "group": "00_⭐️+微信星标",
@@ -165,7 +153,7 @@
       "provider": "web",
       "fetch_via": "web",
       "kind": "web",
-      "enabled": true,
+      "enabled": false,
       "note": ""
     },
     {
@@ -189,7 +177,7 @@
       "provider": "web",
       "fetch_via": "web",
       "kind": "web",
-      "enabled": true,
+      "enabled": false,
       "note": "用户手动补充"
     },
     {
@@ -203,6 +191,18 @@
       "kind": "web",
       "enabled": true,
       "note": "用户手动补充"
+    },
+    {
+      "id": "macro-margin-x",
+      "name": "宏观 MacroMargin",
+      "group": "00_?+????",
+      "feed_url": "https://rsshub.app/twitter/user/MacroMargin",
+      "site_url": "https://x.com/MacroMargin",
+      "provider": "web",
+      "fetch_via": "web",
+      "kind": "web",
+      "enabled": true,
+      "note": "??Chrome??profile?????"
     }
   ]
 }

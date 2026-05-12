@@ -14,6 +14,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 RUNTIME_DIR = BASE_DIR / "runtime"
 BILIBILI_PROFILE_DIR = RUNTIME_DIR / "browser_profiles" / "pw-bili-profile"
 WEIBO_PROFILE_DIR = RUNTIME_DIR / "browser_profiles" / "pw-weibo-profile"
+X_PROFILE_DIR = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data" / "Profile 2"
 
 
 @dataclass
@@ -172,6 +173,15 @@ def launch_weibo_context(playwright, headless: bool):
     WEIBO_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     return playwright.chromium.launch_persistent_context(
         user_data_dir=str(WEIBO_PROFILE_DIR),
+        headless=headless,
+        args=["--window-size=1440,960"],
+        user_agent=USER_AGENT,
+    )
+
+
+def launch_x_context(playwright, headless: bool):
+    return playwright.chromium.launch_persistent_context(
+        user_data_dir=str(X_PROFILE_DIR),
         headless=headless,
         args=["--window-size=1440,960"],
         user_agent=USER_AGENT,

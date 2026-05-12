@@ -6,7 +6,14 @@ from datetime import datetime
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
-from connectors.web.common import clean_line, fallback_published, normalize_english_date, resolve_web_target, result_error
+from connectors.web.common import (
+    clean_line,
+    fallback_published,
+    normalize_english_date,
+    parse_published_datetime,
+    resolve_web_target,
+    result_error,
+)
 
 
 def parse_x_posts(body_text: str, username: str, limit: int = 8) -> list[FeedEntry]:
@@ -139,6 +146,24 @@ def extract_x_articles(page, username: str, limit: int = 8) -> list[dict]:
     return [item for item in items if item.get("href")]
 
 
+def collect_x_articles(page, username: str, limit: int = 12, rounds: int = 4) -> list[dict]:
+    merged: dict[str, dict] = {}
+    previous_count = -1
+    for _ in range(rounds):
+        items = extract_x_articles(page, username, limit=max(limit * 3, 24))
+        for item in items:
+            href = (item.get("href") or "").strip()
+            if not href:
+                continue
+            merged[href] = item
+        if len(merged) == previous_count:
+            break
+        previous_count = len(merged)
+        page.mouse.wheel(0, 2600)
+        page.wait_for_timeout(1800)
+    return list(merged.values())
+
+
 def normalize_iso_datetime(value: str) -> str:
     text = (value or "").strip()
     if not text:
@@ -172,14 +197,33 @@ def parse_x_article_text(raw_text: str) -> tuple[str, str]:
         "Post",
         "Replying to",
     }
+    time_patterns = (
+        r"\d+[smhdwy]$",
+        r"\d+\s*(秒|分钟|分|小时|天|周|月|年)前$",
+        r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(,\s+\d{4})?$",
+    )
     filtered: list[str] = []
     for line in lines:
         if line in skip_exact:
             continue
+        if line == "Article":
+            continue
         if line.startswith("@"):
+            continue
+        if line == "·":
             continue
         if re.fullmatch(r"[\d,.]+[KMB]?", line):
             continue
+        if any(re.fullmatch(pattern, line, flags=re.IGNORECASE) for pattern in time_patterns):
+            continue
+        if re.search(r"(关注中|正在关注|Following)$", line):
+            continue
+        if len(line) <= 40 and re.fullmatch(r"[\w\u4e00-\u9fff][\w\u4e00-\u9fff ._-]*", line):
+            next_line = ""
+            if filtered:
+                next_line = filtered[-1]
+            if not next_line and (len(filtered) == 0):
+                continue
         filtered.append(line)
 
     if not filtered:
@@ -200,7 +244,7 @@ def fetch_x_with_page(page, source: dict, timeout_ms: int = 60000) -> FeedFetchR
     except Exception as exc:
         return result_error(source, f"X 网页直抓失败: {exc}")
 
-    article_items = extract_x_articles(page, target.uid, limit=8)
+    article_items = collect_x_articles(page, target.uid, limit=12, rounds=5)
     status_items = extract_x_status_map(page, target.uid)
     entries = parse_x_posts(body_text, target.uid, limit=max(len(status_items), 8))
     normalized_entries: list[FeedEntry] = []
@@ -242,6 +286,12 @@ def fetch_x_with_page(page, source: dict, timeout_ms: int = 60000) -> FeedFetchR
                 summary=item.summary,
             )
         )
+
+    normalized_entries.sort(
+        key=lambda item: parse_published_datetime(item.published) or datetime.min,
+        reverse=True,
+    )
+    normalized_entries = normalized_entries[:12]
 
     return FeedFetchResult(
         source_id=source["id"],

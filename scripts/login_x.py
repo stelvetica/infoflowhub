@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from playwright.sync_api import sync_playwright
 
-from connectors.web.fetch import USER_AGENT, X_PROFILE_DIR
+from connectors.web.common import USER_AGENT, X_PROFILE_DIR
 
 
 X_HOME = "https://x.com/i/flow/login"
 
 
 def main() -> None:
-    X_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     print("将打开 X 登录页。请在弹出的窗口中完成登录，完成后直接关闭浏览器窗口即可。")
     print(f"登录态目录: {X_PROFILE_DIR}")
 
