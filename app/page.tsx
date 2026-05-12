@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { deleteSourceAction, fetchNowAction, finishLaterhubAction, saveSourceAction, toggleSourceAction } from "@/app/actions";
+import { EntriesTableClient } from "@/app/components/entries-table-client";
 import { SubmitButton } from "@/app/components/submit-button";
 import { getEntriesView, getLaterhubView, getSettingsView } from "@/lib/data";
 import { joinTags, normalizeText } from "@/lib/utils";
@@ -54,9 +55,7 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
         </nav>
       </aside>
       <main className="main">
-        <div className="stack">
-          {view === "entries" ? <EntriesPanel params={params} /> : view === "laterhub" ? <LaterhubPanel params={params} /> : <SettingsPanel params={params} />}
-        </div>
+        <div className="stack">{view === "entries" ? <EntriesPanel params={params} /> : view === "laterhub" ? <LaterhubPanel params={params} /> : <SettingsPanel params={params} />}</div>
       </main>
     </div>
   );
@@ -70,6 +69,7 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
     page: one(params.page)
   });
   const baseParams = { q: data.q };
+
   return (
     <section className="card">
       <div className="panel-title">
@@ -84,57 +84,7 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
           </button>
         </form>
       </div>
-      <div className="table-wrap">
-        <table className="entries-table">
-          <colgroup>
-            <col className="col-time" />
-            <col className="col-source" />
-            <col className="col-title" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>
-                <Link className="sort" href={sortHref("entries", data.sort, data.dir, "sort_time", baseParams, true)}>
-                  时间
-                </Link>
-              </th>
-              <th>
-                <Link className="sort" href={sortHref("entries", data.sort, data.dir, "source_name", baseParams)}>
-                  来源
-                </Link>
-              </th>
-              <th>
-                <Link className="sort" href={sortHref("entries", data.sort, data.dir, "title", baseParams)}>
-                  标题
-                </Link>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.rows.length ? (
-              data.rows.map((item) => (
-                <tr key={`${item.source_id}-${item.link}`}>
-                  <td className="cell-time">{item.display_time}</td>
-                  <td className="cell-ellipsis cell-muted" title={item.source_name}>
-                    {item.source_name}
-                  </td>
-                  <td>
-                    <a className="cell-ellipsis cell-link cell-strong" href={item.link} target="_blank" rel="noreferrer" title={item.title}>
-                      {item.title}
-                    </a>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={3} className="empty">
-                  没有匹配内容
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <EntriesTableClient rows={data.rows} sort={data.sort} dir={data.dir} q={data.q} />
       <div className="pagination">
         <div className="subtle">
           第 {data.page} / {data.totalPages} 页，共 {data.filteredTotal} 条
@@ -143,11 +93,7 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
           <Link className={`btn ghost ${data.page <= 1 ? "disabled" : ""}`} href={data.page > 1 ? pageHref("entries", { ...baseParams, sort: data.sort, dir: data.dir }, data.page - 1) : "#"} aria-disabled={data.page <= 1}>
             上一页
           </Link>
-          <Link
-            className={`btn ghost ${data.page >= data.totalPages ? "disabled" : ""}`}
-            href={data.page < data.totalPages ? pageHref("entries", { ...baseParams, sort: data.sort, dir: data.dir }, data.page + 1) : "#"}
-            aria-disabled={data.page >= data.totalPages}
-          >
+          <Link className={`btn ghost ${data.page >= data.totalPages ? "disabled" : ""}`} href={data.page < data.totalPages ? pageHref("entries", { ...baseParams, sort: data.sort, dir: data.dir }, data.page + 1) : "#"} aria-disabled={data.page >= data.totalPages}>
             下一页
           </Link>
         </div>
@@ -164,25 +110,12 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
     sort: one(params.sort),
     dir: (one(params.dir) || "desc") as "asc" | "desc"
   });
+
   return (
     <>
-      <section className="grid three">
-        <div className="card metric">
-          <div className="label">当前条目</div>
-          <div className="value">{data.total}</div>
-        </div>
-        <div className="card metric">
-          <div className="label">已选标签</div>
-          <div className="value small">{data.selectedTags.length ? data.selectedTags.join(" / ") : "无"}</div>
-        </div>
-        <div className="card metric">
-          <div className="label">完成筛选</div>
-          <div className="value small">{data.filterFinished === "1" ? "只看已完成" : data.filterFinished === "0" ? "只看未完成" : "全部"}</div>
-        </div>
-      </section>
       <section className="card">
         <div className="panel-title">
-          <h3>稍后处理内容</h3>
+          <h3>筛选</h3>
         </div>
         <form className="filterbar">
           <input type="hidden" name="view" value="laterhub" />
@@ -205,7 +138,7 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
       </section>
       <section className="card">
         <div className="panel-title">
-          <h3>标签筛选</h3>
+          <h3>标签</h3>
           <div className="subtle">已选：{data.selectedTags.length ? data.selectedTags.join("、") : "无"}</div>
         </div>
         <div className="chips">
@@ -217,15 +150,25 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
             const active = data.selectedTags.some((item) => normalizeText(item) === key);
             const next = active ? data.selectedTags.filter((item) => normalizeText(item) !== key) : [...data.selectedTags, tag];
             return (
-              <Link
-                key={tag}
-                className={`chip ${active ? "active" : ""}`}
-                href={href("laterhub", { q: data.q, filter_finished: data.filterFinished, sort: data.sort, dir: data.dir, filter_tag: joinTags(next) })}
-              >
+              <Link key={tag} className={`chip ${active ? "active" : ""}`} href={href("laterhub", { q: data.q, filter_finished: data.filterFinished, sort: data.sort, dir: data.dir, filter_tag: joinTags(next) })}>
                 {tag}
               </Link>
             );
           })}
+        </div>
+        <div className="laterhub-summary-inline">
+          <div className="inline-metric">
+            <span className="label">当前条目</span>
+            <strong>{data.total}</strong>
+          </div>
+          <div className="inline-metric">
+            <span className="label">已选标签</span>
+            <strong>{data.selectedTags.length ? data.selectedTags.length : "无"}</strong>
+          </div>
+          <div className="inline-metric">
+            <span className="label">完成筛选</span>
+            <strong>{data.filterFinished === "1" ? "已完成" : data.filterFinished === "0" ? "未完成" : "全部"}</strong>
+          </div>
         </div>
       </section>
       <section className="card">
@@ -302,55 +245,54 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
   });
   const editId = one(params.edit_source);
   const editing = data.sources.find((item) => item.id === editId);
+
   return (
     <>
-      <section className="grid four">
-        <div className="card metric">
-          <div className="label">最近执行</div>
-          <div className="value">{data.status.last_run_at ? data.status.last_run_at.slice(5, 16) : "-"}</div>
+      <section className="card">
+        <div className="panel-title">
+          <h3>订阅设置</h3>
         </div>
-        <div className="card metric">
-          <div className="label">最近成功</div>
-          <div className="value">{data.status.last_success_at ? data.status.last_success_at.slice(5, 16) : "-"}</div>
-        </div>
-        <div className="card metric">
-          <div className="label">抓取成功源</div>
-          <div className="value">
-            {data.status.last_success_sources}/{data.status.last_total_sources}
+        <div className="settings-topbar">
+          <div className="metric-strip">
+            <div className="metric-chip">
+              <span className="label">最近执行</span>
+              <strong>{data.status.last_run_at ? data.status.last_run_at.slice(5, 16) : "-"}</strong>
+            </div>
+            <div className="metric-chip">
+              <span className="label">最近成功</span>
+              <strong>{data.status.last_success_at ? data.status.last_success_at.slice(5, 16) : "-"}</strong>
+            </div>
+            <div className="metric-chip">
+              <span className="label">抓取成功源</span>
+              <strong>
+                {data.status.last_success_sources}/{data.status.last_total_sources}
+              </strong>
+            </div>
+            <div className="metric-chip">
+              <span className="label">新增条目</span>
+              <strong>{data.status.last_inserted_entries}</strong>
+            </div>
+          </div>
+          <div className="settings-actions">
+            <form action={fetchNowAction}>
+              <SubmitButton idleText="立即抓取" pendingText="抓取中..." />
+            </form>
           </div>
         </div>
-        <div className="card metric">
-          <div className="label">新增条目</div>
-          <div className="value">{data.status.last_inserted_entries}</div>
+        <div className="settings-error-block">
+          <div className="subtle">错误详情</div>
+          <pre className="codebox compact">{data.status.last_error || "无"}</pre>
         </div>
       </section>
-      <section className="grid two">
-        <div className="card">
-          <div className="panel-title">
-            <h3>手动抓取</h3>
-          </div>
-          <form action={fetchNowAction}>
-            <SubmitButton idleText="立即抓取" pendingText="抓取中..." />
-          </form>
+
+      <section className="card">
+        <div className="panel-title">
+          <h3>稍后处理设置区</h3>
         </div>
-        <div className="card">
-          <div className="panel-title">
-            <h3>稍后处理概览</h3>
-          </div>
+        <div className="settings-summary-row">
           <p className="subtle">总数：{data.summary.total_count}</p>
           <p className="subtle">未完成：{data.summary.unfinished_count}</p>
           <p className="subtle">已完成：{data.summary.finished_count}</p>
-        </div>
-      </section>
-      <section className="card">
-        <div className="panel-title">
-          <h3>错误详情</h3>
-        </div>
-        <pre className="codebox">{data.status.last_error || "无"}</pre>
-      </section>
-      <section className="card">
-        <div className="panel-title">
-          <h3>稍后处理来源</h3>
         </div>
         <div className="table-wrap">
           <table>
@@ -377,6 +319,7 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
           </table>
         </div>
       </section>
+
       <section className="card">
         <div className="panel-title">
           <h3>订阅源管理</h3>
@@ -454,34 +397,34 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
           </table>
         </div>
       </section>
-      <section className="grid two">
-        <div className="card">
-          <div className="panel-title">
-            <h3>{editing ? "编辑订阅源" : "新增订阅源"}</h3>
-            {editing ? (
-              <Link className="btn ghost" href={href("settings", { source_q: data.q, sort: data.sort, dir: data.dir })}>
-                取消编辑
-              </Link>
-            ) : null}
-          </div>
-          <form action={saveSourceAction} className="form-grid">
-            <input type="hidden" name="source_id" value={editing?.id || ""} />
-            <label>
-              名称
-              <input className="input" name="name" defaultValue={editing?.name || ""} required />
-            </label>
-            <label>
-              站点 URL
-              <input className="input" name="site_url" defaultValue={editing?.site_url || ""} />
-            </label>
-            <label>
-              RSS URL
-              <input className="input" name="feed_url" defaultValue={editing?.feed_url || ""} required />
-            </label>
-            <SubmitButton idleText="保存" pendingText="保存中..." />
-          </form>
+
+      <section className="card">
+        <div className="panel-title">
+          <h3>{editing ? "编辑订阅源" : "新增订阅源"}</h3>
+          {editing ? (
+            <Link className="btn ghost" href={href("settings", { source_q: data.q, sort: data.sort, dir: data.dir })}>
+              取消编辑
+            </Link>
+          ) : null}
         </div>
-        <div className="card" />
+        <form action={saveSourceAction} className="form-grid form-grid-inline">
+          <input type="hidden" name="source_id" value={editing?.id || ""} />
+          <label>
+            名称
+            <input className="input" name="name" defaultValue={editing?.name || ""} required />
+          </label>
+          <label>
+            站点 URL
+            <input className="input" name="site_url" defaultValue={editing?.site_url || ""} />
+          </label>
+          <label>
+            RSS URL
+            <input className="input" name="feed_url" defaultValue={editing?.feed_url || ""} required />
+          </label>
+          <div className="form-submit-inline">
+            <SubmitButton idleText="保存" pendingText="保存中..." />
+          </div>
+        </form>
       </section>
     </>
   );

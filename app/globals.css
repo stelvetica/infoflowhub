@@ -232,6 +232,12 @@ textarea {
   border-color: rgba(107, 99, 86, 0.18);
 }
 
+.btn.ghost.active-filter {
+  color: var(--accent);
+  border-color: rgba(154, 52, 18, 0.24);
+  background: var(--accent-soft);
+}
+
 .btn.link {
   background: transparent;
   color: var(--accent);
@@ -307,6 +313,10 @@ th {
   color: var(--text);
 }
 
+.cell-read {
+  color: #9b9386;
+}
+
 .cell-muted {
   color: var(--muted);
 }
@@ -358,6 +368,27 @@ th {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.laterhub-summary-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.inline-metric {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(242, 234, 216, 0.6);
+}
+
+.inline-metric .label {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .chip {
@@ -419,6 +450,10 @@ th {
   line-height: 1.6;
 }
 
+.codebox.compact {
+  margin-top: 8px;
+}
+
 .modal {
   display: grid;
   gap: 12px;
@@ -429,10 +464,69 @@ th {
   gap: 12px;
 }
 
+.form-grid-inline {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+}
+
+.form-submit-inline {
+  align-self: end;
+}
+
 .form-grid label {
   display: grid;
   gap: 8px;
   color: var(--muted);
+}
+
+.settings-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.metric-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  flex: 1 1 640px;
+}
+
+.metric-chip {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(242, 234, 216, 0.66));
+  border: 1px solid rgba(154, 52, 18, 0.08);
+}
+
+.metric-chip .label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.metric-chip strong {
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+}
+
+.settings-error-block {
+  margin-top: 16px;
+}
+
+.settings-summary-row {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
 }
 
 @media (max-width: 980px) {
@@ -455,6 +549,15 @@ th {
   .grid.three,
   .grid.four {
     grid-template-columns: 1fr;
+  }
+
+  .metric-strip,
+  .form-grid-inline {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-topbar {
+    align-items: stretch;
   }
 
   .pagination {
