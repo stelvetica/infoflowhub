@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from apps.subscriptions.models import FeedEntry, FeedFetchResult
 
 try:
     from dotenv import load_dotenv
@@ -300,3 +302,73 @@ def fetch_bilibili_user_dynamic(
             break
 
     return collected[:limit]
+
+
+def fetch_bilibili_dynamic_feed(source: dict, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
+    site_url = str(source.get("site_url") or "").strip()
+    match = re.search(r"space\.bilibili\.com/(\d+)", site_url)
+    if not match:
+        return FeedFetchResult(
+            source_id=source["id"],
+            source_name=source["name"],
+            feed_url=source["feed_url"],
+            ok=False,
+            status=0,
+            entries=[],
+            error="暂不支持的 B 站网页源",
+        )
+
+    uid = match.group(1)
+    page_url = f"https://space.bilibili.com/{uid}/dynamic"
+    try:
+        items = fetch_bilibili_user_dynamic(uid, limit=limit, timeout=max(10, timeout_ms // 1000))
+    except Exception as exc:
+        return FeedFetchResult(
+            source_id=source["id"],
+            source_name=source["name"],
+            feed_url=page_url,
+            ok=False,
+            status=0,
+            entries=[],
+            error=f"B站抓取失败[uid={uid}][stage=api][kind=unknown][attempt=1][url={page_url}]: {exc}",
+        )
+
+    entries: list[FeedEntry] = []
+    for item in items:
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        link = str(item.get("link") or item.get("dynamic_link") or page_url).strip()
+        summary = str(item.get("summary") or "").strip()
+        published = str(item.get("published_at") or item.get("published_text") or "").strip()
+        entries.append(
+            FeedEntry(
+                source_id=source["id"],
+                source_name=source["name"],
+                title=title,
+                link=link,
+                published=published or datetime.now().strftime("%Y/%m/%d %H:%M"),
+                summary=summary,
+            )
+        )
+
+    if not entries:
+        return FeedFetchResult(
+            source_id=source["id"],
+            source_name=source["name"],
+            feed_url=page_url,
+            ok=False,
+            status=0,
+            entries=[],
+            error=f"B站抓取失败[uid={uid}][stage=api][kind=empty][attempt=1][url={page_url}]: 动态接口返回成功，但未产出条目",
+        )
+
+    return FeedFetchResult(
+        source_id=source["id"],
+        source_name=source["name"],
+        feed_url=page_url,
+        ok=True,
+        status=200,
+        entries=entries,
+        error="",
+    )

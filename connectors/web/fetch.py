@@ -3,15 +3,14 @@ from __future__ import annotations
 from playwright.sync_api import sync_playwright
 
 from apps.subscriptions.models import FeedFetchResult
+from connectors.api.bilibili import fetch_bilibili_dynamic_feed
 from connectors.web.common import USER_AGENT, launch_weibo_context, launch_x_context, resolve_web_target, result_error
 
 
 def fetch_web_source(source: dict) -> FeedFetchResult:
     target = resolve_web_target(source)
     if target and target.site == "bilibili":
-        from connectors.web.bilibili import fetch_bilibili_dynamic
-
-        return fetch_bilibili_dynamic(source)
+        return fetch_bilibili_dynamic_feed(source)
     try:
         with sync_playwright() as playwright:
             if target and target.site == "weibo":
@@ -54,9 +53,7 @@ def fetch_web_many(sources: list[dict], limit: int = 12, timeout_ms: int = 60000
                         results.append(result_error(source, "暂不支持的网页直抓源"))
                         continue
                     if target.site == "bilibili":
-                        from connectors.web.bilibili import fetch_bilibili_dynamic_via_api
-
-                        results.append(fetch_bilibili_dynamic_via_api(source, limit=limit, timeout_ms=timeout_ms))
+                        results.append(fetch_bilibili_dynamic_feed(source, limit=limit, timeout_ms=timeout_ms))
                         continue
                     if target.site == "weibo":
                         from connectors.web.weibo import fetch_weibo_with_page

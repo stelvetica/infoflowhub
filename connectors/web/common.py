@@ -11,9 +11,7 @@ from apps.subscriptions.models import FeedFetchResult
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
 BASE_DIR = Path(__file__).resolve().parents[2]
-RUNTIME_DIR = BASE_DIR / "runtime"
-BILIBILI_PROFILE_DIR = RUNTIME_DIR / "browser_profiles" / "pw-bili-profile"
-WEIBO_PROFILE_DIR = RUNTIME_DIR / "browser_profiles" / "pw-weibo-profile"
+WEIBO_PROFILE_DIR = BASE_DIR / "runtime" / "browser_profiles" / "pw-weibo-profile"
 X_PROFILE_DIR = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data" / "Profile 2"
 
 
@@ -156,16 +154,6 @@ def result_error(source: dict, error: str) -> FeedFetchResult:
         status=0,
         entries=[],
         error=error,
-    )
-
-
-def launch_bilibili_context(playwright, headless: bool):
-    BILIBILI_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    return playwright.chromium.launch_persistent_context(
-        user_data_dir=str(BILIBILI_PROFILE_DIR),
-        headless=headless,
-        args=["--window-size=1440,960"],
-        user_agent=USER_AGENT,
     )
 
 
