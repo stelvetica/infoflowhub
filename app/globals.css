@@ -274,6 +274,18 @@ th {
   width: auto;
 }
 
+.laterhub-table .col-time {
+  width: 176px;
+}
+
+.laterhub-table .col-title {
+  width: auto;
+}
+
+.laterhub-table .col-action {
+  width: 132px;
+}
+
 .cell-time {
   white-space: nowrap;
 }
@@ -287,7 +299,35 @@ th {
 }
 
 .cell-link {
+  display: block;
   max-width: 100%;
+}
+
+.cell-strong {
+  color: var(--text);
+}
+
+.cell-muted {
+  color: var(--muted);
+}
+
+.laterhub-link-cell a {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.laterhub-action-cell {
+  white-space: nowrap;
+}
+
+.laterhub-action-cell form {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.laterhub-action-cell .btn {
+  padding-inline: 14px;
 }
 
 .pagination {

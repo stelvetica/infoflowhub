@@ -115,11 +115,11 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
               data.rows.map((item) => (
                 <tr key={`${item.source_id}-${item.link}`}>
                   <td className="cell-time">{item.display_time}</td>
-                  <td className="cell-ellipsis" title={item.source_name}>
+                  <td className="cell-ellipsis cell-muted" title={item.source_name}>
                     {item.source_name}
                   </td>
                   <td>
-                    <a className="cell-ellipsis cell-link" href={item.link} target="_blank" rel="noreferrer" title={item.title}>
+                    <a className="cell-ellipsis cell-link cell-strong" href={item.link} target="_blank" rel="noreferrer" title={item.title}>
                       {item.title}
                     </a>
                   </td>
@@ -230,7 +230,12 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
       </section>
       <section className="card">
         <div className="table-wrap">
-          <table>
+          <table className="laterhub-table">
+            <colgroup>
+              <col className="col-time" />
+              <col className="col-title" />
+              <col className="col-action" />
+            </colgroup>
             <thead>
               <tr>
                 <th>
@@ -254,16 +259,18 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
               {data.rows.length ? (
                 data.rows.map((item) => (
                   <tr key={item.id}>
-                    <td>{item.display_time}</td>
-                    <td>
-                      <div>
-                        <a href={item.url} target="_blank" rel="noreferrer">
+                    <td className="cell-time">{item.display_time}</td>
+                    <td className="laterhub-link-cell">
+                      <div className="cell-ellipsis" title={item.title}>
+                        <a className="cell-link cell-strong" href={item.url} target="_blank" rel="noreferrer">
                           {item.title}
                         </a>
                       </div>
-                      <div className="subtle">{item.tags_text || "-"}</div>
+                      <div className="subtle cell-ellipsis" title={item.tags_text || "-"}>
+                        {item.tags_text || "-"}
+                      </div>
                     </td>
-                    <td>
+                    <td className="laterhub-action-cell">
                       <form action={finishLaterhubAction}>
                         <input type="hidden" name="id" value={item.id} />
                         <input type="hidden" name="finished" value={item.is_finished ? "0" : "1"} />
