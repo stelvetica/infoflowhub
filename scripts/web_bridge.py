@@ -16,7 +16,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from apps.subscriptions.config import load_settings, load_sources
-from apps.subscriptions.rss_db import delete_entries_by_source, delete_source_state, get_connection, list_source_stats, save_entries, set_source_enabled
+from apps.subscriptions.rss_db import delete_entries_by_source, delete_source_state, get_connection, list_source_stats, rename_source, save_entries, set_source_enabled
 from connectors.rss.fetch import fetch_many
 from apps.laterhub.config import DB_PATH as LATERHUB_DB_PATH
 
@@ -330,6 +330,10 @@ def main() -> int:
     if command == "set-source-enabled":
         set_source_enabled(str(payload.get("source_id", "")), bool(payload.get("enabled")))
         print(json.dumps({"ok": True}, ensure_ascii=False))
+        return 0
+    if command == "rename-source":
+        updated = rename_source(str(payload.get("source_id", "")), str(payload.get("source_name", "")))
+        print(json.dumps({"ok": True, "updated": updated}, ensure_ascii=False))
         return 0
     if command == "delete-source-data":
         source_id = str(payload.get("source_id", ""))

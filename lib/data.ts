@@ -215,6 +215,7 @@ export function saveSources(sources: SourceItem[]): void {
 
 export function saveSource(input: { source_id?: string; name: string; feed_url: string; site_url?: string }): void {
   const existing = normalizeSources().find((item) => item.id === input.source_id);
+  const previousName = (existing?.name || "").trim();
   const provider = existing?.provider || (input.feed_url.includes("rsshub") ? "rsshub" : "native");
   const fetchVia = existing?.fetch_via || (provider === "rsshub" ? "rsshub-self-hosted" : "direct");
   const kind = provider === "rsshub" ? "rsshub" : provider === "web" ? "web" : "native";
@@ -236,6 +237,9 @@ export function saveSource(input: { source_id?: string; name: string; feed_url: 
   const next = sources.some((item) => item.id === target.id) ? sources.map((item) => (item.id === target.id ? target : item)) : [...sources, target];
   saveSources(next);
   runPythonBridge("set-source-enabled", { source_id: target.id, enabled: target.enabled });
+  if (existing && previousName !== target.name) {
+    runPythonBridge("rename-source", { source_id: target.id, source_name: target.name });
+  }
 }
 
 export function toggleSource(sourceId: string, enabled: boolean): void {
