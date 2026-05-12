@@ -10,8 +10,8 @@ from apps.laterhub.config import DB_PATH, ENV_PATH, LOG_PATH, LOGS_DIR
 from apps.laterhub.db import DBManager, LinkRecord
 from apps.laterhub.feishu import FeishuBitableClient, FeishuConfig, load_project_env
 from apps.laterhub.tagger import ContentTagger, DEFAULT_TAG, LLMConfig
-from connectors.api import fetch_bilibili_watchlater
-from connectors.web import fetch_douyin_favorites
+from connectors.bilibili import fetch_bilibili_watchlater
+from connectors.douyin import fetch_douyin_favorites
 
 
 LOG_FILE_DISABLED = False

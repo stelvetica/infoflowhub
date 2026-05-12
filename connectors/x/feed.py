@@ -6,7 +6,7 @@ from datetime import datetime
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
-from connectors.web.common import (
+from connectors._shared.common import (
     clean_line,
     fallback_published,
     normalize_english_date,

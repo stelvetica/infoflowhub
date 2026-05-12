@@ -3,7 +3,7 @@ from __future__ import annotations
 from playwright.sync_api import sync_playwright
 
 from apps.laterhub.config import PW_DOUYIN_PROFILE
-from connectors.web.douyin import DOUYIN_FAVORITE_URL, _resolve_default_browser_executable
+from connectors.douyin.favorites import DOUYIN_FAVORITE_URL, _resolve_default_browser_executable
 
 
 def main() -> None:

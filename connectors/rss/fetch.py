@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 import feedparser
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
-from connectors.web.common import parse_published_datetime
+from connectors._shared.common import parse_published_datetime
 from connectors.web.fetch import fetch_web_many, fetch_web_source
 
 

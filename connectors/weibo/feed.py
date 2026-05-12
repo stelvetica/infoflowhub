@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
-from connectors.web.common import clean_line, fallback_published, normalize_relative_date, parse_published_datetime, resolve_web_target, result_error
+from connectors._shared.common import clean_line, fallback_published, normalize_relative_date, parse_published_datetime, resolve_web_target, result_error
 
 
 def extract_weibo_cards_from_dom(page, limit: int = 8) -> list[dict]:

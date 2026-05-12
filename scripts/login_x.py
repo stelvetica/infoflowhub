@@ -9,7 +9,7 @@ if str(ROOT) not in sys.path:
 
 from playwright.sync_api import sync_playwright
 
-from connectors.web.common import USER_AGENT, X_PROFILE_DIR
+from connectors._shared.common import USER_AGENT, X_PROFILE_DIR
 
 
 X_HOME = "https://x.com/i/flow/login"

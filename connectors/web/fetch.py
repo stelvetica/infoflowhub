@@ -3,8 +3,8 @@ from __future__ import annotations
 from playwright.sync_api import sync_playwright
 
 from apps.subscriptions.models import FeedFetchResult
-from connectors.api.bilibili import fetch_bilibili_dynamic_feed
-from connectors.web.common import USER_AGENT, launch_weibo_context, launch_x_context, resolve_web_target, result_error
+from connectors.bilibili import fetch_bilibili_dynamic_feed
+from connectors._shared.common import USER_AGENT, launch_weibo_context, launch_x_context, resolve_web_target, result_error
 
 
 def fetch_web_source(source: dict) -> FeedFetchResult:
@@ -14,13 +14,13 @@ def fetch_web_source(source: dict) -> FeedFetchResult:
     try:
         with sync_playwright() as playwright:
             if target and target.site == "weibo":
-                from connectors.web.weibo import fetch_weibo_with_page
+                from connectors.weibo import fetch_weibo_with_page
 
                 browser = launch_weibo_context(playwright, headless=False)
                 page = browser.new_page()
                 result = fetch_weibo_with_page(page, source)
             elif target and target.site == "x":
-                from connectors.web.x import fetch_x_with_page
+                from connectors.x import fetch_x_with_page
 
                 browser = launch_x_context(playwright, headless=True)
                 page = browser.new_page()
@@ -56,7 +56,7 @@ def fetch_web_many(sources: list[dict], limit: int = 12, timeout_ms: int = 60000
                         results.append(fetch_bilibili_dynamic_feed(source, limit=limit, timeout_ms=timeout_ms))
                         continue
                     if target.site == "weibo":
-                        from connectors.web.weibo import fetch_weibo_with_page
+                        from connectors.weibo import fetch_weibo_with_page
 
                         if weibo_context is None:
                             weibo_context = launch_weibo_context(playwright, headless=False)
@@ -64,7 +64,7 @@ def fetch_web_many(sources: list[dict], limit: int = 12, timeout_ms: int = 60000
                         results.append(fetch_weibo_with_page(weibo_page, source, timeout_ms=timeout_ms))
                         continue
                     if target.site == "x":
-                        from connectors.web.x import fetch_x_with_page
+                        from connectors.x import fetch_x_with_page
 
                         if x_context is None:
                             x_context = launch_x_context(playwright, headless=True)

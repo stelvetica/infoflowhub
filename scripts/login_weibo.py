@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from playwright.sync_api import sync_playwright
 
-from connectors.web.fetch import USER_AGENT, WEIBO_PROFILE_DIR
+from connectors._shared.common import USER_AGENT, WEIBO_PROFILE_DIR
 
 
 WEIBO_HOME = "https://weibo.com/login.php"

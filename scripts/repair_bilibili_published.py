@@ -8,7 +8,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from connectors.api.bilibili import fetch_bilibili_user_dynamic
+from connectors.bilibili.api import fetch_bilibili_user_dynamic
 
 DB_PATH = BASE_DIR / "data" / "subscriptions.sqlite3"
 

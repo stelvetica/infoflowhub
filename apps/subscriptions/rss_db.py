@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Iterable
 
 from apps.subscriptions.models import FeedEntry
-from connectors.web.common import parse_published_datetime
+from connectors._shared.common import parse_published_datetime
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -112,6 +112,27 @@ def set_source_enabled(source_id: str, enabled: bool) -> None:
             (source_id, 1 if enabled else 0),
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def rename_source(source_id: str, source_name: str) -> int:
+    source_id = sanitize_db_text(source_id).strip()
+    source_name = sanitize_db_text(source_name).strip()
+    if not source_id or not source_name:
+        return 0
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            """
+            UPDATE rss_entries
+            SET source_name = ?
+            WHERE source_id = ?
+            """,
+            (source_name, source_id),
+        )
+        conn.commit()
+        return int(cursor.rowcount or 0)
     finally:
         conn.close()
 
