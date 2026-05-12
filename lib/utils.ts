@@ -31,6 +31,12 @@ export function formatDateTime(value: string): string {
   return `${parsed.getFullYear()}/${String(parsed.getMonth() + 1).padStart(2, "0")}/${String(parsed.getDate()).padStart(2, "0")} ${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`;
 }
 
+export function formatDate(value: string): string {
+  const parsed = parseDateTime(value);
+  if (!parsed) return stripInvalidUnicode(value || "").trim().slice(0, 10).replaceAll("-", "/");
+  return `${parsed.getFullYear()}/${String(parsed.getMonth() + 1).padStart(2, "0")}/${String(parsed.getDate()).padStart(2, "0")}`;
+}
+
 export function buildSourceId(name: string): string {
   const value = stripInvalidUnicode(name)
     .trim()

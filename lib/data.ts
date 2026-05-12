@@ -283,10 +283,11 @@ function loadSettingsSnapshot(): SettingsSnapshotPayload {
 }
 
 export type EntriesQuery = { q?: string; sort?: string; dir?: "asc" | "desc"; page?: string };
-export type LaterhubQuery = { q?: string; filter_finished?: string; filter_tag?: string; sort?: string; dir?: "asc" | "desc" };
+export type LaterhubQuery = { q?: string; filter_finished?: string; filter_tag?: string; sort?: string; dir?: "asc" | "desc"; page?: string };
 export type SourcesQuery = { source_q?: string; sort?: string; dir?: "asc" | "desc" };
 
-const ENTRIES_PAGE_SIZE = 50;
+const ENTRIES_PAGE_SIZE = 35;
+const LATERHUB_PAGE_SIZE = 20;
 
 export function getEntriesView(query: EntriesQuery) {
   const snapshot = loadEntriesSnapshot();
@@ -294,7 +295,6 @@ export function getEntriesView(query: EntriesQuery) {
   const keyword = normalizeText(query.q || "");
   const sort = query.sort || "sort_time";
   const dir = query.dir || "desc";
-  const page = Math.max(Number.parseInt(query.page || "1", 10) || 1, 1);
   const filteredRows = snapshot.entries
     .filter((item) => enabledIds.has(item.source_id))
     .filter((item) => !keyword || [item.source_name, item.title, item.summary].some((field) => normalizeText(field).includes(keyword)))
@@ -306,11 +306,7 @@ export function getEntriesView(query: EntriesQuery) {
     }))
     .sort((a, b) => compareValue(a[sort as keyof typeof a], b[sort as keyof typeof b], dir));
   const filteredTotal = filteredRows.length;
-  const totalPages = Math.max(Math.ceil(filteredTotal / ENTRIES_PAGE_SIZE), 1);
-  const safePage = Math.min(page, totalPages);
-  const start = (safePage - 1) * ENTRIES_PAGE_SIZE;
-  const rows = filteredRows.slice(start, start + ENTRIES_PAGE_SIZE);
-  return { rows, total: snapshot.entries_total, filteredTotal, totalPages, page: safePage, sort, dir, q: query.q || "" };
+  return { rows: filteredRows, total: snapshot.entries_total, filteredTotal, pageSize: ENTRIES_PAGE_SIZE, sort, dir, q: query.q || "" };
 }
 
 export function getLaterhubView(query: LaterhubQuery) {
@@ -333,7 +329,7 @@ export function getLaterhubView(query: LaterhubQuery) {
       tag_keys: new Set(splitTags(tags).map(normalizeText))
     };
   });
-  const rows = allRows
+  const filteredRows = allRows
     .filter((item) => !keyword || normalizeText(item.title).includes(keyword) || normalizeText(item.tags_text).includes(keyword))
     .filter((item) => (filterFinished === "1" ? Boolean(item.is_finished) : filterFinished === "0" ? !item.is_finished : true))
     .filter((item) => [...selectedTagKeys].every((tag) => item.tag_keys.has(tag)))
@@ -341,7 +337,7 @@ export function getLaterhubView(query: LaterhubQuery) {
   const allTags = [...new Map(allRows.flatMap((item) => item.tag_list).map((tag) => [normalizeText(tag), tag])).values()].sort((a, b) =>
     a.localeCompare(b, "zh-CN")
   );
-  return { rows, total: snapshot.laterhub_total, allTags, selectedTags, sort, dir, q: query.q || "", filterFinished };
+  return { rows: filteredRows, total: snapshot.laterhub_total, filteredTotal: filteredRows.length, allTags, selectedTags, sort, dir, q: query.q || "", filterFinished, pageSize: LATERHUB_PAGE_SIZE };
 }
 
 export function getSettingsView(query: SourcesQuery) {

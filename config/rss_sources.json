@@ -37,18 +37,6 @@
       "note": ""
     },
     {
-      "id": "观点-市场-产业跟踪-唐史主任司马迁的微博",
-      "name": "观点 市场 产业跟踪 唐史主任司马迁的微博",
-      "group": "01_新闻",
-      "feed_url": "https://rsshub.app/weibo/user/2014433131",
-      "site_url": "https://weibo.com/2014433131/",
-      "provider": "web",
-      "fetch_via": "web",
-      "kind": "web",
-      "enabled": false,
-      "note": ""
-    },
-    {
       "id": "人物-观点-十三邀",
       "name": "人物 观点 十三邀",
       "group": "01_新闻",
@@ -98,7 +86,7 @@
     },
     {
       "id": "技术-阮一峰的网络日志",
-      "name": "技术 阮一峰的网络日志",
+      "name": "技术 阮一峰周刊",
       "group": "00_⭐️+微信星标",
       "feed_url": "https://feeds.feedburner.com/ruanyifeng",
       "site_url": "http://www.ruanyifeng.com/blog/",
@@ -134,7 +122,7 @@
     },
     {
       "id": "观点-房产-铁锤观察室",
-      "name": "观点 房产 铁锤观察室 的 bilibili 动态",
+      "name": "观点 铁锤观察室 的 bilibili 动态",
       "group": "00_⭐️+微信星标",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/1257954297",
       "site_url": "https://space.bilibili.com/1257954297/dynamic",
@@ -189,7 +177,7 @@
       "provider": "web",
       "fetch_via": "web",
       "kind": "web",
-      "enabled": true,
+      "enabled": false,
       "note": "用户手动补充"
     },
     {

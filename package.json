@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 18421",
+    "dev:stable": "powershell -ExecutionPolicy Bypass -File scripts/start_infoflow.ps1",
     "build": "next build",
     "start": "next start -H 127.0.0.1 -p 18421",
     "lint": "next lint"

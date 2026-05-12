@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { deleteSourceAction, fetchNowAction, finishLaterhubAction, saveSourceAction, toggleSourceAction } from "@/app/actions";
+import { deleteSourceAction, fetchNowAction, saveSourceAction, toggleSourceAction } from "@/app/actions";
 import { EntriesSplitShell } from "@/app/components/entries-split-shell";
 import { EntriesTableClient } from "@/app/components/entries-table-client";
+import { LaterhubTableClient } from "@/app/components/laterhub-table-client";
 import { SubmitButton } from "@/app/components/submit-button";
 import { getEntriesView, getLaterhubView, getSettingsView } from "@/lib/data";
 import { joinTags, normalizeText } from "@/lib/utils";
@@ -35,10 +36,6 @@ function sortHref(view: ViewKey, currentSort: string, currentDir: string, nextSo
   return href(view, { ...params, sort: nextSort, dir: nextDir });
 }
 
-function pageHref(view: ViewKey, params: Record<string, string>, page: number) {
-  return href(view, { ...params, page: String(page) });
-}
-
 export default async function Home({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const view = (one(params.view) || "entries") as ViewKey;
@@ -48,7 +45,7 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
     <div className="shell">
       <main className="main">
         <header className="topbar">
-          <div className="brand">
+          <div className="brand brand-centered">
             <h1>InfoFlowHub</h1>
           </div>
           <Link className={`settings-link ${showSettings ? "active" : ""}`} href={showSettings ? "/" : "/?view=settings"} aria-label="设置">
@@ -92,8 +89,8 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
   return (
     <section className="card pane-card pane-card-left">
       <div className="panel-title">
-        <h3>订阅内容</h3>
-        <form className="toolbar">
+        <h3 className="panel-heading-nowrap">订阅内容</h3>
+        <form className="toolbar toolbar-inline toolbar-inline-spread entries-header-form">
           <input type="hidden" name="entries_sort" value={data.sort} />
           <input type="hidden" name="entries_dir" value={data.dir} />
           <input type="hidden" name="laterhub_q" value={one(params.laterhub_q)} />
@@ -102,34 +99,16 @@ async function EntriesPanel({ params }: { params: Record<string, string | string
           <input type="hidden" name="laterhub_sort" value={one(params.laterhub_sort)} />
           <input type="hidden" name="laterhub_dir" value={one(params.laterhub_dir)} />
           <input type="hidden" name="laterhub_collapsed" value={laterhubCollapsed} />
-          <input className="input" name="entries_q" defaultValue={data.q} placeholder="搜索标题、来源" />
-          <button className="btn" type="submit">
-            搜索
-          </button>
+          <div className="toolbar toolbar-inline">
+            <input className="input" name="entries_q" defaultValue={data.q} placeholder="搜索标题、来源" />
+            <button className="btn" type="submit">
+              搜索
+            </button>
+          </div>
+          <div id="entries-unread-slot" />
         </form>
       </div>
       <EntriesTableClient rows={data.rows} sort={data.sort} dir={data.dir} q={data.q} sharedParams={baseParams} />
-      <div className="pagination">
-        <div className="subtle">
-          第 {data.page} / {data.totalPages} 页，共 {data.filteredTotal} 条
-        </div>
-        <div className="toolbar">
-          <Link
-            className={`btn ghost ${data.page <= 1 ? "disabled" : ""}`}
-            href={data.page > 1 ? pageHref("entries", { ...baseParams, entries_sort: data.sort, entries_dir: data.dir }, data.page - 1) : "#"}
-            aria-disabled={data.page <= 1}
-          >
-            上一页
-          </Link>
-          <Link
-            className={`btn ghost ${data.page >= data.totalPages ? "disabled" : ""}`}
-            href={data.page < data.totalPages ? pageHref("entries", { ...baseParams, entries_sort: data.sort, entries_dir: data.dir }, data.page + 1) : "#"}
-            aria-disabled={data.page >= data.totalPages}
-          >
-            下一页
-          </Link>
-        </div>
-      </div>
     </section>
   );
 }
@@ -168,7 +147,7 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
         <div className="panel-title">
           <h3>稍后处理</h3>
         </div>
-        <form className="filterbar">
+        <form className="laterhub-form-stack">
           <input type="hidden" name="entries_q" value={entriesQ} />
           <input type="hidden" name="entries_sort" value={entriesSort} />
           <input type="hidden" name="entries_dir" value={entriesDir} />
@@ -176,33 +155,29 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
           <input type="hidden" name="laterhub_dir" value={data.dir} />
           <input type="hidden" name="laterhub_filter_tag" value={joinTags(data.selectedTags)} />
           <input type="hidden" name="laterhub_collapsed" value={laterhubCollapsed} />
-          <input className="input" name="laterhub_q" defaultValue={data.q} placeholder="搜索标题或标签" />
-          <select className="select" name="laterhub_filter_finished" defaultValue={data.filterFinished}>
-            <option value="0">未完成</option>
-            <option value="1">已完成</option>
-            <option value="">全部</option>
-          </select>
-          <button className="btn" type="submit">
-            搜索
-          </button>
-          <Link
-            className="btn ghost"
-            href={rootHref({
-              entries_q: entriesQ,
-              entries_sort: entriesSort,
-              entries_dir: entriesDir,
-              laterhub_collapsed: laterhubCollapsed
-            })}
-          >
-            清空
-          </Link>
+          <div className="toolbar toolbar-inline laterhub-top-row">
+            <input className="input laterhub-search-input" name="laterhub_q" defaultValue={data.q} placeholder="搜索标题或标签" />
+            <button className="btn" type="submit">
+              搜索
+            </button>
+            <select className="select laterhub-status-select" name="laterhub_filter_finished" defaultValue={data.filterFinished}>
+              <option value="0">未处理</option>
+              <option value="1">已完成</option>
+              <option value="">全部</option>
+            </select>
+            <Link
+              className="btn laterhub-clear-btn"
+              href={rootHref({
+                entries_q: entriesQ,
+                entries_sort: entriesSort,
+                entries_dir: entriesDir,
+                laterhub_collapsed: laterhubCollapsed
+              })}
+            >
+              清空
+            </Link>
+          </div>
         </form>
-      </section>
-      <section className="card pane-card pane-card-right">
-        <div className="panel-title">
-          <h3>标签</h3>
-          <div className="subtle">已选：{data.selectedTags.length ? data.selectedTags.join("、") : "无"}</div>
-        </div>
         <div className="chips">
           <Link className={`chip ${data.selectedTags.length ? "" : "active"}`} href={laterhubRoot({ laterhub_filter_tag: "" })}>
             全部
@@ -218,7 +193,7 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
             );
           })}
         </div>
-        <div className="laterhub-summary-inline">
+        <div className="laterhub-summary-inline laterhub-summary-tight laterhub-summary-small">
           <div className="inline-metric">
             <span className="label">当前条目</span>
             <strong>{data.total}</strong>
@@ -227,112 +202,10 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
             <span className="label">已选标签</span>
             <strong>{data.selectedTags.length ? data.selectedTags.length : "无"}</strong>
           </div>
-          <div className="inline-metric">
-            <span className="label">完成筛选</span>
-            <strong>{data.filterFinished === "1" ? "已完成" : data.filterFinished === "0" ? "未完成" : "全部"}</strong>
-          </div>
         </div>
       </section>
       <section className="card pane-card pane-card-right">
-        <div className="table-wrap">
-          <table className="laterhub-table">
-            <colgroup>
-              <col className="col-time" />
-              <col className="col-title" />
-              <col className="col-action" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>
-                  <Link
-                    className="sort"
-                    href={rootHref({
-                      entries_q: entriesQ,
-                      entries_sort: entriesSort,
-                      entries_dir: entriesDir,
-                      laterhub_q: data.q,
-                      laterhub_filter_finished: data.filterFinished,
-                      laterhub_filter_tag: joinTags(data.selectedTags),
-                      laterhub_sort: "sort_time",
-                      laterhub_dir: data.sort !== "sort_time" || data.dir === "asc" ? "desc" : "asc",
-                      laterhub_collapsed: laterhubCollapsed
-                    })}
-                  >
-                    时间
-                  </Link>
-                </th>
-                <th>
-                  <Link
-                    className="sort"
-                    href={rootHref({
-                      entries_q: entriesQ,
-                      entries_sort: entriesSort,
-                      entries_dir: entriesDir,
-                      laterhub_q: data.q,
-                      laterhub_filter_finished: data.filterFinished,
-                      laterhub_filter_tag: joinTags(data.selectedTags),
-                      laterhub_sort: "title",
-                      laterhub_dir: data.sort !== "title" || data.dir === "desc" ? "asc" : "desc",
-                      laterhub_collapsed: laterhubCollapsed
-                    })}
-                  >
-                    链接
-                  </Link>
-                </th>
-                <th>
-                  <Link
-                    className="sort"
-                    href={rootHref({
-                      entries_q: entriesQ,
-                      entries_sort: entriesSort,
-                      entries_dir: entriesDir,
-                      laterhub_q: data.q,
-                      laterhub_filter_finished: data.filterFinished,
-                      laterhub_filter_tag: joinTags(data.selectedTags),
-                      laterhub_sort: "finished_text",
-                      laterhub_dir: data.sort !== "finished_text" || data.dir === "desc" ? "asc" : "desc",
-                      laterhub_collapsed: laterhubCollapsed
-                    })}
-                  >
-                    完成
-                  </Link>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.rows.length ? (
-                data.rows.map((item) => (
-                  <tr key={item.id}>
-                    <td className="cell-time">{item.display_time}</td>
-                    <td className="laterhub-link-cell">
-                      <div className="cell-ellipsis" title={item.title}>
-                        <a className="cell-link cell-strong" href={item.url} target="_blank" rel="noreferrer">
-                          {item.title}
-                        </a>
-                      </div>
-                      <div className="subtle cell-ellipsis" title={item.tags_text || "-"}>
-                        {item.tags_text || "-"}
-                      </div>
-                    </td>
-                    <td className="laterhub-action-cell">
-                      <form action={finishLaterhubAction}>
-                        <input type="hidden" name="id" value={item.id} />
-                        <input type="hidden" name="finished" value={item.is_finished ? "0" : "1"} />
-                        <SubmitButton className={`btn ${item.is_finished ? "secondary" : ""}`} idleText={item.is_finished ? "标记未完成" : "标记完成"} pendingText="提交中..." />
-                      </form>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={3} className="empty">
-                    没有匹配内容
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <LaterhubTableClient rows={data.rows} />
       </section>
     </div>
   );

@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { formatDate } from "@/lib/utils";
 
 type EntryRow = {
   source_id: string;
@@ -35,8 +37,11 @@ function sortHref(currentSort: string, currentDir: string, nextSort: string, q: 
 }
 
 export function EntriesTableClient({ rows, sort, dir, q, sharedParams = {} }: EntriesTableClientProps) {
-  const [showUnreadOnly, setShowUnreadOnly] = useState(false);
+  const [showUnreadOnly, setShowUnreadOnly] = useState(true);
   const [readLinks, setReadLinks] = useState<Record<string, boolean>>({});
+  const [unreadSlot, setUnreadSlot] = useState<HTMLElement | null>(null);
+  const [page, setPage] = useState(1);
+  const pageSize = 35;
 
   useEffect(() => {
     try {
@@ -46,6 +51,10 @@ export function EntriesTableClient({ rows, sort, dir, q, sharedParams = {} }: En
     } catch {
       setReadLinks({});
     }
+  }, []);
+
+  useEffect(() => {
+    setUnreadSlot(document.getElementById("entries-unread-slot"));
   }, []);
 
   function markRead(link: string) {
@@ -58,15 +67,24 @@ export function EntriesTableClient({ rows, sort, dir, q, sharedParams = {} }: En
   }
 
   const visibleRows = useMemo(() => (showUnreadOnly ? rows.filter((item) => !readLinks[item.link]) : rows), [rows, showUnreadOnly, readLinks]);
+  const totalPages = Math.max(Math.ceil(visibleRows.length / pageSize), 1);
+  const safePage = Math.min(page, totalPages);
+  const pagedRows = useMemo(() => visibleRows.slice((safePage - 1) * pageSize, safePage * pageSize), [visibleRows, safePage]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [showUnreadOnly, rows]);
 
   return (
     <>
-      <div className="panel-title">
-        <div />
-        <button className={`btn ghost ${showUnreadOnly ? "active-filter" : ""}`} type="button" onClick={() => setShowUnreadOnly((current) => !current)}>
-          {showUnreadOnly ? "显示全部" : "未读"}
-        </button>
-      </div>
+      {unreadSlot
+        ? createPortal(
+            <button className={`btn ghost ${showUnreadOnly ? "active-filter" : ""}`} type="button" onClick={() => setShowUnreadOnly((current) => !current)}>
+              {showUnreadOnly ? "显示全部" : "未读"}
+            </button>,
+            unreadSlot
+          )
+        : null}
       <div className="table-wrap">
         <table className="entries-table">
           <colgroup>
@@ -94,10 +112,10 @@ export function EntriesTableClient({ rows, sort, dir, q, sharedParams = {} }: En
             </tr>
           </thead>
           <tbody>
-            {visibleRows.length ? (
-              visibleRows.map((item) => (
+            {pagedRows.length ? (
+              pagedRows.map((item) => (
                 <tr key={`${item.source_id}-${item.link}`}>
-                  <td className="cell-time">{item.display_time}</td>
+                  <td className="cell-time">{formatDate(item.display_time)}</td>
                   <td className="cell-ellipsis cell-muted" title={item.source_name}>
                     {item.source_name}
                   </td>
@@ -124,6 +142,19 @@ export function EntriesTableClient({ rows, sort, dir, q, sharedParams = {} }: En
             )}
           </tbody>
         </table>
+      </div>
+      <div className="pagination pagination-tight pagination-aligned">
+        <div className="subtle">
+          第 {safePage} / {totalPages} 页，共 {visibleRows.length} 条
+        </div>
+        <div className="toolbar">
+          <button className={`btn ghost ${safePage <= 1 ? "disabled" : ""}`} type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={safePage <= 1}>
+            上一页
+          </button>
+          <button className={`btn ghost ${safePage >= totalPages ? "disabled" : ""}`} type="button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={safePage >= totalPages}>
+            下一页
+          </button>
+        </div>
       </div>
     </>
   );
