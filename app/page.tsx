@@ -160,11 +160,6 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
             <button className="btn" type="submit">
               搜索
             </button>
-            <select className="select laterhub-status-select laterhub-status-select-hidden" name="laterhub_filter_finished_disabled" defaultValue={data.filterFinished} disabled aria-hidden="true">
-              <option value="0">未处理</option>
-              <option value="1">已完成</option>
-              <option value="">全部</option>
-            </select>
             <Link
               className="btn laterhub-clear-btn"
               href={rootHref({
@@ -177,40 +172,42 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
               清空
             </Link>
           </div>
+          <div className="chips laterhub-chips">
+            <Link className={`chip ${data.selectedTags.length ? "" : "active"}`} href={laterhubRoot({ laterhub_filter_tag: "" })}>
+              全部
+            </Link>
+            {data.allTags.map((tag) => {
+              const key = normalizeText(tag);
+              const active = data.selectedTags.some((item) => normalizeText(item) === key);
+              const next = active ? data.selectedTags.filter((item) => normalizeText(item) !== key) : [...data.selectedTags, tag];
+              return (
+                <Link key={tag} className={`chip ${active ? "active" : ""}`} href={laterhubRoot({ laterhub_filter_tag: joinTags(next) })}>
+                  {tag}
+                </Link>
+              );
+            })}
+          </div>
+          <div className="laterhub-footer-row">
+            <div className="laterhub-summary-inline laterhub-summary-tight laterhub-summary-small laterhub-summary-merged">
+              <div className="inline-metric">
+                <span className="label">当前条目</span>
+                <strong>{data.total}</strong>
+              </div>
+              <div className="inline-metric">
+                <span className="label">已选标签</span>
+                <strong>{data.selectedTags.length ? data.selectedTags.length : "无"}</strong>
+              </div>
+            </div>
+            <div className="laterhub-filter-row">
+              <span className="laterhub-filter-label">状态</span>
+              <select className="select laterhub-status-select laterhub-status-select-small" name="laterhub_filter_finished" defaultValue={data.filterFinished || "0"}>
+                <option value="">全部</option>
+                <option value="1">已完成</option>
+                <option value="0">未处理</option>
+              </select>
+            </div>
+          </div>
         </form>
-        <div className="chips">
-          <Link className={`chip ${data.selectedTags.length ? "" : "active"}`} href={laterhubRoot({ laterhub_filter_tag: "" })}>
-            全部
-          </Link>
-          {data.allTags.map((tag) => {
-            const key = normalizeText(tag);
-            const active = data.selectedTags.some((item) => normalizeText(item) === key);
-            const next = active ? data.selectedTags.filter((item) => normalizeText(item) !== key) : [...data.selectedTags, tag];
-            return (
-              <Link key={tag} className={`chip ${active ? "active" : ""}`} href={laterhubRoot({ laterhub_filter_tag: joinTags(next) })}>
-                {tag}
-              </Link>
-            );
-          })}
-        </div>
-        <div className="laterhub-summary-inline laterhub-summary-tight laterhub-summary-small">
-          <div className="inline-metric">
-            <span className="label">当前条目</span>
-            <strong>{data.total}</strong>
-          </div>
-          <div className="inline-metric">
-            <span className="label">已选标签</span>
-            <strong>{data.selectedTags.length ? data.selectedTags.length : "无"}</strong>
-          </div>
-        </div>
-        <div className="laterhub-filter-row">
-          <span className="laterhub-filter-label">状态</span>
-          <select className="select laterhub-status-select" name="laterhub_filter_finished" defaultValue={data.filterFinished}>
-            <option value="">全部</option>
-            <option value="1">已完成</option>
-            <option value="0">未处理</option>
-          </select>
-        </div>
       </section>
       <section className="card pane-card pane-card-right">
         <LaterhubTableClient rows={data.rows} />

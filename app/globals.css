@@ -303,10 +303,6 @@ textarea {
   width: 88px;
 }
 
-.laterhub-status-select-hidden {
-  display: none;
-}
-
 .laterhub-clear-btn {
   background: var(--accent);
   color: #fff;
@@ -530,6 +526,10 @@ th {
   gap: 8px;
 }
 
+.laterhub-chips {
+  margin-top: 6px;
+}
+
 .laterhub-summary-inline {
   display: flex;
   flex-wrap: wrap;
@@ -543,15 +543,34 @@ th {
 
 .laterhub-filter-row {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 0;
+  margin-left: auto;
 }
 
 .laterhub-filter-label {
   color: var(--muted);
   font-size: 11px;
+}
+
+.laterhub-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 18px;
+  padding-top: 2px;
+}
+
+.laterhub-summary-merged {
+  margin-top: 0;
+}
+
+.laterhub-status-select-small {
+  width: 92px;
+  font-size: 10px;
+  padding-top: 7px;
+  padding-bottom: 7px;
 }
 
 .laterhub-summary-small .inline-metric,
@@ -756,5 +775,14 @@ th {
   .toolbar-inline-spread,
   .laterhub-top-row {
     flex-wrap: wrap;
+  }
+
+  .laterhub-footer-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .laterhub-filter-row {
+    margin-left: 0;
   }
 }
