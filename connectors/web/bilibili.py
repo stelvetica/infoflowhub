@@ -146,7 +146,7 @@ def build_entries_from_bilibili_api(source: dict, target, limit: int, timeout_ms
 
 
 def fetch_bilibili_dynamic_via_api(source: dict, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
-    target = resolve_web_target(source)
+        return result_error(source, "????? B ????")
     if not target:
         return result_error(source, "????? B ????")
     try:
@@ -248,7 +248,7 @@ def load_bilibili_page_candidates(page, target, limit: int, timeout_ms: int) -> 
                     kind="empty",
                     url=candidate_url,
                     attempt=attempt,
-                    detail="椤甸潰鍙闂紝浣嗘湭瑙ｆ瀽鍒板唴瀹?",
+                    detail="?????????????",
                 )
             except PlaywrightTimeoutError as exc:
                 last_error = format_bilibili_error(
@@ -292,14 +292,14 @@ def parse_card_text(raw_text: str) -> tuple[str, str]:
     if not lines:
         return "", ""
 
-    skip_exact = {"绋嬪簭鍛?", "鍏呯數涓撳睘", "鐑偣娣卞害瑙傚療", "鐭ヨ瘑鍒嗕韩瀹?", "鎶曠浜嗚棰?", "瑙嗛"}
+    skip_exact = {"???", "????", "??????", "?????", "?????", "??"}
     skip_patterns = [
         r"^\d{2}:\d{2}$",
         r"^\d{2}:\d{2}:\d{2}$",
-        r"^[\d.]+[涓囦嚎]?$",
-        r"^\d{4}\D\d{1,2}\D\d{1,2}\D*鎶曠浜嗚棰?",
-        r"^\d{1,2}\D\d{1,2}\D*鎶曠浜嗚棰?",
-        r"^.+鎶曠浜嗚棰?",
+        r"^[\d.]+[??]?$",
+        r"^\d{4}\D\d{1,2}\D\d{1,2}\D*?????$",
+        r"^\d{1,2}\D\d{1,2}\D*?????$",
+        r"^.+?????$",
     ]
 
     title = ""
@@ -342,7 +342,7 @@ def build_bilibili_source_aliases(source_name: str) -> set[str]:
     raw = clean_line(source_name)
     if not raw:
         return set()
-    suffixes = [" 鐨?bilibili 鍔ㄦ€?", " bilibili 鍔ㄦ€?"]
+    suffixes = [" ? bilibili ??", " bilibili ??"]
     for suffix in suffixes:
         if raw.endswith(suffix):
             raw = raw[: -len(suffix)].strip()
@@ -363,20 +363,20 @@ def is_bilibili_date_line(line: str) -> bool:
     return bool(
         re.fullmatch(r"\d{4}\D\d{1,2}\D\d{1,2}\D*", text)
         or re.fullmatch(r"\d{1,2}\D\d{1,2}\D*", text)
-        or re.fullmatch(r"\d+\s*澶╁墠(?:\s+\d{2}:\d{2})?", text)
-        or re.fullmatch(r"\d+\s*灏忔椂鍓?", text)
-        or re.fullmatch(r"\d+\s*鍒嗛挓鍓?", text)
-        or re.fullmatch(r"鏄ㄥぉ(?:\s+\d{2}:\d{2})?", text)
-        or re.fullmatch(r"鍓嶅ぉ(?:\s+\d{2}:\d{2})?", text)
-        or "鎶曠浜嗚棰?" in text
-        or "鎶曠浜嗘枃绔?" in text
+        or re.fullmatch(r"\d+\s*??(?:\s+\d{2}:\d{2})?", text)
+        or re.fullmatch(r"\d+\s*???", text)
+        or re.fullmatch(r"\d+\s*???", text)
+        or re.fullmatch(r"??(?:\s+\d{2}:\d{2})?", text)
+        or re.fullmatch(r"??(?:\s+\d{2}:\d{2})?", text)
+        or "?????" in text
+        or "?????" in text
     )
 
 
 def normalize_bilibili_date_line(line: str) -> str:
     text = clean_line(line)
-    if "鎶曠浜?" in text:
-        text = text.split("鎶曠浜?", 1)[0].strip()
+    if "???" in text:
+        text = text.split("???", 1)[0].strip()
     return normalize_relative_date(text) or normalize_yearless_date(text)
 
 
@@ -384,7 +384,7 @@ def extract_bilibili_published(raw_text: str) -> str:
     lines = [clean_line(line) for line in raw_text.splitlines()]
     lines = [line for line in lines if line]
     for line in lines[:14]:
-        if "鎶曠浜嗚棰?" in line or "鎶曠浜嗘枃绔?" in line:
+        if "?????" in line or "?????" in line:
             return normalize_bilibili_date_line(line)
         normalized = normalize_relative_date(line)
         if normalized:
@@ -397,7 +397,7 @@ def parse_bilibili_body_cards(body_text: str, limit: int = 12) -> list[dict]:
     lines = [line for line in lines if line]
     cards: list[dict] = []
     current_published = ""
-    skip_titles = {"鍏呯數涓撳睘", "鎶曠浜嗚棰?", "鎶曠浜嗘枃绔?", "鍏虫敞", "杞彂", "鐐硅禐", "璇勮", "鍏ㄦ枃", "瑙嗛"}
+    skip_titles = {"????", "?????", "?????", "??", "??", "??", "??", "??", "??"}
 
     for idx, line in enumerate(lines):
         if is_bilibili_date_line(line):
@@ -414,7 +414,7 @@ def parse_bilibili_body_cards(body_text: str, limit: int = 12) -> list[dict]:
                 break
             if candidate in skip_titles:
                 continue
-            if re.fullmatch(r"[\d.]+[涓囦嚎]?", candidate):
+            if re.fullmatch(r"[\d.]+[??]?", candidate):
                 continue
             if not title and len(candidate) > 3:
                 title = candidate
@@ -437,7 +437,7 @@ def parse_bilibili_body_cards(body_text: str, limit: int = 12) -> list[dict]:
 def fetch_bilibili_dynamic_with_page(page, source: dict, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
     target = resolve_web_target(source)
     if not target:
-        return result_error(source, "鏆備笉鏀寔鐨?B 绔欑綉椤垫簮")
+        return result_error(source, "????? B ????")
     ensure_bilibili_context_ready(page.context)
 
     try:
@@ -476,7 +476,7 @@ def fetch_bilibili_dynamic_with_page(page, source: dict, limit: int = 12, timeou
                 kind="empty",
                 url=target.page_url,
                 attempt=1,
-                detail="椤甸潰鍙闂紝浣嗘湭瑙ｆ瀽鍒板唴瀹?",
+                detail="?????????????",
             ),
         )
 
@@ -540,7 +540,7 @@ def fetch_bilibili_dynamic_with_page(page, source: dict, limit: int = 12, timeou
             kind="empty",
             url=resolved_url or target.page_url,
             attempt=1,
-            detail="宸插畾浣嶉〉闈紝浣嗘湭浜у嚭鍙繚瀛樻潯鐩?",
+            detail="???????????????",
         ),
     )
 
