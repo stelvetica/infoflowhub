@@ -11,7 +11,7 @@ import feedparser
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
 from connectors._shared.common import parse_published_datetime
-from connectors.web.fetch import fetch_web_many, fetch_web_source
+from connectors._shared.web_fetch import fetch_web_many, fetch_web_source
 
 
 USER_AGENT = "infoflowhub-subscriptions/0.1"
