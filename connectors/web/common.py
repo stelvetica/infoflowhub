@@ -14,7 +14,6 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 RUNTIME_DIR = BASE_DIR / "runtime"
 BILIBILI_PROFILE_DIR = RUNTIME_DIR / "browser_profiles" / "pw-bili-profile"
 WEIBO_PROFILE_DIR = RUNTIME_DIR / "browser_profiles" / "pw-weibo-profile"
-X_PROFILE_DIR = RUNTIME_DIR / "browser_profiles" / "pw-x-profile"
 
 
 @dataclass
@@ -38,14 +37,6 @@ def resolve_web_target(source: dict) -> WebSourceTarget | None:
     if match:
         uid = match.group(1)
         return WebSourceTarget(site="x", uid=uid, page_url=f"https://x.com/{uid}")
-    match = re.search(r"youtube\.com/channel/([^/?#]+)", site_url)
-    if match:
-        uid = match.group(1)
-        return WebSourceTarget(site="youtube", uid=uid, page_url=f"https://www.youtube.com/channel/{uid}/videos")
-    match = re.search(r"youtube\.com/@([^/?#]+)", site_url)
-    if match:
-        uid = match.group(1)
-        return WebSourceTarget(site="youtube", uid=uid, page_url=f"https://www.youtube.com/@{uid}/videos")
     return None
 
 
@@ -181,16 +172,6 @@ def launch_weibo_context(playwright, headless: bool):
     WEIBO_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     return playwright.chromium.launch_persistent_context(
         user_data_dir=str(WEIBO_PROFILE_DIR),
-        headless=headless,
-        args=["--window-size=1440,960"],
-        user_agent=USER_AGENT,
-    )
-
-
-def launch_x_context(playwright, headless: bool):
-    X_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    return playwright.chromium.launch_persistent_context(
-        user_data_dir=str(X_PROFILE_DIR),
         headless=headless,
         args=["--window-size=1440,960"],
         user_agent=USER_AGENT,

@@ -92,7 +92,7 @@ def classify_bilibili_error(exc: Exception | str) -> str:
 def format_bilibili_error(*, target, stage: str, kind: str, url: str, attempt: int, detail: str) -> str:
     compact_detail = clean_line(detail)[:220]
     return (
-        f"B绔欐姄鍙栧け璐uid={target.uid}][stage={stage}][kind={kind}]"
+        f"B?????[uid={target.uid}][stage={stage}][kind={kind}]"
         f"[attempt={attempt}][url={url}]: {compact_detail}"
     )
 
@@ -131,7 +131,7 @@ def build_entries_from_bilibili_api(source: dict, target, limit: int, timeout_ms
                 kind="empty",
                 url=target.page_url,
                 attempt=1,
-                detail="鍔ㄦ€佹帴鍙ｈ繑鍥炴垚鍔燂紝浣嗘湭浜у嚭鏉＄洰",
+                detail="???????????????",
             ),
         )
     return FeedFetchResult(
@@ -148,7 +148,7 @@ def build_entries_from_bilibili_api(source: dict, target, limit: int, timeout_ms
 def fetch_bilibili_dynamic_via_api(source: dict, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
     target = resolve_web_target(source)
     if not target:
-        return result_error(source, "鏆備笉鏀寔鐨?B 绔欑綉椤垫簮")
+        return result_error(source, "????? B ????")
     try:
         return build_entries_from_bilibili_api(source, target, limit=limit, timeout_ms=timeout_ms)
     except Exception as exc:
