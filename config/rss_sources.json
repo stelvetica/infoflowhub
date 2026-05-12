@@ -195,14 +195,14 @@
     {
       "id": "macro-margin-x",
       "name": "宏观 MacroMargin",
-      "group": "00_?+????",
+      "group": "00_⭐+微信星标",
       "feed_url": "https://rsshub.app/twitter/user/MacroMargin",
       "site_url": "https://x.com/MacroMargin",
       "provider": "web",
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "??Chrome??profile?????"
+      "note": "需本机 Chrome 指定 profile 登录态"
     }
   ]
 }
