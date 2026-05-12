@@ -303,6 +303,10 @@ textarea {
   width: 88px;
 }
 
+.laterhub-status-select-hidden {
+  display: none;
+}
+
 .laterhub-clear-btn {
   background: var(--accent);
   color: #fff;
@@ -535,6 +539,19 @@ th {
 
 .laterhub-summary-tight {
   margin-top: 12px;
+}
+
+.laterhub-filter-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.laterhub-filter-label {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .laterhub-summary-small .inline-metric,

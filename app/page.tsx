@@ -160,7 +160,7 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
             <button className="btn" type="submit">
               搜索
             </button>
-            <select className="select laterhub-status-select" name="laterhub_filter_finished" defaultValue={data.filterFinished}>
+            <select className="select laterhub-status-select laterhub-status-select-hidden" name="laterhub_filter_finished_disabled" defaultValue={data.filterFinished} disabled aria-hidden="true">
               <option value="0">未处理</option>
               <option value="1">已完成</option>
               <option value="">全部</option>
@@ -202,6 +202,14 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
             <span className="label">已选标签</span>
             <strong>{data.selectedTags.length ? data.selectedTags.length : "无"}</strong>
           </div>
+        </div>
+        <div className="laterhub-filter-row">
+          <span className="laterhub-filter-label">状态</span>
+          <select className="select laterhub-status-select" name="laterhub_filter_finished" defaultValue={data.filterFinished}>
+            <option value="">全部</option>
+            <option value="1">已完成</option>
+            <option value="0">未处理</option>
+          </select>
         </div>
       </section>
       <section className="card pane-card pane-card-right">
