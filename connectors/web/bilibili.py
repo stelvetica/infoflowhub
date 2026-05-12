@@ -8,14 +8,12 @@ from urllib.parse import urlsplit, urlunsplit
 
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-from playwright.sync_api import sync_playwright
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
 from connectors.api.bilibili import fetch_bilibili_user_dynamic, load_project_env
 from connectors.web.common import (
     clean_line,
     fallback_published,
-    launch_bilibili_context,
     normalize_relative_date,
     normalize_title_key,
     normalize_yearless_date,
@@ -94,7 +92,7 @@ def classify_bilibili_error(exc: Exception | str) -> str:
 def format_bilibili_error(*, target, stage: str, kind: str, url: str, attempt: int, detail: str) -> str:
     compact_detail = clean_line(detail)[:220]
     return (
-        f"B站抓取失败[uid={target.uid}][stage={stage}][kind={kind}]"
+        f"B绔欐姄鍙栧け璐uid={target.uid}][stage={stage}][kind={kind}]"
         f"[attempt={attempt}][url={url}]: {compact_detail}"
     )
 
@@ -133,7 +131,7 @@ def build_entries_from_bilibili_api(source: dict, target, limit: int, timeout_ms
                 kind="empty",
                 url=target.page_url,
                 attempt=1,
-                detail="动态接口返回成功，但未产出条目",
+                detail="鍔ㄦ€佹帴鍙ｈ繑鍥炴垚鍔燂紝浣嗘湭浜у嚭鏉＄洰",
             ),
         )
     return FeedFetchResult(
@@ -150,7 +148,7 @@ def build_entries_from_bilibili_api(source: dict, target, limit: int, timeout_ms
 def fetch_bilibili_dynamic_via_api(source: dict, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
     target = resolve_web_target(source)
     if not target:
-        return result_error(source, "暂不支持的 B 站网页源")
+        return result_error(source, "鏆備笉鏀寔鐨?B 绔欑綉椤垫簮")
     try:
         return build_entries_from_bilibili_api(source, target, limit=limit, timeout_ms=timeout_ms)
     except Exception as exc:
@@ -250,7 +248,7 @@ def load_bilibili_page_candidates(page, target, limit: int, timeout_ms: int) -> 
                     kind="empty",
                     url=candidate_url,
                     attempt=attempt,
-                    detail="页面可访问，但未解析到内容",
+                    detail="椤甸潰鍙闂紝浣嗘湭瑙ｆ瀽鍒板唴瀹?",
                 )
             except PlaywrightTimeoutError as exc:
                 last_error = format_bilibili_error(
@@ -294,14 +292,14 @@ def parse_card_text(raw_text: str) -> tuple[str, str]:
     if not lines:
         return "", ""
 
-    skip_exact = {"程序员", "充电专属", "热点深度观察", "知识分享官", "投稿了视频", "视频"}
+    skip_exact = {"绋嬪簭鍛?", "鍏呯數涓撳睘", "鐑偣娣卞害瑙傚療", "鐭ヨ瘑鍒嗕韩瀹?", "鎶曠浜嗚棰?", "瑙嗛"}
     skip_patterns = [
         r"^\d{2}:\d{2}$",
         r"^\d{2}:\d{2}:\d{2}$",
-        r"^[\d.]+[万亿]?$",
-        r"^\d{4}\D\d{1,2}\D\d{1,2}\D*投稿了视频$",
-        r"^\d{1,2}\D\d{1,2}\D*投稿了视频$",
-        r"^.+投稿了视频$",
+        r"^[\d.]+[涓囦嚎]?$",
+        r"^\d{4}\D\d{1,2}\D\d{1,2}\D*鎶曠浜嗚棰?",
+        r"^\d{1,2}\D\d{1,2}\D*鎶曠浜嗚棰?",
+        r"^.+鎶曠浜嗚棰?",
     ]
 
     title = ""
@@ -344,7 +342,7 @@ def build_bilibili_source_aliases(source_name: str) -> set[str]:
     raw = clean_line(source_name)
     if not raw:
         return set()
-    suffixes = [" 的 bilibili 动态", " bilibili 动态"]
+    suffixes = [" 鐨?bilibili 鍔ㄦ€?", " bilibili 鍔ㄦ€?"]
     for suffix in suffixes:
         if raw.endswith(suffix):
             raw = raw[: -len(suffix)].strip()
@@ -365,20 +363,20 @@ def is_bilibili_date_line(line: str) -> bool:
     return bool(
         re.fullmatch(r"\d{4}\D\d{1,2}\D\d{1,2}\D*", text)
         or re.fullmatch(r"\d{1,2}\D\d{1,2}\D*", text)
-        or re.fullmatch(r"\d+\s*天前(?:\s+\d{2}:\d{2})?", text)
-        or re.fullmatch(r"\d+\s*小时前", text)
-        or re.fullmatch(r"\d+\s*分钟前", text)
-        or re.fullmatch(r"昨天(?:\s+\d{2}:\d{2})?", text)
-        or re.fullmatch(r"前天(?:\s+\d{2}:\d{2})?", text)
-        or "投稿了视频" in text
-        or "投稿了文章" in text
+        or re.fullmatch(r"\d+\s*澶╁墠(?:\s+\d{2}:\d{2})?", text)
+        or re.fullmatch(r"\d+\s*灏忔椂鍓?", text)
+        or re.fullmatch(r"\d+\s*鍒嗛挓鍓?", text)
+        or re.fullmatch(r"鏄ㄥぉ(?:\s+\d{2}:\d{2})?", text)
+        or re.fullmatch(r"鍓嶅ぉ(?:\s+\d{2}:\d{2})?", text)
+        or "鎶曠浜嗚棰?" in text
+        or "鎶曠浜嗘枃绔?" in text
     )
 
 
 def normalize_bilibili_date_line(line: str) -> str:
     text = clean_line(line)
-    if "投稿了" in text:
-        text = text.split("投稿了", 1)[0].strip()
+    if "鎶曠浜?" in text:
+        text = text.split("鎶曠浜?", 1)[0].strip()
     return normalize_relative_date(text) or normalize_yearless_date(text)
 
 
@@ -386,7 +384,7 @@ def extract_bilibili_published(raw_text: str) -> str:
     lines = [clean_line(line) for line in raw_text.splitlines()]
     lines = [line for line in lines if line]
     for line in lines[:14]:
-        if "投稿了视频" in line or "投稿了文章" in line:
+        if "鎶曠浜嗚棰?" in line or "鎶曠浜嗘枃绔?" in line:
             return normalize_bilibili_date_line(line)
         normalized = normalize_relative_date(line)
         if normalized:
@@ -399,7 +397,7 @@ def parse_bilibili_body_cards(body_text: str, limit: int = 12) -> list[dict]:
     lines = [line for line in lines if line]
     cards: list[dict] = []
     current_published = ""
-    skip_titles = {"充电专属", "投稿了视频", "投稿了文章", "关注", "转发", "点赞", "评论", "全文", "视频"}
+    skip_titles = {"鍏呯數涓撳睘", "鎶曠浜嗚棰?", "鎶曠浜嗘枃绔?", "鍏虫敞", "杞彂", "鐐硅禐", "璇勮", "鍏ㄦ枃", "瑙嗛"}
 
     for idx, line in enumerate(lines):
         if is_bilibili_date_line(line):
@@ -416,7 +414,7 @@ def parse_bilibili_body_cards(body_text: str, limit: int = 12) -> list[dict]:
                 break
             if candidate in skip_titles:
                 continue
-            if re.fullmatch(r"[\d.]+[万亿]?", candidate):
+            if re.fullmatch(r"[\d.]+[涓囦嚎]?", candidate):
                 continue
             if not title and len(candidate) > 3:
                 title = candidate
@@ -439,7 +437,7 @@ def parse_bilibili_body_cards(body_text: str, limit: int = 12) -> list[dict]:
 def fetch_bilibili_dynamic_with_page(page, source: dict, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
     target = resolve_web_target(source)
     if not target:
-        return result_error(source, "暂不支持的 B 站网页源")
+        return result_error(source, "鏆備笉鏀寔鐨?B 绔欑綉椤垫簮")
     ensure_bilibili_context_ready(page.context)
 
     try:
@@ -478,7 +476,7 @@ def fetch_bilibili_dynamic_with_page(page, source: dict, limit: int = 12, timeou
                 kind="empty",
                 url=target.page_url,
                 attempt=1,
-                detail="页面可访问，但未解析到内容",
+                detail="椤甸潰鍙闂紝浣嗘湭瑙ｆ瀽鍒板唴瀹?",
             ),
         )
 
@@ -542,49 +540,10 @@ def fetch_bilibili_dynamic_with_page(page, source: dict, limit: int = 12, timeou
             kind="empty",
             url=resolved_url or target.page_url,
             attempt=1,
-            detail="已定位页面，但未产出可保存条目",
+            detail="宸插畾浣嶉〉闈紝浣嗘湭浜у嚭鍙繚瀛樻潯鐩?",
         ),
     )
 
 
 def fetch_bilibili_dynamic(source: dict, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
-    target = resolve_web_target(source)
-    if target:
-        api_result = fetch_bilibili_dynamic_via_api(source, limit=limit, timeout_ms=timeout_ms)
-        if api_result.ok:
-            return api_result
-        api_error = api_result.error
-    try:
-        with sync_playwright() as playwright:
-            context = launch_bilibili_context(playwright, headless=True)
-            ensure_bilibili_context_ready(context)
-            page = context.new_page()
-            try:
-                result = fetch_bilibili_dynamic_with_page(page, source, limit=limit, timeout_ms=timeout_ms)
-                if not result.ok and target and api_error:
-                    result.error = f"{api_error} | 浏览器兜底: {result.error}"
-                return result
-            finally:
-                page.close()
-                context.close()
-    except Exception as exc:
-        return FeedFetchResult(
-            source_id=source["id"],
-            source_name=source["name"],
-            feed_url=target.page_url if target else source["feed_url"],
-            ok=False,
-            status=0,
-            entries=[],
-            error=(
-                format_bilibili_error(
-                    target=target,
-                    stage="bootstrap",
-                    kind=classify_bilibili_error(exc),
-                    url=target.page_url,
-                    attempt=1,
-                    detail=f"{api_error} | {exc}" if target and 'api_error' in locals() and api_error else str(exc),
-                )
-                if target
-                else f"B站抓取失败: {exc}"
-            ),
-        )
+    return fetch_bilibili_dynamic_via_api(source, limit=limit, timeout_ms=timeout_ms)
