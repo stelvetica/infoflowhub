@@ -243,17 +243,21 @@ export function saveSource(input: { source_id?: string; name: string; feed_url: 
 }
 
 export function toggleSource(sourceId: string, enabled: boolean): void {
-  const next = normalizeSources().map((item) => (item.id === sourceId ? { ...item, enabled } : item));
+  const sanitizedSourceId = stripInvalidUnicode(sourceId).trim();
+  if (!sanitizedSourceId) return;
+  const next = normalizeSources().map((item) => (item.id === sanitizedSourceId ? { ...item, enabled } : item));
   saveSources(next);
-  runPythonBridge("set-source-enabled", { source_id: sourceId, enabled });
+  runPythonBridge("set-source-enabled", { source_id: sanitizedSourceId, enabled });
 }
 
 export function deleteSource(sourceId: string): void {
-  saveSources(normalizeSources().filter((item) => item.id !== sourceId));
-  runPythonBridge("delete-source-data", { source_id: sourceId });
+  const sanitizedSourceId = stripInvalidUnicode(sourceId).trim();
+  if (!sanitizedSourceId) return;
+  saveSources(normalizeSources().filter((item) => item.id !== sanitizedSourceId));
+  runPythonBridge("delete-source-data", { source_id: sanitizedSourceId });
   const health = loadHealth();
-  if (health.sources[sourceId]) {
-    delete health.sources[sourceId];
+  if (health.sources[sanitizedSourceId]) {
+    delete health.sources[sanitizedSourceId];
     writeJson(HEALTH_PATH, health);
   }
 }

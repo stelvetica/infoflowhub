@@ -203,6 +203,9 @@ def list_entries(limit: int = 200, source_id: str = "") -> list[dict]:
 
 
 def delete_source_state(source_id: str) -> None:
+    source_id = sanitize_db_text(source_id).strip()
+    if not source_id:
+        return
     conn = get_connection()
     try:
         conn.execute(
@@ -236,6 +239,9 @@ def list_source_stats() -> list[dict]:
 
 
 def delete_entries_by_source(source_id: str) -> int:
+    source_id = sanitize_db_text(source_id).strip()
+    if not source_id:
+        return 0
     conn = get_connection()
     try:
         cursor = conn.execute(
