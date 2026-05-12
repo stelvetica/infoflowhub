@@ -1,9 +1,13 @@
 export function normalizeText(value: string): string {
-  return value.trim().toLowerCase();
+  return stripInvalidUnicode(value).trim().toLowerCase();
+}
+
+export function stripInvalidUnicode(value: string): string {
+  return (value || "").replace(/[\uD800-\uDFFF]/g, "");
 }
 
 export function splitTags(value: string | null | undefined): string[] {
-  const text = (value || "").trim();
+  const text = stripInvalidUnicode(value || "").trim();
   if (!text) return [];
   const parts = text
     .replaceAll("、", ",")
@@ -18,20 +22,20 @@ export function splitTags(value: string | null | undefined): string[] {
 }
 
 export function joinTags(tags: string[]): string {
-  return tags.map((item) => item.trim()).filter(Boolean).join(",");
+  return tags.map((item) => stripInvalidUnicode(item).trim()).filter(Boolean).join(",");
 }
 
 export function formatDateTime(value: string): string {
   const parsed = parseDateTime(value);
-  if (!parsed) return (value || "").trim().slice(0, 16).replaceAll("-", "/");
+  if (!parsed) return stripInvalidUnicode(value || "").trim().slice(0, 16).replaceAll("-", "/");
   return `${parsed.getFullYear()}/${String(parsed.getMonth() + 1).padStart(2, "0")}/${String(parsed.getDate()).padStart(2, "0")} ${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`;
 }
 
 export function buildSourceId(name: string): string {
-  const value = name
+  const value = stripInvalidUnicode(name)
     .trim()
     .toLowerCase()
-    .replace(/[ /\\:，（），,()]+/g, "-")
+    .replace(/[ /\\:，（）,()]+/g, "-")
     .split("-")
     .filter(Boolean)
     .join("-");
@@ -52,11 +56,11 @@ export function toSortableTime(value: string): number {
 }
 
 function parseDateTime(value: string): Date | null {
-  const text = (value || "").trim();
+  const text = stripInvalidUnicode(value || "").trim();
   if (!text) return null;
 
   const normalized = text
-    .replace(/[年.-]/g, "/")
+    .replace(/[年-]/g, "/")
     .replace(/月/g, "/")
     .replace(/日/g, "")
     .replace(/\s+/g, " ")

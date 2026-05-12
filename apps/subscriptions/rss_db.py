@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import re
 from pathlib import Path
 from typing import Iterable
 
@@ -90,7 +91,14 @@ def list_source_enabled_state() -> dict[str, bool]:
     return {str(row["source_id"]): bool(row["enabled"]) for row in rows}
 
 
+def sanitize_db_text(value: str) -> str:
+    return re.sub(r"[\ud800-\udfff]", "", value or "")
+
+
 def set_source_enabled(source_id: str, enabled: bool) -> None:
+    source_id = sanitize_db_text(source_id).strip()
+    if not source_id:
+        return
     conn = get_connection()
     try:
         conn.execute(

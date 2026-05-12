@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { runPythonBridge } from "@/lib/python-bridge";
-import { buildSourceId, compareValue, formatDateTime, normalizeText, providerLabel, splitTags, toSortableTime } from "@/lib/utils";
+import { buildSourceId, compareValue, formatDateTime, normalizeText, providerLabel, splitTags, stripInvalidUnicode, toSortableTime } from "@/lib/utils";
 import type {
   LaterhubSourceStats,
   LaterhubSummary,
@@ -218,12 +218,13 @@ export function saveSource(input: { source_id?: string; name: string; feed_url: 
   const provider = existing?.provider || (input.feed_url.includes("rsshub") ? "rsshub" : "native");
   const fetchVia = existing?.fetch_via || (provider === "rsshub" ? "rsshub-self-hosted" : "direct");
   const kind = provider === "rsshub" ? "rsshub" : provider === "web" ? "web" : "native";
+  const sanitizedSourceId = stripInvalidUnicode(input.source_id || "").trim();
   const target: SourceItem = {
-    id: input.source_id?.trim() || buildSourceId(input.name),
-    name: input.name.trim(),
+    id: sanitizedSourceId || buildSourceId(input.name),
+    name: stripInvalidUnicode(input.name).trim(),
     group: existing?.group || "手动新增",
-    feed_url: input.feed_url.trim(),
-    site_url: (input.site_url || "").trim(),
+    feed_url: stripInvalidUnicode(input.feed_url).trim(),
+    site_url: stripInvalidUnicode(input.site_url || "").trim(),
     provider,
     fetch_via: fetchVia,
     kind,
