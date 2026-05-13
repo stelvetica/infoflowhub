@@ -4,6 +4,8 @@ import re
 from datetime import datetime
 from typing import Any
 
+from connectors._shared.common import resolve_web_target
+
 
 def strip_invalid_unicode(value: str) -> str:
     return re.sub(r"[\ud800-\udfff]", "", value or "")
@@ -104,20 +106,28 @@ def provider_label(provider: str, fetch_via: str) -> str:
 
 
 def source_channel_label(feed_url: str, site_url: str, provider: str) -> str:
+    target = resolve_web_target({"site_url": site_url, "feed_url": feed_url})
+    if target:
+        mapping = {
+            "bilibili": "Bilibili",
+            "weibo": "微博",
+            "x": "X",
+        }
+        return mapping.get(target.site, target.site.upper())
     feed = normalize_text(feed_url)
     site = normalize_text(site_url)
     combined = f"{feed} {site}"
-    if "bilibili.com" in combined:
-        return "Bilibili"
     if "youtube.com" in combined or "youtu.be" in combined:
         return "YouTube"
-    if "x.com" in combined or "twitter.com" in combined:
-        return "X"
-    if "weibo.com" in combined:
-        return "微博"
     if "douyin.com" in combined:
         return "抖音"
     if provider == "rsshub" or "rsshub" in feed:
+        if "bilibili" in feed:
+            return "Bilibili"
+        if "weibo" in feed:
+            return "微博"
+        if "twitter" in feed or "x.com" in feed:
+            return "X"
         return "RSSHub"
     return "RSS"
 
