@@ -7,11 +7,6 @@
     <div class="metric-chip"><span class="label">成功源数</span><strong>{{ status.last_success_sources }}/{{ status.last_total_sources }}</strong></div>
     <div class="metric-chip"><span class="label">新增条目</span><strong>{{ status.last_inserted_entries }}</strong></div>
   </div>
-  <div class="settings-actions">
-    <form hx-post="/actions/fetch-now?{{ params|urlencode }}" hx-target="#runtime-status-panel" hx-swap="innerHTML">
-      <button class="btn" type="submit" {% if status.fetch_state == 'running' %}disabled{% endif %}>{% if status.fetch_state == 'running' %}后台抓取中...{% else %}立即抓取{% endif %}</button>
-    </form>
-  </div>
 </div>
 <div class="settings-error-block">
   <div class="subtle">错误摘要</div>

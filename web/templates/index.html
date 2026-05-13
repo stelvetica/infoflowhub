@@ -53,7 +53,12 @@
 
         <section class="card">
           <div class="panel-title">
-            <h3>订阅设置</h3>
+            <div class="panel-title-inline">
+              <h3>订阅设置</h3>
+              <form hx-post="/actions/fetch-now?{{ params|urlencode }}" hx-target="#runtime-status-panel" hx-swap="innerHTML">
+                <button class="btn" type="submit">立即抓取</button>
+              </form>
+            </div>
           </div>
           <div id="runtime-status-panel">
             {% include "partials/runtime_status.html" %}
@@ -67,10 +72,12 @@
     {% else %}
       <div class="split-shell {% if laterhub_collapsed %}laterhub-collapsed{% endif %}">
         <section class="split-pane split-pane-main">
-          <section class="card pane-card pane-card-left">
-            <div class="panel-title">
-              <h3 class="panel-heading-nowrap">订阅内容</h3>
-              <form class="toolbar toolbar-inline toolbar-inline-spread entries-header-form" hx-get="/fragments/entries" hx-target="#entries-panel" hx-swap="innerHTML">
+        <section class="card pane-card pane-card-left">
+          <div class="panel-title">
+              <div class="panel-title-inline">
+                <h3 class="panel-heading-nowrap">订阅内容</h3>
+              </div>
+              <form class="toolbar toolbar-inline toolbar-inline-spread entries-header-form entries-header-form-right" hx-get="/fragments/entries" hx-target="#entries-panel" hx-swap="innerHTML">
                 <input type="hidden" name="entries_sort" value="{{ entries.sort }}">
                 <input type="hidden" name="entries_dir" value="{{ entries.dir }}">
                 <input type="hidden" name="laterhub_q" value="{{ laterhub.q }}">
@@ -79,11 +86,11 @@
                 <input type="hidden" name="laterhub_sort" value="{{ laterhub.sort }}">
                 <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
                 <input type="hidden" name="laterhub_collapsed" value="{{ '1' if laterhub_collapsed else '0' }}">
-                <div class="toolbar toolbar-inline">
+                <div id="entries-unread-slot"></div>
+                <div class="toolbar toolbar-inline entries-search-group">
                   <input class="input" name="entries_q" value="{{ entries.q }}" placeholder="搜索标题、来源">
                   <button class="btn" type="submit">搜索</button>
                 </div>
-                <div id="entries-unread-slot"></div>
               </form>
             </div>
             <div id="entries-panel">

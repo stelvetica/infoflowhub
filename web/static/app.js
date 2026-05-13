@@ -98,6 +98,31 @@
     setupLaterhubToggle();
   }
 
+  document.body.addEventListener("htmx:beforeRequest", (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    const button = form.querySelector('button[type="submit"]');
+    if (!(button instanceof HTMLButtonElement)) return;
+    if (!button.dataset.originalText) {
+      button.dataset.originalText = button.textContent || "";
+    }
+    if (button.dataset.originalText.includes("立即抓取")) {
+      button.textContent = "抓取中...";
+      button.disabled = true;
+    }
+  });
+
+  document.body.addEventListener("htmx:afterRequest", (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    const button = form.querySelector('button[type="submit"]');
+    if (!(button instanceof HTMLButtonElement)) return;
+    if (button.dataset.originalText) {
+      button.textContent = button.dataset.originalText;
+      button.disabled = false;
+    }
+  });
+
   window.infoflowhub = { clearModal, closeModal };
   document.addEventListener("DOMContentLoaded", init);
   document.body.addEventListener("htmx:afterSwap", init);

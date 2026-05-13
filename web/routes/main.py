@@ -7,7 +7,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from web.services.fetch_runtime import fetch_now
+from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
 from web.services.views import (
     delete_source,
     get_entries_view,
@@ -104,6 +104,13 @@ async def fetch_now_action(request: Request):
     fetch_now()
     params = query_dict(request)
     return templates.TemplateResponse(request, "partials/runtime_status.html", {"settings": get_settings_view(params), "params": params})
+
+
+@router.post("/actions/laterhub/fetch-now", response_class=HTMLResponse)
+async def laterhub_fetch_now_action(request: Request):
+    fetch_laterhub_now()
+    params = query_dict(request)
+    return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params})
 
 
 @router.post("/actions/laterhub/{link_id}/toggle-finished", response_class=HTMLResponse)

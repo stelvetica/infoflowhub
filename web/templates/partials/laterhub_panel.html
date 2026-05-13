@@ -1,7 +1,12 @@
 <div class="pane-right-stack">
   <section class="card pane-card pane-card-right">
     <div class="panel-title">
-      <h3>稍后处理</h3>
+      <div class="panel-title-inline">
+        <h3>稍后处理</h3>
+        <form hx-post="/actions/laterhub/fetch-now?{{ params|urlencode }}" hx-target="#laterhub-panel" hx-swap="innerHTML">
+          <button class="btn" type="submit">立即抓取</button>
+        </form>
+      </div>
     </div>
     <form class="laterhub-form-stack" hx-get="/fragments/laterhub" hx-target="#laterhub-panel" hx-swap="innerHTML">
       <input type="hidden" name="entries_q" value="{{ params.get('entries_q', '') }}">

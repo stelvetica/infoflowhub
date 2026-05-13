@@ -56,6 +56,8 @@ button, input, select, textarea { font: inherit; }
 .toolbar-inline { flex-wrap: nowrap; }
 .toolbar-inline-spread { justify-content: space-between; width: 100%; }
 .entries-header-form { padding-left: 18px; }
+.entries-header-form-right { justify-content: flex-end; flex: 1; }
+.entries-search-group { margin-left: auto; }
 .entries-header-form .input { min-width: 188px; }
 .entries-header-form .btn { white-space: nowrap; }
 .toolbar form, .filterbar form { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -79,6 +81,7 @@ button, input, select, textarea { font: inherit; }
 .btn.disabled { pointer-events: none; opacity: 0.45; }
 .panel-title { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; }
 .panel-title h3 { margin: 0; }
+.panel-title-inline { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .panel-heading-nowrap { white-space: nowrap; }
 .table-wrap { overflow: auto; }
 table { width: 100%; border-collapse: collapse; table-layout: fixed; }
