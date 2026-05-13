@@ -45,10 +45,10 @@
         {% for item in settings.sources %}
         <tr>
           <td class="cell-tight">{{ loop.index }}</td>
-          <td class="cell-ellipsis" title="{{ item.name }}">{{ item.name }}</td>
+          <td title="{{ item.name }}"><span class="cell-ellipsis">{{ item.name }}</span></td>
           <td class="cell-tight"><span class="status {% if item.enabled %}ok{% else %}warn{% endif %}">{{ item.enabled_text }}</span></td>
-          <td class="cell-ellipsis" title="{{ item.channel_label }}">{{ item.channel_label }}</td>
-          <td class="cell-ellipsis" title="{{ item.provider_label }}">{{ item.provider_label }}</td>
+          <td title="{{ item.channel_label }}"><span class="cell-ellipsis">{{ item.channel_label }}</span></td>
+          <td title="{{ item.provider_label }}"><span class="cell-ellipsis">{{ item.provider_label }}</span></td>
           <td class="cell-login-requirement" title="{{ item.login_hint or item.login_requirement or '' }}">{% if item.login_requirement %}<span class="requirement-badge">{{ item.login_requirement }}</span>{% else %}-{% endif %}</td>
           <td class="cell-tight">{{ item.entry_count }}</td>
           <td class="cell-error-summary" title="{{ item.last_error or '' }}">{{ item.last_error or '-' }}</td>
