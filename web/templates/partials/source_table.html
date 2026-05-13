@@ -17,6 +17,7 @@
         <tr>
           <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=name&dir={{ 'asc' if settings.sort != 'name' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=name&dir={{ 'asc' if settings.sort != 'name' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">名称</a></th>
           <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=enabled_sort&dir={{ 'asc' if settings.sort != 'enabled_sort' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=enabled_sort&dir={{ 'asc' if settings.sort != 'enabled_sort' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">生效</a></th>
+          <th>渠道</th>
           <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=provider_label&dir={{ 'asc' if settings.sort != 'provider_label' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=provider_label&dir={{ 'asc' if settings.sort != 'provider_label' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">来源类型</a></th>
           <th>登录要求</th>
           <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=entry_count&dir={{ 'desc' if settings.sort != 'entry_count' or settings.dir == 'asc' else 'asc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=entry_count&dir={{ 'desc' if settings.sort != 'entry_count' or settings.dir == 'asc' else 'asc' }}" hx-target="#sources-panel" hx-swap="innerHTML">条目数</a></th>
@@ -31,6 +32,7 @@
         <tr>
           <td>{{ item.name }}</td>
           <td><span class="status {% if item.enabled %}ok{% else %}warn{% endif %}">{{ item.enabled_text }}</span></td>
+          <td>{{ item.channel_label }}</td>
           <td>{{ item.provider_label }}</td>
           <td class="cell-login-requirement" title="{{ item.login_hint or item.login_requirement or '' }}">{% if item.login_requirement %}<span class="requirement-badge">{{ item.login_requirement }}</span>{% else %}-{% endif %}</td>
           <td>{{ item.entry_count }}</td>

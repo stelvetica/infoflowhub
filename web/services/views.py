@@ -27,6 +27,7 @@ from web.services.utils import (
     join_tags,
     normalize_text,
     provider_label,
+    source_channel_label,
     split_tags,
     strip_invalid_unicode,
     to_sortable_time,
@@ -206,19 +207,30 @@ def normalize_sources() -> list[dict[str, Any]]:
     return changed
 
 
+def infer_source_meta(feed_url: str, site_url: str) -> tuple[str, str, str]:
+    feed = normalize_text(feed_url)
+    site = normalize_text(site_url)
+    combined = f"{feed} {site}"
+    if any(host in combined for host in ("bilibili.com", "x.com", "twitter.com", "weibo.com", "douyin.com")):
+        return ("web", "web", "web")
+    if "rsshub" in feed:
+        return ("rsshub", "rsshub-self-hosted", "rsshub")
+    return ("native", "direct", "native")
+
+
 def save_source(payload: dict[str, str]) -> None:
     sources = normalize_sources()
     existing = next((item for item in sources if item["id"] == payload.get("source_id", "").strip()), None)
     previous_name = str(existing.get("name") or "").strip() if existing else ""
-    provider = existing.get("provider") if existing else ("rsshub" if "rsshub" in payload["feed_url"] else "native")
-    fetch_via = existing.get("fetch_via") if existing else ("rsshub-self-hosted" if provider == "rsshub" else "direct")
-    kind = "rsshub" if provider == "rsshub" else "web" if provider == "web" else "native"
+    clean_feed_url = sanitize_db_text(payload["feed_url"]).strip()
+    clean_site_url = sanitize_db_text(payload.get("site_url", "")).strip()
+    provider, fetch_via, kind = infer_source_meta(clean_feed_url, clean_site_url)
     target = {
         "id": sanitize_db_text(payload.get("source_id", "")).strip() or build_source_id(payload["name"]),
         "name": sanitize_db_text(payload["name"]).strip(),
         "group": str(existing.get("group") or "").strip() if existing else "",
-        "feed_url": sanitize_db_text(payload["feed_url"]).strip(),
-        "site_url": sanitize_db_text(payload.get("site_url", "")).strip(),
+        "feed_url": clean_feed_url,
+        "site_url": clean_site_url,
         "provider": provider,
         "fetch_via": fetch_via,
         "kind": kind,
@@ -525,6 +537,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         row = {
             **item,
             "provider_label": provider_label(str(item.get("provider") or ""), str(item.get("fetch_via") or "")),
+            "channel_label": source_channel_label(str(item.get("feed_url") or ""), str(item.get("site_url") or ""), str(item.get("provider") or "")),
             "entry_count": int(stat.get("entry_count") or 0),
             "last_error": str(source_health.get("last_error") or ""),
             "last_success_at": str(source_health.get("last_success_at") or ""),
