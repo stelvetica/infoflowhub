@@ -762,6 +762,52 @@ th {
   margin-bottom: 14px;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(31, 35, 40, 0.28);
+  backdrop-filter: blur(8px);
+}
+
+.modal-card {
+  width: min(680px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border: 1px solid rgba(208, 215, 222, 0.9);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 20px 60px rgba(31, 35, 40, 0.18);
+  padding: 22px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.modal-header h3 {
+  margin: 0;
+}
+
+.modal-form-grid {
+  gap: 14px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
 @media (max-width: 1100px) {
   .split-shell,
   .split-shell.laterhub-collapsed {
@@ -814,5 +860,19 @@ th {
 
   .laterhub-filter-row {
     margin-left: 0;
+  }
+
+  .modal-backdrop {
+    padding: 14px;
+  }
+
+  .modal-card {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .modal-header,
+  .modal-actions {
+    flex-wrap: wrap;
   }
 }
