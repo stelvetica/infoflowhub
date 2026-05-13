@@ -5,6 +5,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
@@ -101,14 +102,14 @@ async def source_form_fragment(request: Request, source_id: str = ""):
 
 @router.post("/actions/fetch-now", response_class=HTMLResponse)
 async def fetch_now_action(request: Request):
-    fetch_now()
+    await run_in_threadpool(fetch_now)
     params = query_dict(request)
     return templates.TemplateResponse(request, "partials/runtime_status.html", {"settings": get_settings_view(params), "params": params})
 
 
 @router.post("/actions/laterhub/fetch-now", response_class=HTMLResponse)
 async def laterhub_fetch_now_action(request: Request):
-    fetch_laterhub_now()
+    await run_in_threadpool(fetch_laterhub_now)
     params = query_dict(request)
     return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params})
 
