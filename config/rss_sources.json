@@ -1,7 +1,7 @@
 {
   "sources": [
     {
-      "id": "HackerNews????",
+      "id": "HackerNews每日摘要",
       "name": "技术 HackerNews 每日摘要",
       "group": "",
       "feed_url": "https://www.supertechfans.com/cn/index.xml",
@@ -25,7 +25,7 @@
       "note": ""
     },
     {
-      "id": "code????",
+      "id": "code秘密花园",
       "name": "技术 code秘密花园 的 bilibili 动态",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/474921808",
@@ -37,8 +37,8 @@
       "note": ""
     },
     {
-      "id": "???",
-      "name": "观点 十三邀",
+      "id": "十三邀",
+      "name": "观点 生活态度 十三邀",
       "group": "",
       "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC7eBKmeAz99qswOcm3VxOow",
       "site_url": "https://www.youtube.com/channel/UC7eBKmeAz99qswOcm3VxOow",
@@ -46,10 +46,10 @@
       "fetch_via": "direct",
       "kind": "native",
       "enabled": true,
-      "note": ""
+      "note": "2026-05-13 核验 feed 返回 404，先停用待更换有效频道源"
     },
     {
-      "id": "???????",
+      "id": "路口大爷聊宏观",
       "name": "观点 路口大爷聊宏观 的 bilibili 动态",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/1908067732",
@@ -61,8 +61,8 @@
       "note": ""
     },
     {
-      "id": "?????",
-      "name": "观点 硬核姬老板 的 bilibili 动态",
+      "id": "硬核姬老板",
+      "name": "观点 基金 硬核姬老板 的 bilibili 动态",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/2117498259",
       "site_url": "https://space.bilibili.com/2117498259/dynamic",
@@ -73,28 +73,16 @@
       "note": ""
     },
     {
-      "id": "????",
-      "name": "观点 巫师财经 的 bilibili 动态",
+      "id": "巫师财经",
+      "name": "观点 产业 巫师财经 的 bilibili 动态",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/472747194",
       "site_url": "https://space.bilibili.com/472747194/dynamic",
       "provider": "web",
       "fetch_via": "web",
       "kind": "web",
-      "enabled": false,
+      "enabled": true,
       "note": ""
-    },
-    {
-      "id": "??????",
-      "name": "观点 小鹿投研日记 的 bilibili 动态",
-      "group": "",
-      "feed_url": "https://rsshub.app/bilibili/user/video/3546909549529340",
-      "site_url": "https://space.bilibili.com/3546909549529340",
-      "provider": "web",
-      "fetch_via": "web",
-      "kind": "web",
-      "enabled": false,
-      "note": "用户手动补充"
     },
     {
       "id": "MacroMargin",
@@ -124,7 +112,7 @@
     },
     {
       "id": "Mark__Huang",
-      "name": "观点 成长 Mark__Huang 的 bilibili 动态",
+      "name": "观点 成长股 Mark__Huang 的 bilibili 动态",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/424405794",
       "site_url": "https://space.bilibili.com/424405794/dynamic",
@@ -135,11 +123,107 @@
       "note": "用户手动补充"
     },
     {
-      "id": "?????????",
-      "name": "观点 解释 何佳心今天加薪了么 的 bilibili 动态",
+      "id": "何佳心今天加薪了么",
+      "name": "观点 价值解释 何佳心今天加薪了么 的 bilibili 动态",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/160326026",
       "site_url": "https://space.bilibili.com/160326026/dynamic",
+      "provider": "web",
+      "fetch_via": "web",
+      "kind": "web",
+      "enabled": true,
+      "note": "用户手动补充"
+    },
+    {
+      "id": "老厉害",
+      "name": "观点 外资观点 老厉害",
+      "group": "",
+      "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC8gZZWIWmBuCb_gzC8DUrvw",
+      "site_url": "https://www.youtube.com/channel/UC8gZZWIWmBuCb_gzC8DUrvw",
+      "provider": "native",
+      "fetch_via": "direct",
+      "kind": "native",
+      "enabled": false,
+      "note": "2026-05-13 核验 feed 返回 404，先停用待更换有效频道源"
+    },
+    {
+      "id": "阮一峰周刊",
+      "name": "技术 阮一峰周刊",
+      "group": "",
+      "feed_url": "https://feeds.feedburner.com/ruanyifeng",
+      "site_url": "http://www.ruanyifeng.com/blog/",
+      "provider": "native",
+      "fetch_via": "direct",
+      "kind": "native",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "id": "技术爬爬虾",
+      "name": "技术 技术爬爬虾 的 bilibili 动态",
+      "group": "",
+      "feed_url": "https://rsshub.app/bilibili/user/dynamic/316183842",
+      "site_url": "https://space.bilibili.com/316183842/dynamic",
+      "provider": "web",
+      "fetch_via": "web",
+      "kind": "web",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "id": "铁锤观察室",
+      "name": "观点 房产 铁锤观察室 的 bilibili 动态",
+      "group": "",
+      "feed_url": "https://rsshub.app/bilibili/user/dynamic/1257954297",
+      "site_url": "https://space.bilibili.com/1257954297/dynamic",
+      "provider": "web",
+      "fetch_via": "web",
+      "kind": "web",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "id": "肖恩周刊",
+      "name": "技术 肖恩周刊",
+      "group": "",
+      "feed_url": "https://lumina.shawnxie.top/backend/api/reviews/rss.xml",
+      "site_url": "https://lumina.shawnxie.top/",
+      "provider": "native",
+      "fetch_via": "direct",
+      "kind": "native",
+      "enabled": true,
+      "note": "用户手动补充"
+    },
+    {
+      "id": "星话大白",
+      "name": "信息 星话大白 的 bilibili 动态",
+      "group": "",
+      "feed_url": "https://rsshub.app/bilibili/user/dynamic/2233213",
+      "site_url": "https://space.bilibili.com/2233213/dynamic",
+      "provider": "web",
+      "fetch_via": "web",
+      "kind": "web",
+      "enabled": false,
+      "note": "用户手动补充"
+    },
+    {
+      "id": "土豆看财报",
+      "name": "观点 公司 土豆看财报 的 bilibili 动态",
+      "group": "",
+      "feed_url": "https://rsshub.app/bilibili/user/dynamic/3706972811561025",
+      "site_url": "https://space.bilibili.com/3706972811561025/dynamic",
+      "provider": "web",
+      "fetch_via": "web",
+      "kind": "web",
+      "enabled": true,
+      "note": "用户手动补充"
+    },
+    {
+      "id": "投研部杨摸鱼",
+      "name": "观点 公司 投研部杨摸鱼 的 bilibili 动态",
+      "group": "",
+      "feed_url": "https://rsshub.app/bilibili/user/dynamic/13611123",
+      "site_url": "https://space.bilibili.com/13611123/dynamic",
       "provider": "web",
       "fetch_via": "web",
       "kind": "web",

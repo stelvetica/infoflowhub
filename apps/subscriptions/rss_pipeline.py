@@ -14,7 +14,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 
 
 def _safe_print(text: str) -> None:
-    print(text.encode("gbk", errors="replace").decode("gbk"))
+    print(text)
 
 
 def import_opml(opml_path: str, output_path: str = "") -> int:
@@ -94,3 +94,7 @@ def main() -> int:
     if args.command == "import-opml":
         return import_opml(args.path, args.output)
     return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

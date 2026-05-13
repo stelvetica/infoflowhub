@@ -21,6 +21,11 @@ def clean_health_error(value: str) -> str:
     return " ".join((value or "").strip().split())[:320]
 
 
+def is_expected_login_requirement_error(message: str) -> bool:
+    text = clean_health_error(message)
+    return "依赖本机 Chrome Profile 2 登录态" in text
+
+
 def update_source_health(result) -> None:
     health = load_health()
     source_health = health.setdefault("sources", {})
@@ -55,10 +60,15 @@ def fetch_now() -> dict:
         inserted_total = 0
         success_sources = 0
         failures: list[str] = []
+        warnings: list[str] = []
         for result in results:
             update_source_health(result)
             if not result.ok:
-                failures.append(f"{result.source_name}: {result.error or result.status}")
+                issue_text = f"{result.source_name}: {result.error or result.status}"
+                if is_expected_login_requirement_error(result.error or ""):
+                    warnings.append(issue_text)
+                    continue
+                failures.append(issue_text)
                 continue
             success_sources += 1
             inserted_total += save_entries(result.entries)
@@ -69,7 +79,7 @@ def fetch_now() -> dict:
         status["last_total_sources"] = len(sources)
         status["last_success_sources"] = success_sources
         status["last_inserted_entries"] = inserted_total
-        status["last_error"] = " | ".join(failures[:10])
+        status["last_error"] = " | ".join((failures + warnings)[:10])
         save_status(status)
         return status
     except Exception as exc:
