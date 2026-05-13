@@ -85,7 +85,7 @@
           </a>
         </div>
       </section>
-      <div class="split-shell {% if laterhub_collapsed %}laterhub-collapsed{% endif %}">
+      <div class="split-shell">
         <section class="split-pane split-pane-main">
         <section class="card pane-card pane-card-left">
           <div class="panel-title">
@@ -103,7 +103,6 @@
                 <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
                 <input type="hidden" name="laterhub_sort" value="{{ laterhub.sort }}">
                 <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
-                <input type="hidden" name="laterhub_collapsed" value="{{ '1' if laterhub_collapsed else '0' }}">
                 <div class="toolbar toolbar-inline entries-search-group">
                   <input class="input" name="entries_q" value="{{ entries.q }}" placeholder="搜索标题、来源">
                   <button class="btn" type="submit">搜索</button>
@@ -116,10 +115,7 @@
             </div>
           </section>
         </section>
-        <button class="split-toggle" type="button" data-toggle-laterhub aria-label="切换稍后处理" aria-pressed="{{ 'true' if laterhub_collapsed else 'false' }}">
-          <span class="split-toggle-line"></span>
-          <span class="split-toggle-knob">{{ '<<' if laterhub_collapsed else '>>' }}</span>
-        </button>
+        <div class="split-resizer" data-split-resizer aria-label="调整稍后处理宽度" role="separator" aria-orientation="vertical"></div>
         <aside class="split-pane split-pane-side">
           <div id="laterhub-panel">
             {% include "partials/laterhub_panel.html" %}

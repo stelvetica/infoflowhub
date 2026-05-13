@@ -57,7 +57,6 @@ def render_main(request: Request, params: dict[str, str]):
             "laterhub": laterhub,
             "settings": settings,
             "params": params,
-            "laterhub_collapsed": params.get("laterhub_collapsed", "0") == "1",
             "source_lookup": {item["id"]: item for item in normalize_sources()},
         },
     )

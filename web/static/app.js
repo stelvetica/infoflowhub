@@ -1,6 +1,6 @@
 (() => {
   const STORAGE_KEY = "infoflowhub:read-links";
-  const LATERHUB_COLLAPSED_KEY = "infoflowhub:laterhub-collapsed";
+  const LATERHUB_WIDTH_KEY = "infoflowhub:laterhub-width";
 
   function loadReadLinks() {
     try {
@@ -78,30 +78,91 @@
     if (event.target.classList.contains("modal-backdrop")) clearModal();
   }
 
-  function setupLaterhubToggle() {
-    const toggle = document.querySelector("[data-toggle-laterhub]");
+  function setupLaterhubResizer() {
+    const resizer = document.querySelector("[data-split-resizer]");
     const shell = document.querySelector(".split-shell");
-    if (!toggle || !shell) return;
-    const stored = window.localStorage.getItem(LATERHUB_COLLAPSED_KEY);
-    if (stored === "1") {
-      shell.classList.add("laterhub-collapsed");
-      toggle.setAttribute("aria-pressed", "true");
-      const knob = toggle.querySelector(".split-toggle-knob");
-      if (knob) knob.textContent = "<<";
-    }
-    toggle.addEventListener("click", () => {
-      const collapsed = shell.classList.toggle("laterhub-collapsed");
-      window.localStorage.setItem(LATERHUB_COLLAPSED_KEY, collapsed ? "1" : "0");
-      toggle.setAttribute("aria-pressed", collapsed ? "true" : "false");
-      const knob = toggle.querySelector(".split-toggle-knob");
-      if (knob) knob.textContent = collapsed ? "<<" : ">>";
+    if (!resizer || !shell) return;
+    if (resizer.dataset.ready === "1") return;
+    resizer.dataset.ready = "1";
+
+    const clampWidth = (width) => {
+      const shellWidth = shell.getBoundingClientRect().width;
+      const minWidth = 320;
+      const maxWidth = Math.max(minWidth, Math.min(720, Math.floor(shellWidth * 0.6)));
+      return Math.min(maxWidth, Math.max(minWidth, Math.round(width)));
+    };
+
+    const applyWidth = (width, persist = true) => {
+      if (window.innerWidth <= 1100) return;
+      const nextWidth = clampWidth(width);
+      shell.style.setProperty("--laterhub-width", `${nextWidth}px`);
+      if (persist) {
+        window.localStorage.setItem(LATERHUB_WIDTH_KEY, String(nextWidth));
+      }
+    };
+
+    const restoreWidth = () => {
+      if (window.innerWidth <= 1100) {
+        shell.style.removeProperty("--laterhub-width");
+        return;
+      }
+      const stored = Number(window.localStorage.getItem(LATERHUB_WIDTH_KEY) || "");
+      if (Number.isFinite(stored) && stored > 0) {
+        applyWidth(stored, false);
+      } else {
+        shell.style.removeProperty("--laterhub-width");
+      }
+    };
+
+    let dragging = false;
+
+    const updateFromClientX = (clientX) => {
+      const bounds = shell.getBoundingClientRect();
+      applyWidth(bounds.right - clientX);
+    };
+
+    const stopDragging = (pointerId) => {
+      if (!dragging) return;
+      dragging = false;
+      resizer.classList.remove("is-dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      if (pointerId !== undefined && resizer.hasPointerCapture(pointerId)) {
+        resizer.releasePointerCapture(pointerId);
+      }
+    };
+
+    resizer.addEventListener("pointerdown", (event) => {
+      if (window.innerWidth <= 1100) return;
+      dragging = true;
+      resizer.classList.add("is-dragging");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      resizer.setPointerCapture(event.pointerId);
+      updateFromClientX(event.clientX);
     });
+
+    resizer.addEventListener("pointermove", (event) => {
+      if (!dragging) return;
+      updateFromClientX(event.clientX);
+    });
+
+    resizer.addEventListener("pointerup", (event) => {
+      stopDragging(event.pointerId);
+    });
+
+    resizer.addEventListener("pointercancel", (event) => {
+      stopDragging(event.pointerId);
+    });
+
+    window.addEventListener("resize", restoreWidth);
+    restoreWidth();
   }
 
   function init() {
     applyReadState();
     setupUnreadToggle();
-    setupLaterhubToggle();
+    setupLaterhubResizer();
   }
 
   document.body.addEventListener("htmx:beforeRequest", (event) => {

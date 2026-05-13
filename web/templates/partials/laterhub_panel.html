@@ -15,11 +15,10 @@
       <input type="hidden" name="laterhub_sort" value="{{ laterhub.sort }}">
       <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
       <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
-      <input type="hidden" name="laterhub_collapsed" value="{{ params.get('laterhub_collapsed', '') }}">
       <div class="toolbar toolbar-inline laterhub-top-row">
         <input class="input laterhub-search-input" name="laterhub_q" value="{{ laterhub.q }}" placeholder="搜索标题或标签">
         <button class="btn" type="submit">搜索</button>
-        <a class="btn laterhub-clear-btn" href="/?entries_q={{ params.get('entries_q', '') }}&entries_sort={{ params.get('entries_sort', '') }}&entries_dir={{ params.get('entries_dir', '') }}&laterhub_collapsed={{ params.get('laterhub_collapsed', '') }}">清空</a>
+        <a class="btn laterhub-clear-btn" href="/?entries_q={{ params.get('entries_q', '') }}&entries_sort={{ params.get('entries_sort', '') }}&entries_dir={{ params.get('entries_dir', '') }}">清空</a>
       </div>
       <div class="chips laterhub-chips">
         <button class="chip {% if not laterhub.selected_tags %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="">全部</button>
