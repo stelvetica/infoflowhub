@@ -93,7 +93,7 @@ export function EntriesSplitShell({ left, right, initialCollapsed = false }: Ent
         onClick={() => setCollapsed((current) => !current)}
       >
         <span className="split-toggle-line" />
-        <span className="split-toggle-knob">{collapsed ? "‹" : "›"}</span>
+        <span className="split-toggle-knob">{collapsed ? "<<" : ">>"}</span>
       </button>
       <aside className="split-pane split-pane-side">{right}</aside>
     </div>

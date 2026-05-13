@@ -196,7 +196,7 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
               </div>
               <div className="inline-metric">
                 <span className="label">已选标签</span>
-                <strong>{data.selectedTags.length ? data.selectedTags.length : "无"}</strong>
+                <strong>{data.selectedTags.length || 0}</strong>
               </div>
             </div>
             <div className="laterhub-filter-row">
@@ -238,7 +238,7 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
 
       <section className="card">
         <div className="panel-title">
-          <h3>稍后处理设置概览</h3>
+          <h3>稍后处理概览</h3>
         </div>
         <div className="settings-summary-row">
           <p className="subtle">总数：{data.summary.total_count}</p>
@@ -310,7 +310,7 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
                     来源类型
                   </Link>
                 </th>
-                <th>登录态要求</th>
+                <th>登录要求</th>
                 <th>
                   <Link className="sort" href={sortHref("settings", data.sort, data.dir, "entry_count", { source_q: data.q, source_filter: data.sourceFilter }, true)}>
                     条目数
@@ -342,7 +342,9 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
                     {item.login_requirement ? <span className="requirement-badge">{item.login_requirement}</span> : "-"}
                   </td>
                   <td>{item.entry_count}</td>
-                  <td className="cell-error-summary" title={item.last_error || ""}>{item.last_error || "-"}</td>
+                  <td className="cell-error-summary" title={item.last_error || ""}>
+                    {item.last_error || "-"}
+                  </td>
                   <td>{item.last_success_at ? item.last_success_at.slice(5, 16) : "-"}</td>
                   <td>{item.invalid_days || "-"}</td>
                   <td>

@@ -82,9 +82,7 @@ export function LaterhubTableClient({ rows }: LaterhubTableClientProps) {
         </table>
       </div>
       <div className="pagination pagination-tight pagination-aligned">
-        <div className="subtle">
-          第 {safePage} / {totalPages} 页，共 {rows.length} 条
-        </div>
+        <div className="subtle">第 {safePage} / {totalPages} 页，共 {rows.length} 条</div>
         <div className="toolbar">
           <button className={`btn ghost ${safePage <= 1 ? "disabled" : ""}`} type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={safePage <= 1}>
             上一页

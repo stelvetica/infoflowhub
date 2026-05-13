@@ -22,7 +22,7 @@ function stateText(status: RuntimeStatus): string {
 export function FetchNowPanel({ initialStatus }: FetchNowPanelProps) {
   const router = useRouter();
   const [status, setStatus] = useState(initialStatus);
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const [requesting, setRequesting] = useState(false);
 
   useEffect(() => {
@@ -108,7 +108,7 @@ export function FetchNowPanel({ initialStatus }: FetchNowPanelProps) {
       </div>
       <div className="settings-error-block">
         <div className="subtle">错误摘要</div>
-        <pre className="codebox compact">{status.last_error || "无"}</pre>
+        <pre className="codebox compact">{status.last_error || "-"}</pre>
       </div>
     </>
   );
