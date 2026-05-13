@@ -57,6 +57,7 @@ button, input, select, textarea { font: inherit; }
 .toolbar-inline-spread { justify-content: space-between; width: 100%; }
 .entries-header-form { padding-left: 18px; }
 .entries-header-form-right { justify-content: flex-end; flex: 1; }
+.entries-unread-slot { display: flex; align-items: center; }
 .entries-search-group { margin-left: auto; }
 .entries-header-form .input { min-width: 188px; }
 .entries-header-form .btn { white-space: nowrap; }

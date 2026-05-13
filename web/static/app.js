@@ -41,13 +41,13 @@
     if (!slot || !panel) return;
     if (slot.dataset.ready === "1") return;
     slot.dataset.ready = "1";
+
     let unreadOnly = true;
     const button = document.createElement("button");
     button.type = "button";
     button.className = "btn ghost active-filter";
-    button.textContent = "显示全部";
-    button.onclick = () => {
-      unreadOnly = !unreadOnly;
+
+    const render = () => {
       const readLinks = loadReadLinks();
       panel.querySelectorAll("tbody tr").forEach((row) => {
         const anchor = row.querySelector(".read-track");
@@ -55,12 +55,18 @@
         const href = anchor.getAttribute("href") || "";
         row.style.display = unreadOnly && readLinks[href] ? "none" : "";
       });
-      button.textContent = unreadOnly ? "显示全部" : "未读";
+      button.textContent = unreadOnly ? "默认未读" : "显示全部";
       button.classList.toggle("active-filter", unreadOnly);
     };
+
+    button.onclick = () => {
+      unreadOnly = !unreadOnly;
+      render();
+    };
+
     slot.innerHTML = "";
     slot.appendChild(button);
-    button.click();
+    render();
   }
 
   function clearModal() {
@@ -106,7 +112,7 @@
     if (!button.dataset.originalText) {
       button.dataset.originalText = button.textContent || "";
     }
-    if (button.dataset.originalText.includes("立即抓取")) {
+    if (button.dataset.originalText.includes("抓取")) {
       button.textContent = "抓取中...";
       button.disabled = true;
     }
