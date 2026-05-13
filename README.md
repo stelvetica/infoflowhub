@@ -77,7 +77,7 @@ $env:INFOFLOW_PYTHON="你的 python 路径"
 ### 2. 启动控制台
 
 - 推荐：`powershell -ExecutionPolicy Bypass -File scripts\restart_infoflow_web.ps1`
-- 或双击：`scripts\一键清缓存并打开InfoFlowHub.bat`
+- 或双击：`scripts\一键重新拉起InfoFlowHub服务.bat`
 
 默认地址：
 

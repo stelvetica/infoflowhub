@@ -3,10 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -H 127.0.0.1 -p 18421",
-    "dev:stable": "powershell -ExecutionPolicy Bypass -File scripts/start_infoflow.ps1",
-    "build": "next build",
-    "start": "next start -H 127.0.0.1 -p 18421",
+    "web:start": "powershell -ExecutionPolicy Bypass -File scripts/start_infoflow_web.ps1",
+    "web:restart": "powershell -ExecutionPolicy Bypass -File scripts/restart_infoflow_web.ps1",
     "lint": "next lint"
   },
   "dependencies": {
