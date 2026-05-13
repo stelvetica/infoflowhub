@@ -122,7 +122,7 @@
     },
     {
       "id": "观点-房产-铁锤观察室",
-      "name": "观点 铁锤观察室 的 bilibili 动态",
+      "name": "观点 房产 铁锤观察室 的 bilibili 动态",
       "group": "00_⭐️+微信星标",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/1257954297",
       "site_url": "https://space.bilibili.com/1257954297/dynamic",
@@ -171,7 +171,7 @@
     {
       "id": "current-affairs-xinghuadabai",
       "name": "时事 短评 长文视频 星话大白 的 bilibili 动态",
-      "group": "00_⭐+微信星标",
+      "group": "00_⭐️+微信星标",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/2233213",
       "site_url": "https://space.bilibili.com/2233213/dynamic",
       "provider": "web",
@@ -183,7 +183,7 @@
     {
       "id": "macro-margin-x",
       "name": "宏观 MacroMargin",
-      "group": "00_⭐+微信星标",
+      "group": "00_⭐️+微信星标",
       "feed_url": "https://rsshub.app/twitter/user/MacroMargin",
       "site_url": "https://x.com/MacroMargin",
       "provider": "web",
@@ -194,63 +194,63 @@
     },
     {
       "id": "view-potato-financials-bilibili-dynamic",
-      "name": "?? ????? ? bilibili ??",
-      "group": "01_??",
+      "name": "观点 土豆看财报 的 bilibili 动态",
+      "group": "01_新闻",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/3706972811561025",
       "site_url": "https://space.bilibili.com/3706972811561025/dynamic",
       "provider": "web",
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "??????"
+      "note": "用户手动补充"
     },
     {
       "id": "view-yangmoyu-research-bilibili-dynamic",
-      "name": "?? ?????? ? bilibili ??",
-      "group": "01_??",
+      "name": "观点 投研部杨摸鱼 的 bilibili 动态",
+      "group": "01_新闻",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/13611123",
       "site_url": "https://space.bilibili.com/13611123/dynamic",
       "provider": "web",
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "??????"
+      "note": "用户手动补充"
     },
     {
       "id": "view-skills-terancejiang-bilibili-dynamic",
-      "name": "?? Skills TeranceJiang ? bilibili ??",
-      "group": "01_??",
+      "name": "观点 Skills TeranceJiang 的 bilibili 动态",
+      "group": "01_新闻",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/260581706",
       "site_url": "https://space.bilibili.com/260581706/dynamic",
       "provider": "web",
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "??????"
+      "note": "用户手动补充"
     },
     {
       "id": "view-growth-mark-huang-bilibili-dynamic",
-      "name": "?? ?? Mark__Huang ? bilibili ??",
-      "group": "01_??",
+      "name": "观点 成长 Mark__Huang 的 bilibili 动态",
+      "group": "01_新闻",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/424405794",
       "site_url": "https://space.bilibili.com/424405794/dynamic",
       "provider": "web",
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "??????"
+      "note": "用户手动补充"
     },
     {
       "id": "view-explainer-hejiaxin-bilibili-dynamic",
-      "name": "?? ?? ????????? ? bilibili ??",
-      "group": "01_??",
+      "name": "观点 解释 何佳心今天加薪了么 的 bilibili 动态",
+      "group": "01_新闻",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/160326026",
       "site_url": "https://space.bilibili.com/160326026/dynamic",
       "provider": "web",
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "??????"
+      "note": "用户手动补充"
     }
   ]
 }
