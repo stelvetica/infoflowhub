@@ -1,0 +1,57 @@
+<section class="card">
+  <div class="panel-title">
+    <h3>订阅源管理</h3>
+    <form class="toolbar" hx-get="/fragments/sources" hx-target="#sources-panel" hx-swap="innerHTML">
+      <input type="hidden" name="source_filter" value="{{ settings.source_filter }}">
+      <input type="hidden" name="sort" value="{{ settings.sort }}">
+      <input type="hidden" name="dir" value="{{ settings.dir }}">
+      <input class="input" name="source_q" value="{{ settings.q }}" placeholder="搜索名称 / RSS URL">
+      <button class="btn" type="submit">搜索</button>
+      <button class="btn ghost {% if settings.source_filter == 'failed' %}active-filter{% endif %}" type="submit" name="source_filter" value="{{ '' if settings.source_filter == 'failed' else 'failed' }}">{{ '查看全部源' if settings.source_filter == 'failed' else '仅看失败/失效源' }}</button>
+      <button class="btn secondary" type="button" hx-get="/fragments/source-form?sort={{ settings.sort }}&dir={{ settings.dir }}&source_q={{ settings.q }}&source_filter={{ settings.source_filter }}" hx-target="#modal-root" hx-swap="innerHTML">新增订阅源</button>
+    </form>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=name&dir={{ 'asc' if settings.sort != 'name' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=name&dir={{ 'asc' if settings.sort != 'name' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">名称</a></th>
+          <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=enabled_sort&dir={{ 'asc' if settings.sort != 'enabled_sort' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=enabled_sort&dir={{ 'asc' if settings.sort != 'enabled_sort' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">生效</a></th>
+          <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=provider_label&dir={{ 'asc' if settings.sort != 'provider_label' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=provider_label&dir={{ 'asc' if settings.sort != 'provider_label' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">来源类型</a></th>
+          <th>登录要求</th>
+          <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=entry_count&dir={{ 'desc' if settings.sort != 'entry_count' or settings.dir == 'asc' else 'asc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=entry_count&dir={{ 'desc' if settings.sort != 'entry_count' or settings.dir == 'asc' else 'asc' }}" hx-target="#sources-panel" hx-swap="innerHTML">条目数</a></th>
+          <th>最近错误</th>
+          <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=last_success_at&dir={{ 'desc' if settings.sort != 'last_success_at' or settings.dir == 'asc' else 'asc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=last_success_at&dir={{ 'desc' if settings.sort != 'last_success_at' or settings.dir == 'asc' else 'asc' }}" hx-target="#sources-panel" hx-swap="innerHTML">最近成功</a></th>
+          <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=invalid_sort&dir={{ 'desc' if settings.sort != 'invalid_sort' or settings.dir == 'asc' else 'asc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=invalid_sort&dir={{ 'desc' if settings.sort != 'invalid_sort' or settings.dir == 'asc' else 'asc' }}" hx-target="#sources-panel" hx-swap="innerHTML">失效天数</a></th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in settings.sources %}
+        <tr>
+          <td>{{ item.name }}</td>
+          <td><span class="status {% if item.enabled %}ok{% else %}warn{% endif %}">{{ item.enabled_text }}</span></td>
+          <td>{{ item.provider_label }}</td>
+          <td class="cell-login-requirement" title="{{ item.login_hint or item.login_requirement or '' }}">{% if item.login_requirement %}<span class="requirement-badge">{{ item.login_requirement }}</span>{% else %}-{% endif %}</td>
+          <td>{{ item.entry_count }}</td>
+          <td class="cell-error-summary" title="{{ item.last_error or '' }}">{{ item.last_error or '-' }}</td>
+          <td>{{ item.last_success_at[5:16] if item.last_success_at else '-' }}</td>
+          <td>{{ item.invalid_days or '-' }}</td>
+          <td>
+            <div class="toolbar">
+              <form hx-post="/actions/source/{{ item.id }}/toggle-enabled?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort={{ settings.sort }}&dir={{ settings.dir }}" hx-target="#sources-panel" hx-swap="innerHTML">
+                <input type="hidden" name="enabled" value="{{ 0 if item.enabled else 1 }}">
+                <button class="btn secondary" type="submit">{{ '停用' if item.enabled else '启用' }}</button>
+              </form>
+              <button class="btn ghost" type="button" hx-get="/fragments/source-form?source_id={{ item.id }}&source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort={{ settings.sort }}&dir={{ settings.dir }}" hx-target="#modal-root" hx-swap="innerHTML">编辑</button>
+              <form hx-post="/actions/source/{{ item.id }}/delete?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort={{ settings.sort }}&dir={{ settings.dir }}" hx-target="#sources-panel" hx-swap="innerHTML">
+                <button class="btn ghost" type="submit">删除</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>

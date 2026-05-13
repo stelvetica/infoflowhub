@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}InfoFlowHub{% endblock %}
+
+{% block body %}
+<div class="shell">
+  <main class="main">
+    <header class="topbar">
+      <div class="brand brand-centered">
+        <h1>InfoFlowHub</h1>
+      </div>
+      <a class="settings-link {% if view == 'settings' %}active{% endif %}" href="{% if view == 'settings' %}/{% else %}/?view=settings{% endif %}" aria-label="设置">
+        <span aria-hidden="true">⚙️</span>
+      </a>
+    </header>
+
+    {% if view == 'settings' %}
+      <div class="stack">
+        <section class="card">
+          <div class="panel-title">
+            <h3>订阅设置</h3>
+          </div>
+          <div id="runtime-status-panel">
+            {% include "partials/runtime_status.html" %}
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="panel-title">
+            <h3>稍后处理概览</h3>
+          </div>
+          <div class="settings-summary-row">
+            <p class="subtle">总数：{{ settings.summary.total_count }}</p>
+            <p class="subtle">未完成：{{ settings.summary.unfinished_count }}</p>
+            <p class="subtle">已完成：{{ settings.summary.finished_count }}</p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>来源</th>
+                  <th>用途说明</th>
+                  <th>抓取方式</th>
+                  <th>总数</th>
+                  <th>未完成</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in settings.laterhub_sources %}
+                <tr>
+                  <td>{{ item.label }}</td>
+                  <td>{{ item.purpose }}</td>
+                  <td>{{ item.fetch_mode }}</td>
+                  <td>{{ item.total_count }}</td>
+                  <td>{{ item.unfinished_count }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <div id="sources-panel">
+          {% include "partials/source_table.html" %}
+        </div>
+      </div>
+    {% else %}
+      <div class="split-shell {% if laterhub_collapsed %}laterhub-collapsed{% endif %}">
+        <section class="split-pane split-pane-main">
+          <section class="card pane-card pane-card-left">
+            <div class="panel-title">
+              <h3 class="panel-heading-nowrap">订阅内容</h3>
+              <form class="toolbar toolbar-inline toolbar-inline-spread entries-header-form" hx-get="/fragments/entries" hx-target="#entries-panel" hx-swap="innerHTML">
+                <input type="hidden" name="entries_sort" value="{{ entries.sort }}">
+                <input type="hidden" name="entries_dir" value="{{ entries.dir }}">
+                <input type="hidden" name="laterhub_q" value="{{ laterhub.q }}">
+                <input type="hidden" name="laterhub_filter_finished" value="{{ laterhub.filter_finished }}">
+                <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
+                <input type="hidden" name="laterhub_sort" value="{{ laterhub.sort }}">
+                <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
+                <input type="hidden" name="laterhub_collapsed" value="{{ '1' if laterhub_collapsed else '0' }}">
+                <div class="toolbar toolbar-inline">
+                  <input class="input" name="entries_q" value="{{ entries.q }}" placeholder="搜索标题、来源">
+                  <button class="btn" type="submit">搜索</button>
+                </div>
+                <div id="entries-unread-slot"></div>
+              </form>
+            </div>
+            <div id="entries-panel">
+              {% include "partials/entries_table.html" %}
+            </div>
+          </section>
+        </section>
+        <button class="split-toggle" type="button" data-toggle-laterhub aria-label="切换稍后处理" aria-pressed="{{ 'true' if laterhub_collapsed else 'false' }}">
+          <span class="split-toggle-line"></span>
+          <span class="split-toggle-knob">{{ '<<' if laterhub_collapsed else '>>' }}</span>
+        </button>
+        <aside class="split-pane split-pane-side">
+          <div id="laterhub-panel">
+            {% include "partials/laterhub_panel.html" %}
+          </div>
+        </aside>
+      </div>
+    {% endif %}
+  </main>
+</div>
+<div id="modal-root"></div>
+{% endblock %}

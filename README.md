@@ -1,6 +1,6 @@
 # infoflowhub
 
-这是整个信息跟踪体系的总仓库。
+这是整个信息流追踪体系的总仓库。
 
 当前按功能分成三条主线：
 
@@ -8,20 +8,21 @@
 - `subscriptions/`：个人订阅类内容
 - `newshub/`：新闻获取与整理类内容
 
-目前前端控制台已迁移到 Next.js，Python 仅保留抓取、入库和桥接职责。
+当前前端控制台已迁移为 `Python Web + Jinja2 + HTMX`，Python 同时负责抓取、入库、状态维护与页面服务。
 
 ## 当前结构
 
 ```text
 infoflowhub/
-├─ app/                  # Next.js App Router 页面
-├─ lib/                  # 前端读取与 Python 桥接
-├─ scripts/              # 启动、桥接、登录辅助脚本
+├─ web/                  # Python Web 服务、模板与静态资源
 ├─ apps/                 # Python 业务模块
 ├─ connectors/           # 各平台抓取器
 ├─ config/               # 订阅源与运行配置
 ├─ data/                 # SQLite 数据
-└─ runtime/              # 运行状态、健康信息、调试与本地运行产物
+├─ runtime/              # 运行状态、健康信息、日志与本地产物
+├─ scripts/              # 启动、重启、登录辅助脚本
+├─ app/                  # 旧 Next.js 前端，已废弃待清理
+└─ lib/                  # 旧 Node/Python bridge 逻辑，已废弃待清理
 ```
 
 ## 子系统说明
@@ -53,7 +54,7 @@ infoflowhub/
 - 管理订阅源
 - 抓取 RSS / 网页源
 - 写入本地 SQLite
-- 在 Next.js 控制台中检索、排序、维护源状态
+- 在 Web 控制台中检索、排序、筛选和维护源状态
 
 ### `newshub/`
 
@@ -61,16 +62,42 @@ infoflowhub/
 
 ## 启动方式
 
-- 前端控制台：`npm run dev`
-- 默认地址：[http://127.0.0.1:18421](http://127.0.0.1:18421)
-- 抓取与数据操作仍通过 Python 桥接脚本调用现有能力
+### 1. 安装 Python Web 依赖
+
+```powershell
+python -m pip install -r requirements-web.txt
+```
+
+如果你的 Python 不是系统默认解释器，可设置：
+
+```powershell
+$env:INFOFLOW_PYTHON="你的 python 路径"
+```
+
+### 2. 启动控制台
+
+- 推荐：`powershell -ExecutionPolicy Bypass -File scripts\restart_infoflow_web.ps1`
+- 或双击：`scripts\一键清缓存并打开InfoFlowHub.bat`
+
+默认地址：
+
+- [http://127.0.0.1:18421](http://127.0.0.1:18421)
 
 ## 版本库约束
 
 - `config/` 中的订阅源与运行配置继续纳入版本控制
 - `runtime/health/*.example.json` 保留为结构样例
-- 浏览器 profile、健康状态实时文件、SQLite 数据库、Next 构建产物均不再入库
+- 浏览器 profile、健康状态实时文件、SQLite 数据库、日志文件均不入库
 
 ## 现状
 
-这套系统已经具备“抓取 + 入库 + 前端管理”的基本闭环。页面服务已完全切换到 Next.js，Python 只保留抓取与桥接职责。
+这套系统已经具备“抓取 + 入库 + Web 管理”的基本闭环。
+
+当前主运行链路为：
+
+- Python 业务模块
+- FastAPI 页面服务
+- Jinja2 服务端渲染
+- HTMX 局部交互
+
+旧的 Next.js / Node bridge 代码保留在仓库中，仅作为迁移过渡参考，后续可继续清理。

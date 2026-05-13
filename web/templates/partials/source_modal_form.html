@@ -1,0 +1,27 @@
+<div class="modal-backdrop" role="presentation" onclick="window.infoflowhub.closeModal(event)">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="source-modal-title" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="source-modal-title">{{ '编辑订阅源' if draft.id else '新增订阅源' }}</h3>
+      <button class="btn ghost" type="button" onclick="window.infoflowhub.clearModal()">关闭</button>
+    </div>
+    <form action="/actions/source/save?source_q={{ params.get('source_q', '') }}&source_filter={{ params.get('source_filter', '') }}&sort={{ params.get('sort', 'name') }}&dir={{ params.get('dir', 'asc') }}" method="post" class="form-grid modal-form-grid">
+      <input type="hidden" name="source_id" value="{{ draft.id }}">
+      <label>
+        名称
+        <input class="input" name="name" value="{{ draft.name }}" required>
+      </label>
+      <label>
+        站点 URL
+        <input class="input" name="site_url" value="{{ draft.site_url }}">
+      </label>
+      <label>
+        RSS URL
+        <input class="input" name="feed_url" value="{{ draft.feed_url }}" required>
+      </label>
+      <div class="modal-actions">
+        <button class="btn ghost" type="button" onclick="window.infoflowhub.clearModal()">取消</button>
+        <button class="btn" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
