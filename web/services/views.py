@@ -163,7 +163,10 @@ def normalize_sources() -> list[dict[str, Any]]:
             source["login_hint"] = login_meta["hint"]
         alias = ALIAS_RULES.get(feed_url)
         if alias:
-            source.update(alias)
+            if not source["name"]:
+                source["name"] = str(alias.get("name") or "").strip()
+            if not source["site_url"]:
+                source["site_url"] = str(alias.get("site_url") or "").strip()
         if "bilibili.com" in (feed_url + site_url).lower() and not str(source["name"]).endswith("bilibili 动态"):
             source["name"] = f"{source['name']} bilibili 动态"
         if feed_url in NATIVE_FEED_URLS:
