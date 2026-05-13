@@ -126,8 +126,8 @@ def canonicalize_source(item: dict[str, Any]) -> dict[str, Any] | None:
         fallback_mode = "web" if channel == "youtube" else "none"
     source_id = str(item.get("id") or "").strip()
     name = str(item.get("name") or "").strip()
-    if not source_id and name:
-        source_id = build_source_id(name)
+    if not source_id or not name:
+        return None
     return {
         "id": source_id,
         "name": name,
@@ -176,19 +176,28 @@ def normalize_sources() -> list[dict[str, Any]]:
 
 
 def save_source(payload: dict[str, str]) -> None:
+    raw_sources = load_sources()
     sources = load_source_catalog()
     existing = next((item for item in sources if item["id"] == payload.get("source_id", "").strip()), None)
     previous_name = str(existing.get("name") or "").strip() if existing else ""
     clean_feed_url = sanitize_db_text(payload["feed_url"]).strip()
     clean_site_url = sanitize_db_text(payload.get("site_url", "")).strip()
+    clean_name = sanitize_db_text(payload["name"]).strip()
+    requested_source_id = sanitize_db_text(payload.get("source_id", "")).strip()
     provider, fetch_via, kind = infer_source_meta(clean_feed_url, clean_site_url)
     channel = infer_channel(clean_feed_url, clean_site_url)
     auth_type = str(existing.get("auth_type") or "").strip() if existing else ("chrome_profile_x" if normalize_text(clean_site_url) == "https://x.com/macromargin" else "none")
     auth_profile = str(existing.get("auth_profile") or "").strip() if existing else ("Profile 2" if auth_type == "chrome_profile_x" else "")
     fallback_mode = str(existing.get("fallback_mode") or "").strip() if existing else ("web" if channel == "youtube" else "none")
+    if not existing:
+        source_id = requested_source_id
+        if not source_id:
+            source_id = build_source_id(clean_name)
+    else:
+        source_id = existing["id"]
     target = {
-        "id": sanitize_db_text(payload.get("source_id", "")).strip() or build_source_id(payload["name"]),
-        "name": sanitize_db_text(payload["name"]).strip(),
+        "id": source_id,
+        "name": clean_name,
         "group": str(existing.get("group") or "").strip() if existing else "",
         "feed_url": clean_feed_url,
         "site_url": clean_site_url,
@@ -204,7 +213,10 @@ def save_source(payload: dict[str, str]) -> None:
     }
     if not target["name"] or not target["feed_url"]:
         return
-    next_sources = [target if item["id"] == target["id"] else item for item in sources] if any(item["id"] == target["id"] for item in sources) else [*sources, target]
+    if existing:
+        next_sources = [target if str(item.get("id") or "").strip() == target["id"] else item for item in raw_sources]
+    else:
+        next_sources = [*raw_sources, target]
     save_sources(next_sources)
     if existing and previous_name != target["name"]:
         rename_source(target["id"], target["name"])
@@ -214,10 +226,11 @@ def toggle_source(source_id: str, enabled: bool) -> None:
     clean_id = sanitize_db_text(source_id).strip()
     if not clean_id:
         return
-    sources = load_source_catalog()
+    raw_sources = load_sources()
     next_sources: list[dict[str, Any]] = []
-    for item in sources:
-        if item["id"] == clean_id:
+    for item in raw_sources:
+        current_id = str(item.get("id") or "").strip()
+        if current_id == clean_id:
             next_sources.append({**item, "enabled": enabled})
         else:
             next_sources.append(item)
@@ -228,7 +241,7 @@ def delete_source(source_id: str) -> None:
     clean_id = sanitize_db_text(source_id).strip()
     if not clean_id:
         return
-    save_sources([item for item in load_source_catalog() if item["id"] != clean_id])
+    save_sources([item for item in load_sources() if str(item.get("id") or "").strip() != clean_id])
     delete_entries_by_source(clean_id)
     delete_source_state(clean_id)
     health = load_health()
