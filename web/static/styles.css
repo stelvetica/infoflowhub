@@ -87,15 +87,28 @@ th { font-size: 12px; color: var(--muted); white-space: nowrap; background: rgba
 .entries-table .col-time { width: 96px; }
 .entries-table .col-source { width: 152px; }
 .entries-table .col-title { width: auto; }
+.sources-table .col-index { width: 56px; }
+.sources-table .col-name { width: 180px; }
+.sources-table .col-enabled { width: 84px; }
+.sources-table .col-channel { width: 96px; }
+.sources-table .col-provider { width: 126px; }
+.sources-table .col-login { width: 170px; }
+.sources-table .col-count { width: 86px; }
+.sources-table .col-error { width: 180px; }
+.sources-table .col-success { width: 108px; }
+.sources-table .col-invalid { width: 92px; }
+.sources-table .col-action { width: 150px; }
 .laterhub-table .col-time { width: 82px; }
 .laterhub-table .col-title { width: auto; }
 .laterhub-table .col-action { width: 68px; }
 .cell-time { white-space: nowrap; }
 .cell-ellipsis { display: block; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sources-table td .cell-ellipsis, .sources-table th .cell-ellipsis { display: block; }
 .cell-link { display: block; max-width: 100%; }
 .cell-strong { color: var(--text); }
 .cell-read { color: #8c959f; }
 .cell-muted { color: var(--muted); }
+.cell-tight { white-space: nowrap; }
 .laterhub-link-cell a { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .laterhub-action-cell { white-space: nowrap; }
 .laterhub-action-cell form { display: flex; justify-content: flex-start; }
@@ -142,11 +155,13 @@ th { font-size: 12px; color: var(--muted); white-space: nowrap; background: rgba
 .settings-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .settings-error-block { margin-top: 16px; }
 .cell-error-summary { max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
-.cell-login-requirement { min-width: 220px; }
+.cell-login-requirement { max-width: 170px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cell-actions { white-space: nowrap; }
 .source-actions { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
 .source-actions form { margin: 0; }
 .source-actions .btn { min-width: 56px; white-space: nowrap; }
+.sources-table .status { white-space: nowrap; }
+.sources-table td { overflow: hidden; }
 .requirement-badge { display: inline-flex; align-items: center; padding: 5px 10px; border-radius: 999px; border: 1px solid #b6d3ff; background: var(--accent-soft); color: var(--accent); font-size: 12px; line-height: 1.4; }
 .settings-summary-row { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 14px; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(31, 35, 40, 0.28); backdrop-filter: blur(8px); }

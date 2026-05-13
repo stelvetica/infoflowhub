@@ -12,7 +12,20 @@
     </form>
   </div>
   <div class="table-wrap">
-    <table>
+    <table class="sources-table">
+      <colgroup>
+        <col class="col-index">
+        <col class="col-name">
+        <col class="col-enabled">
+        <col class="col-channel">
+        <col class="col-provider">
+        <col class="col-login">
+        <col class="col-count">
+        <col class="col-error">
+        <col class="col-success">
+        <col class="col-invalid">
+        <col class="col-action">
+      </colgroup>
       <thead>
         <tr>
           <th>序号</th>
@@ -31,16 +44,16 @@
       <tbody>
         {% for item in settings.sources %}
         <tr>
-          <td>{{ loop.index }}</td>
-          <td>{{ item.name }}</td>
-          <td><span class="status {% if item.enabled %}ok{% else %}warn{% endif %}">{{ item.enabled_text }}</span></td>
-          <td>{{ item.channel_label }}</td>
-          <td>{{ item.provider_label }}</td>
+          <td class="cell-tight">{{ loop.index }}</td>
+          <td class="cell-ellipsis" title="{{ item.name }}">{{ item.name }}</td>
+          <td class="cell-tight"><span class="status {% if item.enabled %}ok{% else %}warn{% endif %}">{{ item.enabled_text }}</span></td>
+          <td class="cell-ellipsis" title="{{ item.channel_label }}">{{ item.channel_label }}</td>
+          <td class="cell-ellipsis" title="{{ item.provider_label }}">{{ item.provider_label }}</td>
           <td class="cell-login-requirement" title="{{ item.login_hint or item.login_requirement or '' }}">{% if item.login_requirement %}<span class="requirement-badge">{{ item.login_requirement }}</span>{% else %}-{% endif %}</td>
-          <td>{{ item.entry_count }}</td>
+          <td class="cell-tight">{{ item.entry_count }}</td>
           <td class="cell-error-summary" title="{{ item.last_error or '' }}">{{ item.last_error or '-' }}</td>
-          <td>{{ item.last_success_at[5:16] if item.last_success_at else '-' }}</td>
-          <td>{{ item.invalid_days or '-' }}</td>
+          <td class="cell-tight">{{ item.last_success_at[5:16] if item.last_success_at else '-' }}</td>
+          <td class="cell-tight">{{ item.invalid_days or '-' }}</td>
           <td class="cell-actions">
             <div class="source-actions">
               <form hx-post="/actions/source/{{ item.id }}/toggle-enabled?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort={{ settings.sort }}&dir={{ settings.dir }}" hx-target="#sources-panel" hx-swap="innerHTML">
