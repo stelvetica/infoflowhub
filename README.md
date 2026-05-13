@@ -20,9 +20,7 @@ infoflowhub/
 ├─ config/               # 订阅源与运行配置
 ├─ data/                 # SQLite 数据
 ├─ runtime/              # 运行状态、健康信息、日志与本地产物
-├─ scripts/              # 启动、重启、登录辅助脚本
-├─ app/                  # 旧 Next.js 前端，已废弃待清理
-└─ lib/                  # 旧 Node/Python bridge 逻辑，已废弃待清理
+└─ scripts/              # 启动、重启、登录辅助脚本
 ```
 
 ## 子系统说明
@@ -100,4 +98,4 @@ $env:INFOFLOW_PYTHON="你的 python 路径"
 - Jinja2 服务端渲染
 - HTMX 局部交互
 
-旧的 Next.js / Node bridge 代码保留在仓库中，仅作为迁移过渡参考，后续可继续清理。
+旧的 Next.js / Node bridge 已彻底移除，当前只保留 Python Web 主链路。
