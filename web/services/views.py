@@ -17,6 +17,7 @@ from apps.subscriptions.rss_db import (
 )
 from connectors._shared.common import parse_published_datetime, resolve_web_target
 from connectors._shared.web_fetch import validate_x_login_prerequisite
+from connectors.wechat.auth import validate_wechat_auth_prerequisite
 
 from web.services.utils import (
     build_source_id,
@@ -76,6 +77,11 @@ def load_health() -> dict[str, Any]:
 
 
 def get_login_requirement_meta(source: dict[str, Any]) -> dict[str, str] | None:
+    if str(source.get("auth_type") or "").strip().lower() == "wechat_session":
+        hint = validate_wechat_auth_prerequisite(source)
+        if not hint:
+            hint = "请在环境变量或 runtime/wechat_auth.json 中维护 WECHAT_TOKEN 与 WECHAT_COOKIE。"
+        return {"requirement": "依赖微信公众号登录态", "hint": hint}
     if str(source.get("auth_type") or "").strip().lower() == "chrome_profile_x":
         requirement = "依赖本机 Chrome Profile 2 登录态"
         hint = validate_x_login_prerequisite(source)
@@ -89,6 +95,8 @@ def infer_source_meta(feed_url: str, site_url: str) -> tuple[str, str, str]:
     feed = normalize_text(feed_url)
     site = normalize_text(site_url)
     combined = f"{feed} {site}"
+    if "wechat://mp/" in combined or "mp.weixin.qq.com" in combined:
+        return ("web", "wechat-api", "web")
     if any(host in combined for host in ("bilibili.com", "x.com", "twitter.com", "weibo.com", "douyin.com")):
         return ("web", "web", "web")
     if "rsshub" in feed:
@@ -101,6 +109,8 @@ def infer_channel(feed_url: str, site_url: str) -> str:
     if target:
         return target.site
     combined = f"{normalize_text(feed_url)} {normalize_text(site_url)}"
+    if "wechat://mp/" in combined or "mp.weixin.qq.com" in combined:
+        return "wechat"
     if "youtube.com" in combined or "youtu.be" in combined:
         return "youtube"
     if "rsshub" in combined:
@@ -119,8 +129,8 @@ def canonicalize_source(item: dict[str, Any]) -> dict[str, Any] | None:
     if not provider or not fetch_via or not kind:
         provider, fetch_via, kind = infer_source_meta(feed_url, site_url)
     channel = str(item.get("channel") or "").strip() or infer_channel(feed_url, site_url)
-    auth_type = str(item.get("auth_type") or "").strip() or ("chrome_profile_x" if normalize_text(site_url) == "https://x.com/macromargin" else "none")
-    auth_profile = str(item.get("auth_profile") or "").strip() or ("Profile 2" if auth_type == "chrome_profile_x" else "")
+    auth_type = str(item.get("auth_type") or "").strip() or ("wechat_session" if channel == "wechat" else ("chrome_profile_x" if normalize_text(site_url) == "https://x.com/macromargin" else "none"))
+    auth_profile = str(item.get("auth_profile") or "").strip() or ("runtime/wechat_auth.json" if auth_type == "wechat_session" else ("Profile 2" if auth_type == "chrome_profile_x" else ""))
     fallback_mode = str(item.get("fallback_mode") or "").strip()
     if not fallback_mode:
         fallback_mode = "web" if channel == "youtube" else "none"
@@ -187,8 +197,8 @@ def save_source(payload: dict[str, str]) -> None:
     requested_source_id = sanitize_db_text(payload.get("source_id", "")).strip()
     provider, fetch_via, kind = infer_source_meta(clean_feed_url, clean_site_url)
     channel = infer_channel(clean_feed_url, clean_site_url)
-    auth_type = str(existing.get("auth_type") or "").strip() if existing else ("chrome_profile_x" if normalize_text(clean_site_url) == "https://x.com/macromargin" else "none")
-    auth_profile = str(existing.get("auth_profile") or "").strip() if existing else ("Profile 2" if auth_type == "chrome_profile_x" else "")
+    auth_type = str(existing.get("auth_type") or "").strip() if existing else ("wechat_session" if channel == "wechat" else ("chrome_profile_x" if normalize_text(clean_site_url) == "https://x.com/macromargin" else "none"))
+    auth_profile = str(existing.get("auth_profile") or "").strip() if existing else ("runtime/wechat_auth.json" if auth_type == "wechat_session" else ("Profile 2" if auth_type == "chrome_profile_x" else ""))
     fallback_mode = str(existing.get("fallback_mode") or "").strip() if existing else ("web" if channel == "youtube" else "none")
     if not existing:
         source_id = requested_source_id

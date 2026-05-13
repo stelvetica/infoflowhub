@@ -117,7 +117,7 @@ def should_fallback_to_web(source: dict, result: FeedFetchResult) -> bool:
     if result.ok and result.entries:
         return False
     target = resolve_web_target(source)
-    return bool(target and target.site == "youtube")
+    return bool(target and target.site in {"youtube", "wechat"})
 
 
 def fetch_many(sources: Iterable[dict], timeout: int = 20, settings: dict | None = None) -> List[FeedFetchResult]:

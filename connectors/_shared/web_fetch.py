@@ -4,6 +4,7 @@ from playwright.sync_api import sync_playwright
 
 from apps.subscriptions.models import FeedFetchResult
 from connectors.bilibili import fetch_bilibili_dynamic_feed
+from connectors.wechat import fetch_wechat_feed
 from connectors.weibo import fetch_weibo_with_page
 from connectors.x import fetch_x_with_page
 from connectors.youtube import fetch_youtube_with_page
@@ -14,6 +15,8 @@ def fetch_web_source(source: dict) -> FeedFetchResult:
     target = resolve_web_target(source)
     if target and target.site == "bilibili":
         return fetch_bilibili_dynamic_feed(source)
+    if target and target.site == "wechat":
+        return fetch_wechat_feed(source)
     try:
         with sync_playwright() as playwright:
             if target and target.site == "weibo":
@@ -62,6 +65,9 @@ def fetch_web_many(sources: list[dict], limit: int = 12, timeout_ms: int = 60000
                         continue
                     if target.site == "bilibili":
                         results.append(fetch_bilibili_dynamic_feed(source, limit=limit, timeout_ms=timeout_ms))
+                        continue
+                    if target.site == "wechat":
+                        results.append(fetch_wechat_feed(source, limit=limit))
                         continue
                     if target.site == "weibo":
                         if weibo_context is None:

@@ -18,7 +18,7 @@ def normalize_text(value: str) -> str:
 def split_tags(value: str | None) -> list[str]:
     text = strip_invalid_unicode(value or "").strip()
     if not text:
-      return []
+        return []
     parts = (
         text.replace("，", ",")
         .replace("、", ",")
@@ -111,6 +111,7 @@ def source_channel_label(feed_url: str, site_url: str, provider: str) -> str:
         mapping = {
             "bilibili": "Bilibili",
             "weibo": "微博",
+            "wechat": "微信公众号",
             "x": "X",
         }
         return mapping.get(target.site, target.site.upper())
@@ -119,6 +120,8 @@ def source_channel_label(feed_url: str, site_url: str, provider: str) -> str:
     combined = f"{feed} {site}"
     if "youtube.com" in combined or "youtu.be" in combined:
         return "YouTube"
+    if "wechat://mp/" in combined or "mp.weixin.qq.com" in combined:
+        return "微信公众号"
     if "douyin.com" in combined:
         return "抖音"
     if provider == "rsshub" or "rsshub" in feed:
@@ -137,6 +140,7 @@ def build_source_id(name: str) -> str:
         strip_invalid_unicode(name)
         .strip()
         .lower()
+        .replace("：", "-")
         .replace("（", "-")
         .replace("）", "-")
         .replace("(", "-")

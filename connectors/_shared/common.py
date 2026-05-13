@@ -53,6 +53,11 @@ def validate_x_login_prerequisite(source: dict) -> str:
 def resolve_web_target(source: dict) -> WebSourceTarget | None:
     site_url = (source.get("site_url") or "").strip()
     feed_url = (source.get("feed_url") or "").strip()
+    if feed_url.startswith("wechat://mp/") or site_url.startswith("wechat://mp/"):
+        raw = feed_url if feed_url.startswith("wechat://mp/") else site_url
+        uid = raw.split("wechat://mp/", 1)[1].strip().strip("/")
+        if uid:
+            return WebSourceTarget(site="wechat", uid=uid, page_url=f"https://mp.weixin.qq.com/cgi-bin/appmsgpublish?fakeid={uid}")
     match = re.search(r"space\.bilibili\.com/(\d+)", site_url)
     if match:
         uid = match.group(1)
