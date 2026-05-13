@@ -33,8 +33,15 @@ def validate_x_login_prerequisite(source: dict) -> str:
         return ""
     if not X_PROFILE_DIR.exists():
         return f"MacroMargin 依赖本机 Chrome Profile 2 登录态。当前未找到目录：{X_PROFILE_DIR}"
-    required_files = ["Cookies", "Preferences"]
-    missing = [name for name in required_files if not (X_PROFILE_DIR / name).exists()]
+    cookies_candidates = [
+        X_PROFILE_DIR / "Cookies",
+        X_PROFILE_DIR / "Network" / "Cookies",
+    ]
+    missing: list[str] = []
+    if not any(path.exists() for path in cookies_candidates):
+        missing.append("Cookies")
+    if not (X_PROFILE_DIR / "Preferences").exists():
+        missing.append("Preferences")
     if missing:
         return f"MacroMargin 依赖本机 Chrome Profile 2 登录态。请先用该 Profile 登录 x.com，缺少关键文件：{', '.join(missing)}"
     return ""
