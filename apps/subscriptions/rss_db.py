@@ -27,12 +27,6 @@ CREATE TABLE IF NOT EXISTS rss_entries (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(source_id, link)
 );
-
-CREATE TABLE IF NOT EXISTS rss_source_state (
-  source_id TEXT PRIMARY KEY,
-  enabled INTEGER NOT NULL DEFAULT 1,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
 """
 
 
@@ -76,44 +70,8 @@ def normalize_published_text(value: str) -> str:
     return parsed.strftime("%Y/%m/%d %H:%M")
 
 
-def list_source_enabled_state() -> dict[str, bool]:
-    conn = get_connection()
-    conn.row_factory = sqlite3.Row
-    try:
-        rows = conn.execute(
-            """
-            SELECT source_id, enabled
-            FROM rss_source_state
-            """
-        ).fetchall()
-    finally:
-        conn.close()
-    return {str(row["source_id"]): bool(row["enabled"]) for row in rows}
-
-
 def sanitize_db_text(value: str) -> str:
     return re.sub(r"[\ud800-\udfff]", "", value or "")
-
-
-def set_source_enabled(source_id: str, enabled: bool) -> None:
-    source_id = sanitize_db_text(source_id).strip()
-    if not source_id:
-        return
-    conn = get_connection()
-    try:
-        conn.execute(
-            """
-            INSERT INTO rss_source_state (source_id, enabled, updated_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(source_id) DO UPDATE SET
-              enabled = excluded.enabled,
-              updated_at = CURRENT_TIMESTAMP
-            """,
-            (source_id, 1 if enabled else 0),
-        )
-        conn.commit()
-    finally:
-        conn.close()
 
 
 def rename_source(source_id: str, source_name: str) -> int:

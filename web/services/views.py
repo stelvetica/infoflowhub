@@ -176,7 +176,8 @@ def normalize_sources() -> list[dict[str, Any]]:
 
 
 def save_source(payload: dict[str, str]) -> None:
-    raw_sources = load_sources()
+    raw_sources = [canonicalize_source(item) for item in load_sources()]
+    raw_sources = [item for item in raw_sources if item]
     sources = load_source_catalog()
     existing = next((item for item in sources if item["id"] == payload.get("source_id", "").strip()), None)
     previous_name = str(existing.get("name") or "").strip() if existing else ""
