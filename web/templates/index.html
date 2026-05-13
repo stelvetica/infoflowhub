@@ -89,11 +89,11 @@
                 <input type="hidden" name="laterhub_sort" value="{{ laterhub.sort }}">
                 <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
                 <input type="hidden" name="laterhub_collapsed" value="{{ '1' if laterhub_collapsed else '0' }}">
-                <div id="entries-unread-slot" class="entries-unread-slot"></div>
                 <div class="toolbar toolbar-inline entries-search-group">
                   <input class="input" name="entries_q" value="{{ entries.q }}" placeholder="搜索标题、来源">
                   <button class="btn" type="submit">搜索</button>
                 </div>
+                <div id="entries-unread-slot" class="entries-unread-slot"></div>
               </form>
             </div>
             <div id="entries-panel">
