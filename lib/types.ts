@@ -24,7 +24,7 @@ export type LaterhubItem = {
 export type SourceItem = {
   id: string;
   name: string;
-  group: string;
+  group?: string;
   feed_url: string;
   site_url: string;
   provider: string;

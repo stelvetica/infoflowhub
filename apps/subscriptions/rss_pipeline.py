@@ -36,7 +36,7 @@ def list_sources() -> int:
         provider = item.get("provider", item.get("kind", "native"))
         fetch_via = item.get("fetch_via", "direct")
         _safe_print(
-            f"[{mark}] {item['id']} | {item['group']} | {item['name']} | "
+            f"[{mark}] {item['id']} | {item['name']} | "
             f"{provider} | {fetch_via} | {item['feed_url']}"
         )
     return 0

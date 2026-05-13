@@ -112,14 +112,14 @@ const nativeFeedUrls = new Set([
 ]);
 
 const aliasRules = new Map<string, Partial<SourceItem>>([
-  ["https://rsshub.app/bilibili/user/video/3546909549529340", { name: "外资观点 小鹿投研日记 的 bilibili 动态", site_url: "https://space.bilibili.com/3546909549529340" }],
+  ["https://rsshub.app/bilibili/user/video/3546909549529340", { name: "观点 小鹿投研日记 的 bilibili 动态", site_url: "https://space.bilibili.com/3546909549529340" }],
   ["https://rsshub.app/bilibili/user/dynamic/14089380", { name: "技术 算法 labuladong 的 bilibili 动态", site_url: "https://space.bilibili.com/14089380/dynamic" }],
   ["https://rsshub.app/bilibili/user/dynamic/1908067732", { name: "观点 路口大爷聊宏观 的 bilibili 动态", site_url: "https://space.bilibili.com/1908067732/dynamic" }],
-  ["https://rsshub.app/bilibili/user/dynamic/2117498259", { name: "基金 硬核姬老板 的 bilibili 动态", site_url: "https://space.bilibili.com/2117498259/dynamic" }],
-  ["https://rsshub.app/bilibili/user/dynamic/472747194", { name: "产业 科普 巫师财经 的 bilibili 动态", site_url: "https://space.bilibili.com/472747194/dynamic" }],
+  ["https://rsshub.app/bilibili/user/dynamic/2117498259", { name: "观点 硬核姬老板 的 bilibili 动态", site_url: "https://space.bilibili.com/2117498259/dynamic" }],
+  ["https://rsshub.app/bilibili/user/dynamic/472747194", { name: "观点 巫师财经 的 bilibili 动态", site_url: "https://space.bilibili.com/472747194/dynamic" }],
   ["https://rsshub.app/bilibili/user/dynamic/1257954297", { name: "观点 房产 铁锤观察室 的 bilibili 动态", site_url: "https://space.bilibili.com/1257954297/dynamic" }],
-  ["https://rsshub.app/bilibili/user/dynamic/381870733", { name: "外资观点 小黄的投资笔记 的 bilibili 动态", site_url: "https://space.bilibili.com/381870733/dynamic" }],
-  ["https://rsshub.app/bilibili/user/dynamic/2233213", { name: "时事 短评 长文视频 星话大白 的 bilibili 动态", site_url: "https://space.bilibili.com/2233213/dynamic" }],
+  ["https://rsshub.app/bilibili/user/dynamic/381870733", { name: "观点 小黄的投资笔记 的 bilibili 动态", site_url: "https://space.bilibili.com/381870733/dynamic" }],
+  ["https://rsshub.app/bilibili/user/dynamic/2233213", { name: "信息 星话大白 的 bilibili 动态", site_url: "https://space.bilibili.com/2233213/dynamic" }],
   ["https://lumina.shawnxie.top/backend/api/reviews/rss.xml", { name: "技术 肖恩周刊", site_url: "https://lumina.shawnxie.top/" }]
 ]);
 
@@ -188,7 +188,7 @@ export function normalizeSources(): SourceItem[] {
       provider: item.provider || "native",
       fetch_via: item.fetch_via || "direct",
       kind: item.kind || item.provider || "native",
-      group: item.group || "手动新增",
+      group: (item.group || "").trim(),
       note: item.note || ""
     };
     const loginMeta = getLoginRequirementMeta(source);
@@ -252,7 +252,7 @@ export function saveSource(input: { source_id?: string; name: string; feed_url: 
   const target: SourceItem = {
     id: sanitizedSourceId || buildSourceId(input.name),
     name: stripInvalidUnicode(input.name).trim(),
-    group: existing?.group || "手动新增",
+    group: (existing?.group || "").trim(),
     feed_url: stripInvalidUnicode(input.feed_url).trim(),
     site_url: stripInvalidUnicode(input.site_url || "").trim(),
     provider,
