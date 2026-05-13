@@ -35,6 +35,11 @@ button, input, select, textarea { font: inherit; }
 .settings-link { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.88); box-shadow: var(--shadow); transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease; flex: 0 0 42px; }
 .settings-link:hover, .settings-link.active { border-color: var(--accent); background: var(--accent-soft); transform: rotate(12deg); }
 .stack { display: grid; gap: 16px; margin: 0 auto; max-width: 1600px; }
+.news-card { margin: 0 auto 16px; max-width: 1600px; }
+.news-panel-title { margin-bottom: 10px; }
+.news-links { display: flex; flex-wrap: wrap; gap: 10px; }
+.news-link { color: var(--accent); font-weight: 600; }
+.news-link:hover { text-decoration: underline; }
 .split-shell { display: grid; grid-template-columns: minmax(0, 1fr) 20px minmax(320px, 36%); gap: 0; align-items: stretch; margin: 0 auto; max-width: 1600px; min-height: calc(100vh - 98px); }
 .split-shell.laterhub-collapsed { grid-template-columns: minmax(0, 1fr) 20px 0; }
 .split-pane { min-width: 0; }
