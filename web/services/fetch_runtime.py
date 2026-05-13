@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from apps.subscriptions.config import load_settings, load_sources
 from apps.subscriptions.rss_db import save_entries
-from apps.laterhub.config import DB_PATH, ENV_PATH
-from apps.laterhub.db import DBManager, LinkRecord
-from connectors.bilibili import fetch_bilibili_watchlater
-from connectors.douyin import fetch_douyin_favorites
+from apps.laterhub.pipeline import run_main_flow
 from connectors.rss.fetch import fetch_many
 
 from web.services.views import load_health, load_status, write_json, HEALTH_PATH, STATUS_PATH
@@ -98,23 +95,9 @@ def fetch_now() -> dict:
 
 
 def fetch_laterhub_now() -> dict[str, int]:
-    db = DBManager(DB_PATH)
-    fetched_total = 0
-    inserted_total = 0
-    for fetcher in (fetch_bilibili_watchlater, fetch_douyin_favorites):
-        items = fetcher(ENV_PATH)
-        fetched_total += len(items)
-        for item in items:
-            before_count = len(db.list_by_status("pending", "pushed", "failed"))
-            db.upsert_link(
-                LinkRecord(
-                    url=item["url"],
-                    title=item["title"],
-                    source=item["source"],
-                    tags=item.get("tags"),
-                )
-            )
-            after_count = len(db.list_by_status("pending", "pushed", "failed"))
-            if after_count > before_count:
-                inserted_total += 1
-    return {"fetched_total": fetched_total, "inserted_total": inserted_total}
+    result = run_main_flow(fetch_bilibili=True, fetch_douyin=True, retry_failed=False)
+    return {
+        "fetched_sources": result.fetched_sources,
+        "pending_total": result.pending_total,
+        "push_enabled": int(result.push_enabled),
+    }

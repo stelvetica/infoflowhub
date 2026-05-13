@@ -4,6 +4,7 @@ import argparse
 import re
 import sys
 from datetime import datetime
+from dataclasses import dataclass
 from typing import Any
 
 from apps.laterhub.config import DB_PATH, ENV_PATH, LOG_PATH, LOGS_DIR
@@ -15,6 +16,7 @@ from connectors.douyin import fetch_douyin_favorites
 
 
 LOG_FILE_DISABLED = False
+ENABLE_FEISHU_PUSH = False
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
@@ -88,6 +90,18 @@ def _load_tagger() -> ContentTagger | None:
         return None
 
 
+def load_tagger() -> ContentTagger | None:
+    load_project_env(ENV_PATH)
+    return _load_tagger()
+
+
+@dataclass(slots=True)
+class LaterhubRunSummary:
+    fetched_sources: int = 0
+    pending_total: int = 0
+    push_enabled: bool = ENABLE_FEISHU_PUSH
+
+
 def _save_items(db: DBManager, items: list[dict[str, Any]]) -> None:
     for item in items:
         db.upsert_link(LinkRecord(url=item["url"], title=item["title"], source=item["source"], tags=item.get("tags")))
@@ -120,7 +134,18 @@ def _tag_pending_rows(db: DBManager, tagger: ContentTagger | None) -> None:
         db.update_tags(row["url"], tags)
 
 
+def prepare_pending_tags(db: DBManager | None = None, tagger: ContentTagger | None = None) -> int:
+    active_db = db or DBManager(DB_PATH)
+    active_tagger = tagger if tagger is not None else load_tagger()
+    _tag_pending_rows(active_db, active_tagger)
+    return len(active_db.list_by_status("pending"))
+
+
 def _push_pending_rows(db: DBManager) -> int:
+    if not ENABLE_FEISHU_PUSH:
+        pending_count = len(db.list_by_status("pending"))
+        log_line(f"[5/6] 已关闭推送到飞书，保留 {pending_count} 条 pending 记录")
+        return 0
     rows_to_push = db.list_by_status("pending")
     if not rows_to_push:
         log_line("[5/6] 没有需要推送到飞书的新数据，流程结束")
@@ -159,6 +184,23 @@ def run(args: argparse.Namespace) -> int:
         log_line("[3/6] 跳过外部抓取")
     _tag_pending_rows(db, tagger)
     return _push_pending_rows(db)
+
+
+def run_main_flow(*, fetch_bilibili: bool = True, fetch_douyin: bool = True, retry_failed: bool = False) -> LaterhubRunSummary:
+    args = argparse.Namespace(
+        retry_failed=retry_failed,
+        fetch_bilibili=fetch_bilibili,
+        fetch_douyin=fetch_douyin,
+    )
+    run(args)
+    db = DBManager(DB_PATH)
+    fetched_sources = int(bool(fetch_bilibili)) + int(bool(fetch_douyin))
+    pending_total = len(db.list_by_status("pending"))
+    return LaterhubRunSummary(
+        fetched_sources=fetched_sources,
+        pending_total=pending_total,
+        push_enabled=ENABLE_FEISHU_PUSH,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
