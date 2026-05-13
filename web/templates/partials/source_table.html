@@ -15,6 +15,7 @@
     <table>
       <thead>
         <tr>
+          <th>序号</th>
           <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=name&dir={{ 'asc' if settings.sort != 'name' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=name&dir={{ 'asc' if settings.sort != 'name' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">名称</a></th>
           <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=enabled_sort&dir={{ 'asc' if settings.sort != 'enabled_sort' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=enabled_sort&dir={{ 'asc' if settings.sort != 'enabled_sort' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">生效</a></th>
           <th>渠道</th>
@@ -30,6 +31,7 @@
       <tbody>
         {% for item in settings.sources %}
         <tr>
+          <td>{{ loop.index }}</td>
           <td>{{ item.name }}</td>
           <td><span class="status {% if item.enabled %}ok{% else %}warn{% endif %}">{{ item.enabled_text }}</span></td>
           <td>{{ item.channel_label }}</td>
