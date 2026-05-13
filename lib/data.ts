@@ -77,6 +77,10 @@ function writeJson(filePath: string, value: unknown): void {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
 }
 
+export function saveStatus(status: RuntimeStatus): void {
+  writeJson(STATUS_PATH, status);
+}
+
 const webFeedUrls = new Set([
   "https://rsshub.app/bilibili/user/dynamic/14089380",
   "https://rsshub.app/bilibili/user/dynamic/474921808",
@@ -124,6 +128,8 @@ export function loadSettings(): Record<string, unknown> {
 
 export function loadStatus(): RuntimeStatus {
   return readJson<RuntimeStatus>(STATUS_PATH, {
+    fetch_state: "idle",
+    current_run_started_at: "",
     last_run_at: "",
     last_success_at: "",
     last_error: "",
@@ -284,7 +290,7 @@ function loadSettingsSnapshot(): SettingsSnapshotPayload {
 
 export type EntriesQuery = { q?: string; sort?: string; dir?: "asc" | "desc"; page?: string };
 export type LaterhubQuery = { q?: string; filter_finished?: string; filter_tag?: string; sort?: string; dir?: "asc" | "desc"; page?: string };
-export type SourcesQuery = { source_q?: string; sort?: string; dir?: "asc" | "desc" };
+export type SourcesQuery = { source_q?: string; source_filter?: string; sort?: string; dir?: "asc" | "desc" };
 
 const ENTRIES_PAGE_SIZE = 35;
 const LATERHUB_PAGE_SIZE = 20;
@@ -348,6 +354,7 @@ export function getSettingsView(query: SourcesQuery) {
   const health = loadHealth().sources;
   const stats = Object.fromEntries(snapshot.source_stats.map((item) => [item.source_id, item]));
   const keyword = normalizeText(query.source_q || "");
+  const sourceFilter = query.source_filter || "";
   const sort = query.sort || "name";
   const dir = query.dir || "asc";
   const sources = normalizeSources()
@@ -358,17 +365,22 @@ export function getSettingsView(query: SourcesQuery) {
       const successAt = sourceHealth?.last_success_at ? new Date(sourceHealth.last_success_at.replace(" ", "T")) : null;
       const invalidDays =
         failedAt && (!successAt || failedAt > successAt) ? String(Math.max(Math.floor((Date.now() - failedAt.getTime()) / 86400000), 0)) : "";
+      const isFailed = Boolean(invalidDays);
       return {
         ...item,
         provider_label: providerLabel(item.provider, item.fetch_via),
         entry_count: stat?.entry_count || 0,
+        last_error: sourceHealth?.last_error || "",
+        last_success_at: sourceHealth?.last_success_at || "",
         invalid_days: invalidDays,
+        is_failed: isFailed,
         invalid_sort: invalidDays ? Number(invalidDays) : -1,
         enabled_sort: item.enabled ? 1 : 0,
         enabled_text: item.enabled ? "生效" : "停用"
       };
     })
     .filter((item) => !keyword || [item.name, item.feed_url, item.site_url].some((field) => normalizeText(field).includes(keyword)))
+    .filter((item) => (sourceFilter === "failed" ? item.is_failed : true))
     .sort((a, b) => compareValue(a[sort as keyof typeof a], b[sort as keyof typeof b], dir));
-  return { status, summary, laterhubSources, sources, q: query.source_q || "", sort, dir };
+  return { status, summary, laterhubSources, sources, q: query.source_q || "", sourceFilter, sort, dir };
 }

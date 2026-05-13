@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { deleteSourceAction, fetchNowAction, saveSourceAction, toggleSourceAction } from "@/app/actions";
+import { deleteSourceAction, saveSourceAction, toggleSourceAction } from "@/app/actions";
 import { EntriesSplitShell } from "@/app/components/entries-split-shell";
 import { EntriesTableClient } from "@/app/components/entries-table-client";
+import { FetchNowPanel } from "@/app/components/fetch-now-panel";
 import { LaterhubTableClient } from "@/app/components/laterhub-table-client";
 import { SubmitButton } from "@/app/components/submit-button";
 import { getEntriesView, getLaterhubView, getSettingsView } from "@/lib/data";
@@ -219,6 +220,7 @@ async function LaterhubPanel({ params }: { params: Record<string, string | strin
 async function SettingsPanel({ params }: { params: Record<string, string | string[] | undefined> }) {
   const data = getSettingsView({
     source_q: one(params.source_q),
+    source_filter: one(params.source_filter),
     sort: one(params.sort),
     dir: (one(params.dir) || "asc") as "asc" | "desc"
   });
@@ -231,45 +233,12 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
         <div className="panel-title">
           <h3>订阅设置</h3>
         </div>
-        <div className="settings-topbar">
-          <div className="metric-strip">
-            <div className="metric-chip">
-              <span className="label">最近执行</span>
-              <strong>{data.status.last_run_at ? data.status.last_run_at.slice(5, 16) : "-"}</strong>
-            </div>
-            <div className="metric-chip">
-              <span className="label">最近成功</span>
-              <strong>{data.status.last_success_at ? data.status.last_success_at.slice(5, 16) : "-"}</strong>
-            </div>
-            <div className="metric-chip">
-              <span className="label">抓取成功源</span>
-              <strong>
-                {data.status.last_success_sources}/{data.status.last_total_sources}
-              </strong>
-            </div>
-            <div className="metric-chip">
-              <span className="label">新增条目</span>
-              <strong>{data.status.last_inserted_entries}</strong>
-            </div>
-          </div>
-          <div className="settings-actions">
-            <form action={fetchNowAction}>
-              <SubmitButton idleText="立即抓取" pendingText="抓取中..." />
-            </form>
-            <a className="btn ghost" href="/api/restart-dev?returnTo=%2F%3Fview%3Dsettings">
-              强制重启并清缓存
-            </a>
-          </div>
-        </div>
-        <div className="settings-error-block">
-          <div className="subtle">错误详情</div>
-          <pre className="codebox compact">{data.status.last_error || "无"}</pre>
-        </div>
+        <FetchNowPanel initialStatus={data.status} />
       </section>
 
       <section className="card">
         <div className="panel-title">
-          <h3>稍后处理设置区</h3>
+          <h3>稍后处理设置概览</h3>
         </div>
         <div className="settings-summary-row">
           <p className="subtle">总数：{data.summary.total_count}</p>
@@ -307,12 +276,19 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
           <h3>订阅源管理</h3>
           <form className="toolbar">
             <input type="hidden" name="view" value="settings" />
+            <input type="hidden" name="source_filter" value={data.sourceFilter} />
             <input type="hidden" name="sort" value={data.sort} />
             <input type="hidden" name="dir" value={data.dir} />
             <input className="input" name="source_q" defaultValue={data.q} placeholder="搜索名称 / RSS URL" />
             <button className="btn" type="submit">
               搜索
             </button>
+            <Link
+              className={`btn ghost ${data.sourceFilter === "failed" ? "active-filter" : ""}`}
+              href={href("settings", { source_q: data.q, source_filter: data.sourceFilter === "failed" ? "" : "failed", sort: data.sort, dir: data.dir })}
+            >
+              {data.sourceFilter === "failed" ? "查看全部源" : "仅看失败/失效源"}
+            </Link>
           </form>
         </div>
         <div className="table-wrap">
@@ -320,27 +296,33 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
             <thead>
               <tr>
                 <th>
-                  <Link className="sort" href={sortHref("settings", data.sort, data.dir, "name", { source_q: data.q })}>
+                  <Link className="sort" href={sortHref("settings", data.sort, data.dir, "name", { source_q: data.q, source_filter: data.sourceFilter })}>
                     名称
                   </Link>
                 </th>
                 <th>
-                  <Link className="sort" href={sortHref("settings", data.sort, data.dir, "enabled_sort", { source_q: data.q })}>
+                  <Link className="sort" href={sortHref("settings", data.sort, data.dir, "enabled_sort", { source_q: data.q, source_filter: data.sourceFilter })}>
                     生效
                   </Link>
                 </th>
                 <th>
-                  <Link className="sort" href={sortHref("settings", data.sort, data.dir, "provider_label", { source_q: data.q })}>
+                  <Link className="sort" href={sortHref("settings", data.sort, data.dir, "provider_label", { source_q: data.q, source_filter: data.sourceFilter })}>
                     来源类型
                   </Link>
                 </th>
                 <th>
-                  <Link className="sort" href={sortHref("settings", data.sort, data.dir, "entry_count", { source_q: data.q }, true)}>
+                  <Link className="sort" href={sortHref("settings", data.sort, data.dir, "entry_count", { source_q: data.q, source_filter: data.sourceFilter }, true)}>
                     条目数
                   </Link>
                 </th>
+                <th>最近错误</th>
                 <th>
-                  <Link className="sort" href={sortHref("settings", data.sort, data.dir, "invalid_sort", { source_q: data.q }, true)}>
+                  <Link className="sort" href={sortHref("settings", data.sort, data.dir, "last_success_at", { source_q: data.q, source_filter: data.sourceFilter }, true)}>
+                    最近成功
+                  </Link>
+                </th>
+                <th>
+                  <Link className="sort" href={sortHref("settings", data.sort, data.dir, "invalid_sort", { source_q: data.q, source_filter: data.sourceFilter }, true)}>
                     失效天数
                   </Link>
                 </th>
@@ -356,6 +338,8 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
                   </td>
                   <td>{item.provider_label}</td>
                   <td>{item.entry_count}</td>
+                  <td className="cell-error-summary" title={item.last_error || ""}>{item.last_error || "-"}</td>
+                  <td>{item.last_success_at ? item.last_success_at.slice(5, 16) : "-"}</td>
                   <td>{item.invalid_days || "-"}</td>
                   <td>
                     <div className="toolbar">
@@ -364,7 +348,7 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
                         <input type="hidden" name="enabled" value={item.enabled ? "0" : "1"} />
                         <SubmitButton className="btn secondary" idleText={item.enabled ? "停用" : "启用"} pendingText="处理中..." />
                       </form>
-                      <Link className="btn ghost" href={href("settings", { edit_source: item.id, source_q: data.q, sort: data.sort, dir: data.dir })}>
+                      <Link className="btn ghost" href={href("settings", { edit_source: item.id, source_q: data.q, source_filter: data.sourceFilter, sort: data.sort, dir: data.dir })}>
                         编辑
                       </Link>
                       <form action={deleteSourceAction}>
@@ -384,7 +368,7 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
         <div className="panel-title">
           <h3>{editing ? "编辑订阅源" : "新增订阅源"}</h3>
           {editing ? (
-            <Link className="btn ghost" href={href("settings", { source_q: data.q, sort: data.sort, dir: data.dir })}>
+            <Link className="btn ghost" href={href("settings", { source_q: data.q, source_filter: data.sourceFilter, sort: data.sort, dir: data.dir })}>
               取消编辑
             </Link>
           ) : null}

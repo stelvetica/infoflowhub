@@ -48,6 +48,8 @@ def load_status() -> dict:
     return load_json(
         STATUS_PATH,
         {
+            "fetch_state": "idle",
+            "current_run_started_at": "",
             "last_run_at": "",
             "last_success_at": "",
             "last_error": "",
@@ -94,31 +96,57 @@ def update_source_health(result) -> None:
 
 
 def fetch_now() -> dict:
+    status = load_status()
+    status["fetch_state"] = "running"
+    status["current_run_started_at"] = now_text()
+    save_status(status)
+
     sources = [item for item in load_sources() if item.get("enabled", False)]
     settings = load_settings()
-    results = fetch_many(sources, settings=settings, timeout=45)
+    try:
+        results = fetch_many(sources, settings=settings, timeout=45)
 
-    inserted_total = 0
-    success_sources = 0
-    failures: list[str] = []
+        inserted_total = 0
+        success_sources = 0
+        failures: list[str] = []
 
-    for result in results:
-        update_source_health(result)
-        if not result.ok:
-            failures.append(f"{result.source_name}: {result.error or result.status}")
-            continue
-        success_sources += 1
-        inserted_total += save_entries(result.entries)
+        for result in results:
+            update_source_health(result)
+            if not result.ok:
+                failures.append(f"{result.source_name}: {result.error or result.status}")
+                continue
+            success_sources += 1
+            inserted_total += save_entries(result.entries)
 
-    status = load_status()
-    status["last_run_at"] = now_text()
-    status["last_success_at"] = status["last_run_at"] if success_sources else status.get("last_success_at", "")
-    status["last_total_sources"] = len(sources)
-    status["last_success_sources"] = success_sources
-    status["last_inserted_entries"] = inserted_total
-    status["last_error"] = " | ".join(failures[:10])
-    save_status(status)
-    return status
+        status = load_status()
+        status["fetch_state"] = "success" if not failures else "error"
+        status["last_run_at"] = now_text()
+        status["last_success_at"] = status["last_run_at"] if success_sources else status.get("last_success_at", "")
+        status["last_total_sources"] = len(sources)
+        status["last_success_sources"] = success_sources
+        status["last_inserted_entries"] = inserted_total
+        status["last_error"] = " | ".join(failures[:10])
+        save_status(status)
+        return status
+    except Exception as exc:
+        status = load_status()
+        status["fetch_state"] = "error"
+        status["last_run_at"] = now_text()
+        status["last_total_sources"] = len(sources)
+        status["last_success_sources"] = 0
+        status["last_inserted_entries"] = 0
+        status["last_error"] = clean_health_error(str(exc))
+        save_status(status)
+        return status
+    finally:
+        status = load_status()
+        if status.get("fetch_state") == "running":
+            status["fetch_state"] = "idle"
+            save_status(status)
+
+
+def fetch_now_bg() -> dict:
+    return fetch_now()
 
 
 def list_entries(limit: int = 500) -> list[dict]:
@@ -311,6 +339,9 @@ def main() -> int:
     payload = json.loads(sys.stdin.read() or "{}")
     if command == "fetch-now":
         print(json.dumps(fetch_now(), ensure_ascii=False))
+        return 0
+    if command == "fetch-now-bg":
+        print(json.dumps(fetch_now_bg(), ensure_ascii=False))
         return 0
     if command == "snapshot":
         print(json.dumps(snapshot(), ensure_ascii=False))

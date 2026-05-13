@@ -697,6 +697,10 @@ th {
   flex: 1 1 640px;
 }
 
+.metric-strip-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .metric-chip {
   display: grid;
   gap: 6px;
@@ -719,10 +723,20 @@ th {
 .settings-actions {
   display: flex;
   align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .settings-error-block {
   margin-top: 16px;
+}
+
+.cell-error-summary {
+  max-width: 320px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
 }
 
 .settings-summary-row {

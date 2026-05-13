@@ -44,6 +44,8 @@ export type SourceHealth = {
 };
 
 export type RuntimeStatus = {
+  fetch_state: "idle" | "running" | "success" | "error";
+  current_run_started_at: string;
   last_run_at: string;
   last_success_at: string;
   last_error: string;

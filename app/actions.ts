@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { deleteSource, markLaterhubFinished, saveSource, toggleSource } from "@/lib/data";
-import { runPythonBridge } from "@/lib/python-bridge";
 
 export async function saveSourceAction(formData: FormData) {
   saveSource({
@@ -26,10 +25,5 @@ export async function deleteSourceAction(formData: FormData) {
 
 export async function finishLaterhubAction(formData: FormData) {
   markLaterhubFinished(Number(formData.get("id") || 0), String(formData.get("finished") || "0") === "1");
-  revalidatePath("/");
-}
-
-export async function fetchNowAction() {
-  runPythonBridge("fetch-now");
   revalidatePath("/");
 }
