@@ -310,6 +310,7 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
                     来源类型
                   </Link>
                 </th>
+                <th>登录态要求</th>
                 <th>
                   <Link className="sort" href={sortHref("settings", data.sort, data.dir, "entry_count", { source_q: data.q, source_filter: data.sourceFilter }, true)}>
                     条目数
@@ -337,6 +338,9 @@ async function SettingsPanel({ params }: { params: Record<string, string | strin
                     <span className={`status ${item.enabled ? "ok" : "warn"}`}>{item.enabled_text}</span>
                   </td>
                   <td>{item.provider_label}</td>
+                  <td className="cell-login-requirement" title={item.login_hint || item.login_requirement || ""}>
+                    {item.login_requirement ? <span className="requirement-badge">{item.login_requirement}</span> : "-"}
+                  </td>
                   <td>{item.entry_count}</td>
                   <td className="cell-error-summary" title={item.last_error || ""}>{item.last_error || "-"}</td>
                   <td>{item.last_success_at ? item.last_success_at.slice(5, 16) : "-"}</td>

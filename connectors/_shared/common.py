@@ -22,6 +22,24 @@ class WebSourceTarget:
     page_url: str
 
 
+def is_macromargin_source(source: dict) -> bool:
+    feed_url = str(source.get("feed_url") or "").strip().lower()
+    site_url = str(source.get("site_url") or "").strip().lower()
+    return feed_url == "https://rsshub.app/twitter/user/macromargin" or site_url == "https://x.com/macromargin"
+
+
+def validate_x_login_prerequisite(source: dict) -> str:
+    if not is_macromargin_source(source):
+        return ""
+    if not X_PROFILE_DIR.exists():
+        return f"MacroMargin 依赖本机 Chrome Profile 2 登录态。当前未找到目录：{X_PROFILE_DIR}"
+    required_files = ["Cookies", "Preferences"]
+    missing = [name for name in required_files if not (X_PROFILE_DIR / name).exists()]
+    if missing:
+        return f"MacroMargin 依赖本机 Chrome Profile 2 登录态。请先用该 Profile 登录 x.com，缺少关键文件：{', '.join(missing)}"
+    return ""
+
+
 def resolve_web_target(source: dict) -> WebSourceTarget | None:
     site_url = (source.get("site_url") or "").strip()
     match = re.search(r"space\.bilibili\.com/(\d+)", site_url)

@@ -64,6 +64,11 @@ type SettingsSnapshotPayload = {
   laterhub_source_stats: LaterhubSourceStats[];
 };
 
+type LoginRequirementMeta = {
+  requirement: string;
+  hint: string;
+};
+
 function readJson<T>(filePath: string, fallback: T): T {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf-8")) as T;
@@ -120,6 +125,18 @@ const aliasRules = new Map<string, Partial<SourceItem>>([
 
 const deletedSiteUrls = new Set(["https://www.huxiu.com/member/2321131.html"]);
 
+function getLoginRequirementMeta(source: Pick<SourceItem, "feed_url" | "site_url">): LoginRequirementMeta | null {
+  const feedUrl = (source.feed_url || "").trim().toLowerCase();
+  const siteUrl = (source.site_url || "").trim().toLowerCase();
+  if (feedUrl === "https://rsshub.app/twitter/user/macromargin" || siteUrl === "https://x.com/macromargin") {
+    return {
+      requirement: "依赖本机 Chrome Profile 2 登录态",
+      hint: "若抓取失败，请先在本机 Chrome 的 Profile 2 打开 x.com，并确认 MacroMargin 时间线可正常加载。"
+    };
+  }
+  return null;
+}
+
 export function loadSettings(): Record<string, unknown> {
   return readJson<Record<string, unknown>>(SETTINGS_PATH, {
     rsshub: { public_base: "https://rsshub.app", self_hosted_base: "", prefer_self_hosted: false }
@@ -174,6 +191,12 @@ export function normalizeSources(): SourceItem[] {
       group: item.group || "手动新增",
       note: item.note || ""
     };
+    const loginMeta = getLoginRequirementMeta(source);
+    if (loginMeta) {
+      source.note = loginMeta.requirement;
+      source.login_requirement = loginMeta.requirement;
+      source.login_hint = loginMeta.hint;
+    }
     const alias = aliasRules.get(feedUrl);
     if (alias) Object.assign(source, alias);
     if ((feedUrl + siteUrl).toLowerCase().includes("bilibili.com") && !source.name.endsWith("bilibili 动态")) {
@@ -372,6 +395,8 @@ export function getSettingsView(query: SourcesQuery) {
         entry_count: stat?.entry_count || 0,
         last_error: sourceHealth?.last_error || "",
         last_success_at: sourceHealth?.last_success_at || "",
+        login_requirement: item.login_requirement || "",
+        login_hint: item.login_hint || "",
         invalid_days: invalidDays,
         is_failed: isFailed,
         invalid_sort: invalidDays ? Number(invalidDays) : -1,

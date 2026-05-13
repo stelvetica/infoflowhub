@@ -6,7 +6,7 @@ from apps.subscriptions.models import FeedFetchResult
 from connectors.bilibili import fetch_bilibili_dynamic_feed
 from connectors.weibo import fetch_weibo_with_page
 from connectors.x import fetch_x_with_page
-from connectors._shared.common import USER_AGENT, launch_weibo_context, launch_x_context, resolve_web_target, result_error
+from connectors._shared.common import USER_AGENT, launch_weibo_context, launch_x_context, resolve_web_target, result_error, validate_x_login_prerequisite
 
 
 def fetch_web_source(source: dict) -> FeedFetchResult:
@@ -20,6 +20,9 @@ def fetch_web_source(source: dict) -> FeedFetchResult:
                 page = browser.new_page()
                 result = fetch_weibo_with_page(page, source)
             elif target and target.site == "x":
+                login_error = validate_x_login_prerequisite(source)
+                if login_error:
+                    return result_error(source, login_error)
                 browser = launch_x_context(playwright, headless=True)
                 page = browser.new_page()
                 result = fetch_x_with_page(page, source)
@@ -60,6 +63,10 @@ def fetch_web_many(sources: list[dict], limit: int = 12, timeout_ms: int = 60000
                         results.append(fetch_weibo_with_page(weibo_page, source, timeout_ms=timeout_ms))
                         continue
                     if target.site == "x":
+                        login_error = validate_x_login_prerequisite(source)
+                        if login_error:
+                            results.append(result_error(source, login_error))
+                            continue
                         if x_context is None:
                             x_context = launch_x_context(playwright, headless=True)
                             x_page = x_context.new_page()

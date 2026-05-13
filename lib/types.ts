@@ -32,6 +32,8 @@ export type SourceItem = {
   kind: string;
   enabled: boolean;
   note: string;
+  login_requirement?: string;
+  login_hint?: string;
 };
 
 export type SourceHealth = {

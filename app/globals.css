@@ -739,6 +739,22 @@ th {
   color: var(--muted);
 }
 
+.cell-login-requirement {
+  min-width: 220px;
+}
+
+.requirement-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid #b6d3ff;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .settings-summary-row {
   display: flex;
   gap: 18px;
