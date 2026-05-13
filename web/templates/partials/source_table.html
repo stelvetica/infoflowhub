@@ -37,11 +37,11 @@
           <td class="cell-error-summary" title="{{ item.last_error or '' }}">{{ item.last_error or '-' }}</td>
           <td>{{ item.last_success_at[5:16] if item.last_success_at else '-' }}</td>
           <td>{{ item.invalid_days or '-' }}</td>
-          <td>
-            <div class="toolbar">
+          <td class="cell-actions">
+            <div class="source-actions">
               <form hx-post="/actions/source/{{ item.id }}/toggle-enabled?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort={{ settings.sort }}&dir={{ settings.dir }}" hx-target="#sources-panel" hx-swap="innerHTML">
                 <input type="hidden" name="enabled" value="{{ 0 if item.enabled else 1 }}">
-                <button class="btn secondary" type="submit">{{ '停用' if item.enabled else '启用' }}</button>
+                <button class="btn {% if item.enabled %}warn{% else %}success{% endif %}" type="submit">{{ '停用' if item.enabled else '启用' }}</button>
               </form>
               <button class="btn ghost" type="button" hx-get="/fragments/source-form?source_id={{ item.id }}&source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort={{ settings.sort }}&dir={{ settings.dir }}" hx-target="#modal-root" hx-swap="innerHTML">编辑</button>
               <form hx-post="/actions/source/{{ item.id }}/delete?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort={{ settings.sort }}&dir={{ settings.dir }}" hx-target="#sources-panel" hx-swap="innerHTML">

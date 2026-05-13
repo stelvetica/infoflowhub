@@ -71,6 +71,8 @@ button, input, select, textarea { font: inherit; }
 .btn:hover { filter: brightness(0.98); }
 .btn:disabled { cursor: wait; opacity: 0.72; }
 .btn.secondary { background: #eef4ff; color: var(--accent); border-color: #b6d3ff; }
+.btn.success { background: #dafbe1; color: var(--ok); border-color: #8ddb9b; }
+.btn.warn { background: #fff8c5; color: var(--warn); border-color: #eac54f; }
 .btn.ghost { background: #fff; color: var(--muted); border-color: var(--line); }
 .btn.ghost.active-filter { color: var(--accent); border-color: #b6d3ff; background: var(--accent-soft); }
 .btn.link { background: transparent; color: var(--accent); padding: 0; }
@@ -141,6 +143,10 @@ th { font-size: 12px; color: var(--muted); white-space: nowrap; background: rgba
 .settings-error-block { margin-top: 16px; }
 .cell-error-summary { max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
 .cell-login-requirement { min-width: 220px; }
+.cell-actions { white-space: nowrap; }
+.source-actions { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+.source-actions form { margin: 0; }
+.source-actions .btn { min-width: 56px; white-space: nowrap; }
 .requirement-badge { display: inline-flex; align-items: center; padding: 5px 10px; border-radius: 999px; border: 1px solid #b6d3ff; background: var(--accent-soft); color: var(--accent); font-size: 12px; line-height: 1.4; }
 .settings-summary-row { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 14px; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(31, 35, 40, 0.28); backdrop-filter: blur(8px); }
@@ -162,6 +168,7 @@ th { font-size: 12px; color: var(--muted); white-space: nowrap; background: rgba
   .toolbar-inline, .toolbar-inline-spread, .laterhub-top-row { flex-wrap: wrap; }
   .laterhub-footer-row { flex-wrap: wrap; align-items: flex-start; }
   .laterhub-filter-row { margin-left: 0; }
+  .source-actions { flex-wrap: wrap; }
   .modal-backdrop { padding: 14px; }
   .modal-card { padding: 16px; border-radius: 18px; }
   .modal-header, .modal-actions { flex-wrap: wrap; }

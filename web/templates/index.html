@@ -18,15 +18,6 @@
       <div class="stack">
         <section class="card">
           <div class="panel-title">
-            <h3>订阅设置</h3>
-          </div>
-          <div id="runtime-status-panel">
-            {% include "partials/runtime_status.html" %}
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="panel-title">
             <h3>稍后处理概览</h3>
           </div>
           <div class="settings-summary-row">
@@ -57,6 +48,15 @@
                 {% endfor %}
               </tbody>
             </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="panel-title">
+            <h3>订阅设置</h3>
+          </div>
+          <div id="runtime-status-panel">
+            {% include "partials/runtime_status.html" %}
           </div>
         </section>
 
