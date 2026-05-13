@@ -32,13 +32,15 @@ export type SourceItem = {
   kind: string;
   enabled: boolean;
   note: string;
+  channel?: string;
+  auth_type?: string;
+  auth_profile?: string;
+  fallback_mode?: string;
   login_requirement?: string;
   login_hint?: string;
 };
 
 export type SourceHealth = {
-  source_name: string;
-  feed_url: string;
   last_checked_at: string;
   last_success_at: string;
   last_failed_at: string;

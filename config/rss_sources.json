@@ -10,7 +10,11 @@
       "fetch_via": "direct",
       "kind": "native",
       "enabled": true,
-      "note": ""
+      "note": "",
+      "channel": "rss",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "labuladong",
@@ -22,7 +26,11 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": ""
+      "note": "",
+      "channel": "bilibili",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "code秘密花园",
@@ -34,7 +42,11 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": ""
+      "note": "",
+      "channel": "bilibili",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "十三邀",
@@ -45,8 +57,12 @@
       "provider": "native",
       "fetch_via": "direct",
       "kind": "native",
-      "enabled": true,
-      "note": "2026-05-13 核验 feed 返回 404，先停用待更换有效频道源"
+      "enabled": false,
+      "note": "2026-05-13 核验 feed 返回 404，先停用待更换有效频道源",
+      "channel": "youtube",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "web"
     },
     {
       "id": "路口大爷聊宏观",
@@ -58,7 +74,11 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": ""
+      "note": "",
+      "channel": "bilibili",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "硬核姬老板",
@@ -70,7 +90,11 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": ""
+      "note": "",
+      "channel": "bilibili",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "巫师财经",
@@ -82,7 +106,11 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": ""
+      "note": "",
+      "channel": "bilibili",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "MacroMargin",
@@ -95,8 +123,12 @@
       "kind": "web",
       "enabled": true,
       "note": "依赖本机 Chrome Profile 2 登录态",
+      "channel": "x",
+      "auth_type": "chrome_profile_x",
+      "auth_profile": "Profile 2",
+      "fallback_mode": "none",
       "login_requirement": "依赖本机 Chrome Profile 2 登录态",
-      "login_hint": "MacroMargin 依赖本机 Chrome Profile 2 登录态。请先用该 Profile 登录 x.com，缺少关键文件：Cookies"
+      "login_hint": "请先在本机 Chrome 的 Profile 2 中登录 x.com，并确认 MacroMargin 时间线可正常加载。"
     },
     {
       "id": "TeranceJiang",
@@ -108,7 +140,11 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "用户手动补充"
+      "note": "用户手动补充",
+      "channel": "bilibili",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "Mark__Huang",
@@ -120,7 +156,11 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "用户手动补充"
+      "note": "用户手动补充",
+      "channel": "bilibili",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "何佳心今天加薪了么",
@@ -132,7 +172,11 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "用户手动补充"
+      "note": "用户手动补充",
+      "channel": "bilibili",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "老厉害",
@@ -143,8 +187,12 @@
       "provider": "native",
       "fetch_via": "direct",
       "kind": "native",
-      "enabled": false,
-      "note": "2026-05-13 核验 feed 返回 404，先停用待更换有效频道源"
+      "enabled": true,
+      "note": "2026-05-13 核验 feed 返回 404，先停用待更换有效频道源",
+      "channel": "youtube",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "web"
     },
     {
       "id": "阮一峰周刊",
@@ -156,7 +204,11 @@
       "fetch_via": "direct",
       "kind": "native",
       "enabled": true,
-      "note": ""
+      "note": "",
+      "channel": "rss",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "技术爬爬虾",
@@ -168,7 +220,11 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": ""
+      "note": "",
+      "channel": "bilibili",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "铁锤观察室",
@@ -180,7 +236,11 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": ""
+      "note": "",
+      "channel": "bilibili",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "肖恩周刊",
@@ -192,7 +252,11 @@
       "fetch_via": "direct",
       "kind": "native",
       "enabled": true,
-      "note": "用户手动补充"
+      "note": "用户手动补充",
+      "channel": "rss",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "星话大白",
@@ -204,7 +268,11 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": false,
-      "note": "用户手动补充"
+      "note": "用户手动补充",
+      "channel": "bilibili",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "土豆看财报",
@@ -216,7 +284,11 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "用户手动补充"
+      "note": "用户手动补充",
+      "channel": "bilibili",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     },
     {
       "id": "投研部杨摸鱼",
@@ -228,7 +300,11 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "用户手动补充"
+      "note": "用户手动补充",
+      "channel": "bilibili",
+      "auth_type": "none",
+      "auth_profile": "",
+      "fallback_mode": "none"
     }
   ]
 }

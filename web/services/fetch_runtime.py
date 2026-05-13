@@ -30,8 +30,6 @@ def update_source_health(result) -> None:
     health = load_health()
     source_health = health.setdefault("sources", {})
     current = source_health.get(result.source_id, {})
-    current["source_name"] = result.source_name
-    current["feed_url"] = result.feed_url
     current["last_checked_at"] = now_text()
     if result.ok:
         current["last_success_at"] = current["last_checked_at"]

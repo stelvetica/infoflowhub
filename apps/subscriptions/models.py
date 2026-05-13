@@ -23,3 +23,21 @@ class FeedFetchResult:
     status: int
     entries: List[FeedEntry]
     error: str = ""
+
+
+@dataclass
+class SourceItem:
+    id: str
+    name: str
+    group: str
+    feed_url: str
+    site_url: str
+    provider: str
+    fetch_via: str
+    kind: str
+    enabled: bool
+    note: str
+    channel: str = "rss"
+    auth_type: str = "none"
+    auth_profile: str = ""
+    fallback_mode: str = "none"

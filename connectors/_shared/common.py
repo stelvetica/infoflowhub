@@ -23,6 +23,9 @@ class WebSourceTarget:
 
 
 def is_macromargin_source(source: dict) -> bool:
+    auth_type = str(source.get("auth_type") or "").strip().lower()
+    if auth_type == "chrome_profile_x":
+        return True
     feed_url = str(source.get("feed_url") or "").strip().lower()
     site_url = str(source.get("site_url") or "").strip().lower()
     return feed_url == "https://rsshub.app/twitter/user/macromargin" or site_url == "https://x.com/macromargin"

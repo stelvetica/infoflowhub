@@ -6,17 +6,16 @@ from pathlib import Path
 from typing import Any
 
 from apps.subscriptions.config import load_settings, load_sources, save_sources
+from apps.subscriptions.models import SourceItem
 from apps.subscriptions.rss_db import (
     delete_entries_by_source,
     delete_source_state,
     get_connection,
-    list_source_enabled_state,
     list_source_stats,
     rename_source,
     sanitize_db_text,
-    set_source_enabled,
 )
-from connectors._shared.common import parse_published_datetime
+from connectors._shared.common import parse_published_datetime, resolve_web_target
 from connectors._shared.web_fetch import validate_x_login_prerequisite
 
 from web.services.utils import (
@@ -38,43 +37,6 @@ RUNTIME_DIR = BASE_DIR / "runtime"
 HEALTH_PATH = RUNTIME_DIR / "health" / "subscriptions_source_health.json"
 STATUS_PATH = RUNTIME_DIR / "health" / "subscriptions_status.json"
 LATERHUB_DB_PATH = BASE_DIR / "data" / "laterhub.sqlite3"
-
-WEB_FEED_URLS = {
-    "https://rsshub.app/bilibili/user/dynamic/14089380",
-    "https://rsshub.app/bilibili/user/dynamic/474921808",
-    "https://rsshub.app/bilibili/user/dynamic/162183",
-    "https://rsshub.app/bilibili/user/dynamic/1908067732",
-    "https://rsshub.app/bilibili/user/dynamic/2117498259",
-    "https://rsshub.app/bilibili/user/dynamic/472747194",
-    "https://rsshub.app/bilibili/user/dynamic/316183842",
-    "https://rsshub.app/bilibili/user/dynamic/1257954297",
-    "https://rsshub.app/bilibili/user/dynamic/381870733",
-    "https://rsshub.app/bilibili/user/video/3546909549529340",
-    "https://rsshub.app/bilibili/user/dynamic/2233213",
-    "https://rsshub.app/weibo/user/2014433131",
-    "https://rsshub.app/weibo/user/7782629809",
-    "https://rsshub.app/twitter/user/MacroMargin",
-}
-
-NATIVE_FEED_URLS = {
-    "https://www.supertechfans.com/cn/index.xml",
-    "https://www.youtube.com/feeds/videos.xml?channel_id=UC7eBKmeAz99qswOcm3VxOow",
-    "https://www.youtube.com/feeds/videos.xml?channel_id=UC8gZZWIWmBuCb_gzC8DUrvw",
-    "https://feeds.feedburner.com/ruanyifeng",
-    "https://lumina.shawnxie.top/backend/api/reviews/rss.xml",
-}
-
-ALIAS_RULES: dict[str, dict[str, str]] = {
-    "https://rsshub.app/bilibili/user/video/3546909549529340": {"name": "观点 小鹿投研日记 的 bilibili 动态", "site_url": "https://space.bilibili.com/3546909549529340"},
-    "https://rsshub.app/bilibili/user/dynamic/14089380": {"name": "技术 算法 labuladong 的 bilibili 动态", "site_url": "https://space.bilibili.com/14089380/dynamic"},
-    "https://rsshub.app/bilibili/user/dynamic/1908067732": {"name": "观点 路口大爷聊宏观 的 bilibili 动态", "site_url": "https://space.bilibili.com/1908067732/dynamic"},
-    "https://rsshub.app/bilibili/user/dynamic/2117498259": {"name": "观点 硬核姬老板 的 bilibili 动态", "site_url": "https://space.bilibili.com/2117498259/dynamic"},
-    "https://rsshub.app/bilibili/user/dynamic/472747194": {"name": "观点 巫师财经 的 bilibili 动态", "site_url": "https://space.bilibili.com/472747194/dynamic"},
-    "https://rsshub.app/bilibili/user/dynamic/1257954297": {"name": "观点 房产 铁锤观察室 的 bilibili 动态", "site_url": "https://space.bilibili.com/1257954297/dynamic"},
-    "https://rsshub.app/bilibili/user/dynamic/381870733": {"name": "观点 小黄的投资笔记 的 bilibili 动态", "site_url": "https://space.bilibili.com/381870733/dynamic"},
-    "https://rsshub.app/bilibili/user/dynamic/2233213": {"name": "信息 星话大白 的 bilibili 动态", "site_url": "https://space.bilibili.com/2233213/dynamic"},
-    "https://lumina.shawnxie.top/backend/api/reviews/rss.xml": {"name": "技术 肖恩周刊", "site_url": "https://lumina.shawnxie.top/"},
-}
 
 DELETED_SITE_URLS = {"https://www.huxiu.com/member/2321131.html"}
 ENTRIES_PAGE_SIZE = 35
@@ -113,98 +75,14 @@ def load_health() -> dict[str, Any]:
     return read_json(HEALTH_PATH, {"sources": {}})
 
 
-def canonical_feed_url(source: dict[str, Any]) -> str:
-    if source.get("site_url") and source.get("provider") == "web":
-        return str(source["site_url"]).strip()
-    return str(source["feed_url"]).strip()
-
-
 def get_login_requirement_meta(source: dict[str, Any]) -> dict[str, str] | None:
-    feed_url = str(source.get("feed_url") or "").strip().lower()
-    site_url = str(source.get("site_url") or "").strip().lower()
-    if feed_url == "https://rsshub.app/twitter/user/macromargin" or site_url == "https://x.com/macromargin":
+    if str(source.get("auth_type") or "").strip().lower() == "chrome_profile_x":
         requirement = "依赖本机 Chrome Profile 2 登录态"
         hint = validate_x_login_prerequisite(source)
         if not hint:
             hint = "请先在本机 Chrome 的 Profile 2 中登录 x.com，并确认 MacroMargin 时间线可正常加载。"
         return {"requirement": requirement, "hint": hint}
     return None
-
-
-def normalize_sources() -> list[dict[str, Any]]:
-    payload = {"sources": load_sources()}
-    health = load_health()
-    source_state = list_source_enabled_state()
-    changed: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
-    seen_feeds: set[str] = set()
-
-    for item in payload["sources"]:
-        feed_url = str(item.get("feed_url") or "").strip()
-        site_url = str(item.get("site_url") or "").strip()
-        if not feed_url or site_url in DELETED_SITE_URLS:
-            continue
-        source = {
-            **item,
-            "id": str(item.get("id") or "").strip(),
-            "name": str(item.get("name") or "").strip(),
-            "feed_url": feed_url,
-            "site_url": site_url,
-            "enabled": source_state.get(str(item.get("id") or "").strip(), bool(item.get("enabled", True))),
-            "provider": item.get("provider") or "native",
-            "fetch_via": item.get("fetch_via") or "direct",
-            "kind": item.get("kind") or item.get("provider") or "native",
-            "group": str(item.get("group") or "").strip(),
-            "note": str(item.get("note") or ""),
-        }
-        login_meta = get_login_requirement_meta(source)
-        if login_meta:
-            source["note"] = login_meta["requirement"]
-            source["login_requirement"] = login_meta["requirement"]
-            source["login_hint"] = login_meta["hint"]
-        alias = ALIAS_RULES.get(feed_url)
-        if alias:
-            if not source["name"]:
-                source["name"] = str(alias.get("name") or "").strip()
-            if not source["site_url"]:
-                source["site_url"] = str(alias.get("site_url") or "").strip()
-        if "bilibili.com" in (feed_url + site_url).lower() and not str(source["name"]).endswith("bilibili 动态"):
-            source["name"] = f"{source['name']} bilibili 动态"
-        if feed_url in NATIVE_FEED_URLS:
-            source["provider"] = "native"
-            source["fetch_via"] = "direct"
-            source["kind"] = "native"
-        elif feed_url in WEB_FEED_URLS:
-            source["provider"] = "web"
-            source["fetch_via"] = "web"
-            source["kind"] = "web"
-        elif source["kind"] == "rsshub":
-            source["provider"] = "rsshub"
-            if source["fetch_via"] not in {"rsshub-self-hosted", "rsshub-public"}:
-                source["fetch_via"] = "rsshub-self-hosted"
-        elif source["kind"] == "web":
-            source["provider"] = "web"
-            source["fetch_via"] = "web"
-            source["kind"] = "web"
-        else:
-            source["provider"] = "native"
-            source["fetch_via"] = "direct"
-            source["kind"] = "native"
-        if not source["id"]:
-            source["id"] = build_source_id(source["name"])
-        if source["id"] in seen_ids or source["feed_url"] in seen_feeds:
-            continue
-        seen_ids.add(source["id"])
-        seen_feeds.add(source["feed_url"])
-        if health["sources"].get(source["id"]):
-            health["sources"][source["id"]]["source_name"] = source["name"]
-            health["sources"][source["id"]]["feed_url"] = canonical_feed_url(source)
-        changed.append(source)
-
-    if changed != payload["sources"]:
-        save_sources(changed)
-    write_json(HEALTH_PATH, health)
-    return changed
 
 
 def infer_source_meta(feed_url: str, site_url: str) -> tuple[str, str, str]:
@@ -218,13 +96,96 @@ def infer_source_meta(feed_url: str, site_url: str) -> tuple[str, str, str]:
     return ("native", "direct", "native")
 
 
+def infer_channel(feed_url: str, site_url: str) -> str:
+    target = resolve_web_target({"feed_url": feed_url, "site_url": site_url})
+    if target:
+        return target.site
+    combined = f"{normalize_text(feed_url)} {normalize_text(site_url)}"
+    if "youtube.com" in combined or "youtu.be" in combined:
+        return "youtube"
+    if "rsshub" in combined:
+        return "rsshub"
+    return "rss"
+
+
+def canonicalize_source(item: dict[str, Any]) -> dict[str, Any] | None:
+    feed_url = str(item.get("feed_url") or "").strip()
+    site_url = str(item.get("site_url") or "").strip()
+    if not feed_url or site_url in DELETED_SITE_URLS:
+        return None
+    provider = str(item.get("provider") or "").strip()
+    fetch_via = str(item.get("fetch_via") or "").strip()
+    kind = str(item.get("kind") or "").strip()
+    if not provider or not fetch_via or not kind:
+        provider, fetch_via, kind = infer_source_meta(feed_url, site_url)
+    channel = str(item.get("channel") or "").strip() or infer_channel(feed_url, site_url)
+    auth_type = str(item.get("auth_type") or "").strip() or ("chrome_profile_x" if normalize_text(site_url) == "https://x.com/macromargin" else "none")
+    auth_profile = str(item.get("auth_profile") or "").strip() or ("Profile 2" if auth_type == "chrome_profile_x" else "")
+    fallback_mode = str(item.get("fallback_mode") or "").strip()
+    if not fallback_mode:
+        fallback_mode = "web" if channel == "youtube" else "none"
+    source_id = str(item.get("id") or "").strip()
+    name = str(item.get("name") or "").strip()
+    if not source_id and name:
+        source_id = build_source_id(name)
+    return {
+        "id": source_id,
+        "name": name,
+        "group": str(item.get("group") or "").strip(),
+        "feed_url": feed_url,
+        "site_url": site_url,
+        "provider": provider,
+        "fetch_via": fetch_via,
+        "kind": kind,
+        "enabled": bool(item.get("enabled", True)),
+        "note": str(item.get("note") or ""),
+        "channel": channel,
+        "auth_type": auth_type,
+        "auth_profile": auth_profile,
+        "fallback_mode": fallback_mode,
+    }
+
+
+def load_source_catalog() -> list[dict[str, Any]]:
+    payload = {"sources": load_sources()}
+    sources: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    seen_feeds: set[str] = set()
+    for item in payload["sources"]:
+        source = canonicalize_source(item)
+        if not source:
+            continue
+        if source["id"] in seen_ids or source["feed_url"] in seen_feeds:
+            continue
+        seen_ids.add(source["id"])
+        seen_feeds.add(source["feed_url"])
+        sources.append(source)
+    return sources
+
+
+def normalize_sources() -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for item in load_source_catalog():
+        source = dict(item)
+        login_meta = get_login_requirement_meta(source)
+        if login_meta:
+            source["login_requirement"] = login_meta["requirement"]
+            source["login_hint"] = login_meta["hint"]
+        normalized.append(source)
+    return normalized
+
+
 def save_source(payload: dict[str, str]) -> None:
-    sources = normalize_sources()
+    sources = load_source_catalog()
     existing = next((item for item in sources if item["id"] == payload.get("source_id", "").strip()), None)
     previous_name = str(existing.get("name") or "").strip() if existing else ""
     clean_feed_url = sanitize_db_text(payload["feed_url"]).strip()
     clean_site_url = sanitize_db_text(payload.get("site_url", "")).strip()
     provider, fetch_via, kind = infer_source_meta(clean_feed_url, clean_site_url)
+    channel = infer_channel(clean_feed_url, clean_site_url)
+    auth_type = str(existing.get("auth_type") or "").strip() if existing else ("chrome_profile_x" if normalize_text(clean_site_url) == "https://x.com/macromargin" else "none")
+    auth_profile = str(existing.get("auth_profile") or "").strip() if existing else ("Profile 2" if auth_type == "chrome_profile_x" else "")
+    fallback_mode = str(existing.get("fallback_mode") or "").strip() if existing else ("web" if channel == "youtube" else "none")
     target = {
         "id": sanitize_db_text(payload.get("source_id", "")).strip() or build_source_id(payload["name"]),
         "name": sanitize_db_text(payload["name"]).strip(),
@@ -236,12 +197,15 @@ def save_source(payload: dict[str, str]) -> None:
         "kind": kind,
         "enabled": existing["enabled"] if existing else True,
         "note": str(existing.get("note") or "") if existing else "",
+        "channel": channel,
+        "auth_type": auth_type,
+        "auth_profile": auth_profile,
+        "fallback_mode": fallback_mode,
     }
     if not target["name"] or not target["feed_url"]:
         return
     next_sources = [target if item["id"] == target["id"] else item for item in sources] if any(item["id"] == target["id"] for item in sources) else [*sources, target]
     save_sources(next_sources)
-    set_source_enabled(target["id"], bool(target["enabled"]))
     if existing and previous_name != target["name"]:
         rename_source(target["id"], target["name"])
 
@@ -250,7 +214,7 @@ def toggle_source(source_id: str, enabled: bool) -> None:
     clean_id = sanitize_db_text(source_id).strip()
     if not clean_id:
         return
-    sources = normalize_sources()
+    sources = load_source_catalog()
     next_sources: list[dict[str, Any]] = []
     for item in sources:
         if item["id"] == clean_id:
@@ -258,14 +222,13 @@ def toggle_source(source_id: str, enabled: bool) -> None:
         else:
             next_sources.append(item)
     save_sources(next_sources)
-    set_source_enabled(clean_id, enabled)
 
 
 def delete_source(source_id: str) -> None:
     clean_id = sanitize_db_text(source_id).strip()
     if not clean_id:
         return
-    save_sources([item for item in normalize_sources() if item["id"] != clean_id])
+    save_sources([item for item in load_source_catalog() if item["id"] != clean_id])
     delete_entries_by_source(clean_id)
     delete_source_state(clean_id)
     health = load_health()
