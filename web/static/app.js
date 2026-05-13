@@ -1,6 +1,10 @@
 (() => {
   const STORAGE_KEY = "infoflowhub:read-links";
   const LATERHUB_WIDTH_KEY = "infoflowhub:laterhub-width";
+  const unreadFilter = {
+    unreadOnly: true,
+    button: null,
+  };
 
   function loadReadLinks() {
     try {
@@ -31,42 +35,46 @@
         saveReadLinks(next);
         anchor.classList.remove("cell-strong");
         anchor.classList.add("cell-read");
+        renderUnreadToggle();
       };
     });
   }
 
-  function setupUnreadToggle() {
-    const slot = document.getElementById("entries-unread-slot");
+  function renderUnreadToggle() {
     const panel = document.getElementById("entries-panel");
-    if (!slot || !panel) return;
-    if (slot.dataset.ready === "1") return;
-    slot.dataset.ready = "1";
-
-    let unreadOnly = true;
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "btn ghost active-filter";
-
-    const render = () => {
-      const readLinks = loadReadLinks();
-      panel.querySelectorAll("tbody tr").forEach((row) => {
-        const anchor = row.querySelector(".read-track");
-        if (!anchor) return;
-        const href = anchor.getAttribute("href") || "";
-        row.style.display = unreadOnly && readLinks[href] ? "none" : "";
-      });
+    if (!panel) return;
+    const { button, unreadOnly } = unreadFilter;
+    panel.querySelectorAll("tbody tr").forEach((row) => {
+      const anchor = row.querySelector(".read-track");
+      if (!anchor) return;
+      const href = anchor.getAttribute("href") || "";
+      row.style.display = unreadOnly && loadReadLinks()[href] ? "none" : "";
+    });
+    if (button) {
       button.textContent = unreadOnly ? "默认未读" : "显示全部";
       button.classList.toggle("active-filter", unreadOnly);
-    };
+    }
+  }
 
-    button.onclick = () => {
-      unreadOnly = !unreadOnly;
-      render();
-    };
-
-    slot.innerHTML = "";
-    slot.appendChild(button);
-    render();
+  function setupUnreadToggle() {
+    const slot = document.getElementById("entries-unread-slot");
+    if (!slot) return;
+    let button = unreadFilter.button;
+    if (!button) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn ghost active-filter";
+      button.onclick = () => {
+        unreadFilter.unreadOnly = !unreadFilter.unreadOnly;
+        renderUnreadToggle();
+      };
+      unreadFilter.button = button;
+    }
+    if (slot.firstChild !== button) {
+      slot.innerHTML = "";
+      slot.appendChild(button);
+    }
+    renderUnreadToggle();
   }
 
   function clearModal() {
@@ -115,6 +123,7 @@
     };
 
     let dragging = false;
+    let activePointerId = null;
 
     const updateFromClientX = (clientX) => {
       const bounds = shell.getBoundingClientRect();
@@ -124,6 +133,7 @@
     const stopDragging = (pointerId) => {
       if (!dragging) return;
       dragging = false;
+      activePointerId = null;
       resizer.classList.remove("is-dragging");
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
@@ -134,7 +144,9 @@
 
     resizer.addEventListener("pointerdown", (event) => {
       if (window.innerWidth <= 1100) return;
+      event.preventDefault();
       dragging = true;
+      activePointerId = event.pointerId;
       resizer.classList.add("is-dragging");
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
@@ -142,18 +154,25 @@
       updateFromClientX(event.clientX);
     });
 
-    resizer.addEventListener("pointermove", (event) => {
+    const handlePointerMove = (event) => {
       if (!dragging) return;
+      if (activePointerId !== null && event.pointerId !== activePointerId) return;
       updateFromClientX(event.clientX);
-    });
+    };
 
-    resizer.addEventListener("pointerup", (event) => {
+    const handlePointerUp = (event) => {
+      if (activePointerId !== null && event.pointerId !== activePointerId) return;
       stopDragging(event.pointerId);
-    });
+    };
 
-    resizer.addEventListener("pointercancel", (event) => {
+    const handlePointerCancel = (event) => {
+      if (activePointerId !== null && event.pointerId !== activePointerId) return;
       stopDragging(event.pointerId);
-    });
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
 
     window.addEventListener("resize", restoreWidth);
     restoreWidth();

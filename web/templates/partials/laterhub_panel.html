@@ -1,11 +1,16 @@
 <div class="pane-right-stack">
   <section class="card pane-card pane-card-right">
     <div class="panel-title">
-      <div class="panel-title-inline">
+      <div class="panel-title-inline laterhub-title-row">
         <h3>稍后处理</h3>
         <form hx-post="/actions/laterhub/fetch-now?{{ params|urlencode }}" hx-target="#laterhub-panel" hx-swap="innerHTML">
           <button class="btn" type="submit">抓取</button>
         </form>
+      </div>
+      <div class="toolbar toolbar-inline laterhub-top-row laterhub-top-row-inline">
+        <input class="input laterhub-search-input" name="laterhub_q" value="{{ laterhub.q }}" placeholder="搜索标题或标签">
+        <button class="btn" type="submit">搜索</button>
+        <a class="btn laterhub-clear-btn" href="/?entries_q={{ params.get('entries_q', '') }}&entries_sort={{ params.get('entries_sort', '') }}&entries_dir={{ params.get('entries_dir', '') }}">清空</a>
       </div>
     </div>
     <form class="laterhub-form-stack" hx-get="/fragments/laterhub" hx-target="#laterhub-panel" hx-swap="innerHTML">
@@ -15,11 +20,6 @@
       <input type="hidden" name="laterhub_sort" value="{{ laterhub.sort }}">
       <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
       <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
-      <div class="toolbar toolbar-inline laterhub-top-row">
-        <input class="input laterhub-search-input" name="laterhub_q" value="{{ laterhub.q }}" placeholder="搜索标题或标签">
-        <button class="btn" type="submit">搜索</button>
-        <a class="btn laterhub-clear-btn" href="/?entries_q={{ params.get('entries_q', '') }}&entries_sort={{ params.get('entries_sort', '') }}&entries_dir={{ params.get('entries_dir', '') }}">清空</a>
-      </div>
       <div class="chips laterhub-chips">
         <button class="chip {% if not laterhub.selected_tags %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="">全部</button>
         {% for tag in laterhub.all_tags %}
@@ -32,9 +32,9 @@
           <button class="chip {% if active %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="{{ next_tags | join(',') }}">{{ tag }}</button>
         {% endfor %}
       </div>
-      <div class="laterhub-footer-row">
+      <div class="laterhub-footer-row laterhub-footer-row-bottom">
         <div class="laterhub-summary-inline laterhub-summary-tight laterhub-summary-small laterhub-summary-merged">
-          <div class="inline-metric"><span class="label">当前条目</span><strong>{{ laterhub.total }}</strong></div>
+          <div class="inline-metric"><span class="label">筛选后条目</span><strong>{{ laterhub.filtered_total }}</strong></div>
           <div class="inline-metric"><span class="label">已选标签</span><strong>{{ laterhub.selected_tags|length }}</strong></div>
         </div>
         <div class="laterhub-filter-row">

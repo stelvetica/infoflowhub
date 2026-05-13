@@ -285,20 +285,29 @@ def _laterhub_conn():
     return conn
 
 
-def _load_laterhub_items(limit: int = 500) -> list[dict[str, Any]]:
+def _load_laterhub_items(limit: int | None = None) -> list[dict[str, Any]]:
     if not LATERHUB_DB_PATH.exists():
         return []
     conn = _laterhub_conn()
     try:
-        rows = conn.execute(
-            """
-            SELECT id, url, title, tags, created_at, updated_at, is_finished
-            FROM links
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
+        if limit is None:
+            rows = conn.execute(
+                """
+                SELECT id, url, title, tags, created_at, updated_at, is_finished
+                FROM links
+                ORDER BY id DESC
+                """
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, url, title, tags, created_at, updated_at, is_finished
+                FROM links
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
     finally:
         conn.close()
     return [dict(row) for row in rows]
@@ -438,7 +447,7 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
     selected_keys = {normalize_text(item) for item in selected_tags}
     page = max(int(query.get("laterhub_page", "1") or "1"), 1)
     all_rows: list[dict[str, Any]] = []
-    for item in _load_laterhub_items(500):
+    for item in _load_laterhub_items():
         tags_text = str(item.get("tags") or "")
         tag_list = split_tags(tags_text)
         all_rows.append(
