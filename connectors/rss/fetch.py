@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 import feedparser
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
-from connectors._shared.common import parse_published_datetime
+from connectors._shared.common import parse_published_datetime, resolve_web_target
 from connectors._shared.web_fetch import fetch_web_many, fetch_web_source
 
 
@@ -113,6 +113,13 @@ def fetch_feed(source_id: str, source_name: str, feed_url: str, timeout: int = 2
     )
 
 
+def should_fallback_to_web(source: dict, result: FeedFetchResult) -> bool:
+    if result.ok and result.entries:
+        return False
+    target = resolve_web_target(source)
+    return bool(target and target.site == "youtube")
+
+
 def fetch_many(sources: Iterable[dict], timeout: int = 20, settings: dict | None = None) -> List[FeedFetchResult]:
     source_list = list(sources)
     web_sources = [source for source in source_list if source.get("provider") == "web"]
@@ -122,9 +129,19 @@ def fetch_many(sources: Iterable[dict], timeout: int = 20, settings: dict | None
         if source.get("provider") == "web":
             results.append(web_results.get(source["id"]) or fetch_web_source(source))
             continue
-        results.append(
-            fetch_feed(source_id=source["id"], source_name=source["name"], feed_url=resolve_feed_url(source, settings=settings), timeout=timeout, limit=FETCH_SOURCE_LIMIT)
+        rss_result = fetch_feed(
+            source_id=source["id"],
+            source_name=source["name"],
+            feed_url=resolve_feed_url(source, settings=settings),
+            timeout=timeout,
+            limit=FETCH_SOURCE_LIMIT,
         )
+        if should_fallback_to_web(source, rss_result):
+            web_result = fetch_web_source(source)
+            if web_result.ok and web_result.entries:
+                results.append(web_result)
+                continue
+        results.append(rss_result)
     return results
 
 

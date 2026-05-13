@@ -42,6 +42,7 @@ def validate_x_login_prerequisite(source: dict) -> str:
 
 def resolve_web_target(source: dict) -> WebSourceTarget | None:
     site_url = (source.get("site_url") or "").strip()
+    feed_url = (source.get("feed_url") or "").strip()
     match = re.search(r"space\.bilibili\.com/(\d+)", site_url)
     if match:
         uid = match.group(1)
@@ -54,6 +55,22 @@ def resolve_web_target(source: dict) -> WebSourceTarget | None:
     if match:
         uid = match.group(1)
         return WebSourceTarget(site="x", uid=uid, page_url=f"https://x.com/{uid}")
+    match = re.search(r"[?&]channel_id=([A-Za-z0-9_-]+)", feed_url)
+    if match:
+        uid = match.group(1)
+        return WebSourceTarget(site="youtube", uid=uid, page_url=f"https://www.youtube.com/channel/{uid}/videos")
+    match = re.search(r"youtube\.com/channel/([A-Za-z0-9_-]+)", site_url)
+    if match:
+        uid = match.group(1)
+        return WebSourceTarget(site="youtube", uid=uid, page_url=f"https://www.youtube.com/channel/{uid}/videos")
+    match = re.search(r"youtube\.com/(@[A-Za-z0-9._-]+)", site_url)
+    if match:
+        uid = match.group(1)
+        return WebSourceTarget(site="youtube", uid=uid, page_url=f"https://www.youtube.com/{uid}/videos")
+    match = re.search(r"youtube\.com/(?:c|user)/([A-Za-z0-9._-]+)", site_url)
+    if match:
+        uid = match.group(1)
+        return WebSourceTarget(site="youtube", uid=uid, page_url=f"https://www.youtube.com/{site_url.rstrip('/').split('youtube.com/', 1)[1]}/videos")
     return None
 
 
