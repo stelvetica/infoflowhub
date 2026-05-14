@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.parse
 import urllib.request
 
@@ -9,6 +10,7 @@ from connectors.wechat.auth import extract_wechat_fakeid, load_wechat_credential
 
 WECHAT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
 WECHAT_ARTICLE_LIST_URL = "https://mp.weixin.qq.com/cgi-bin/appmsgpublish"
+WECHAT_SEARCH_BIZ_URL = "https://mp.weixin.qq.com/cgi-bin/searchbiz"
 
 
 def fetch_wechat_articles(source: dict, begin: int = 0, count: int = 10, keyword: str = "") -> dict:
@@ -49,6 +51,64 @@ def fetch_wechat_articles(source: dict, begin: int = 0, count: int = 10, keyword
     with urllib.request.urlopen(request, timeout=30) as response:
         payload = json.loads(response.read().decode("utf-8", errors="ignore"))
     return payload
+
+
+def search_wechat_accounts(query: str, count: int = 5) -> dict:
+    credentials = load_wechat_credentials()
+    token = str(credentials.get("token") or "").strip()
+    cookie = str(credentials.get("cookie") or "").strip()
+    if not query.strip():
+        raise ValueError("公众号搜索关键词不能为空。")
+    if not token or not cookie:
+        raise ValueError("缺少微信公众号登录凭证。")
+    params = {
+        "action": "search_biz",
+        "token": token,
+        "lang": "zh_CN",
+        "f": "json",
+        "ajax": 1,
+        "random": time.time(),
+        "query": query.strip(),
+        "begin": 0,
+        "count": count,
+    }
+    url = f"{WECHAT_SEARCH_BIZ_URL}?{urllib.parse.urlencode(params)}"
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": WECHAT_USER_AGENT,
+            "Referer": "https://mp.weixin.qq.com/",
+            "Cookie": cookie,
+            "Accept": "application/json, text/plain, */*",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8", errors="ignore"))
+    return payload
+
+
+def parse_wechat_search_list(payload: dict) -> tuple[list[dict], str]:
+    base_resp = payload.get("base_resp", {}) if isinstance(payload, dict) else {}
+    ret = base_resp.get("ret", -1)
+    if ret != 0:
+        error_msg = str(base_resp.get("err_msg") or f"ret={ret}").strip()
+        if "login" in error_msg.lower() or ret == 200003:
+            return [], "微信公众号登录态已失效，请重新扫码登录。"
+        return [], f"公众号搜索接口返回异常: {error_msg}"
+    accounts = payload.get("list", []) or []
+    results: list[dict] = []
+    for account in accounts:
+        if not isinstance(account, dict):
+            continue
+        results.append(
+            {
+                "fakeid": str(account.get("fakeid") or "").strip(),
+                "nickname": str(account.get("nickname") or "").strip(),
+                "alias": str(account.get("alias") or "").strip(),
+                "round_head_img": str(account.get("round_head_img") or "").strip(),
+            }
+        )
+    return results, ""
 
 
 def parse_wechat_publish_list(payload: dict) -> tuple[list[dict], str]:

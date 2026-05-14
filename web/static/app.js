@@ -5,6 +5,9 @@
     unreadOnly: true,
     button: null,
   };
+  const wechatLogin = {
+    timer: null,
+  };
 
   function loadReadLinks() {
     try {
@@ -178,10 +181,104 @@
     restoreWidth();
   }
 
+  async function setupWechatLogin() {
+    const root = document.querySelector("[data-wechat-login]");
+    if (!root || root.dataset.ready === "1") return;
+    root.dataset.ready = "1";
+    const qr = document.getElementById("wechat-login-qr");
+    const status = document.getElementById("wechat-login-status");
+    const refresh = document.getElementById("wechat-login-refresh");
+
+    const setStatus = (text) => {
+      if (status) status.textContent = text;
+    };
+
+    const stopPolling = () => {
+      if (wechatLogin.timer) {
+        window.clearTimeout(wechatLogin.timer);
+        wechatLogin.timer = null;
+      }
+    };
+
+    const completeLogin = async () => {
+      setStatus("已扫码，正在完成登录...");
+      const res = await fetch("/actions/wechat-login/complete", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setStatus(`登录成功：${data.data.nickname || "公众号"}`);
+        window.setTimeout(() => {
+          window.location.href = "/?view=settings";
+        }, 1200);
+        return;
+      }
+      setStatus(`登录失败：${data.error || "未知错误"}`);
+    };
+
+    const poll = async () => {
+      try {
+        const res = await fetch("/actions/wechat-login/scan");
+        const data = await res.json();
+        if (data.base_resp && data.base_resp.ret !== 0) {
+          setStatus("状态检查失败，请刷新二维码后重试。");
+          return;
+        }
+        const scanStatus = Number(data.status || 0);
+        if (scanStatus === 1) {
+          stopPolling();
+          await completeLogin();
+          return;
+        }
+        if (scanStatus === 4 || scanStatus === 6) {
+          setStatus("已扫码，请在手机上确认登录。");
+        } else if (scanStatus === 2) {
+          stopPolling();
+          setStatus("二维码已过期，请刷新二维码。");
+          return;
+        } else if (scanStatus === 3) {
+          stopPolling();
+          setStatus("扫码失败，请刷新二维码后重试。");
+          return;
+        } else {
+          setStatus("请用微信扫码。");
+        }
+      } catch {
+        setStatus("状态检查失败，请稍后重试。");
+      }
+      wechatLogin.timer = window.setTimeout(poll, 1800);
+    };
+
+    const loadQrcode = async () => {
+      stopPolling();
+      setStatus("正在准备二维码...");
+      if (qr) qr.innerHTML = "正在加载二维码...";
+      await fetch("/actions/wechat-login/start", { method: "POST" });
+      const img = document.createElement("img");
+      img.alt = "微信登录二维码";
+      img.style.maxWidth = "220px";
+      img.style.maxHeight = "220px";
+      img.onload = () => {
+        if (qr) {
+          qr.innerHTML = "";
+          qr.appendChild(img);
+        }
+        setStatus("请用微信扫码。");
+        wechatLogin.timer = window.setTimeout(poll, 1800);
+      };
+      img.onerror = () => {
+        setStatus("二维码加载失败，请刷新后重试。");
+      };
+      img.src = `/actions/wechat-login/qrcode?rnd=${Math.random()}`;
+    };
+
+    refresh?.addEventListener("click", loadQrcode);
+    await loadQrcode();
+  }
+
   function init() {
     applyReadState();
     setupUnreadToggle();
     setupLaterhubResizer();
+    setupWechatLogin();
   }
 
   document.body.addEventListener("htmx:beforeRequest", (event) => {
