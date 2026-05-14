@@ -77,7 +77,7 @@
         <div class="news-links">
           <a
             class="news-link"
-            href="https://alphapai-web.rabyte.cn/reading/home/market-report/detail?id=SseEDKk5WfFBaeoXzoMOjzGHOY2TaNVBNU3wkFkB-J8%3D&type=21"
+            href="https://alphapai-web.rabyte.cn/reading/home/my-focus"
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -94,6 +94,10 @@
                 <form hx-post="/actions/fetch-now?{{ params|urlencode }}" hx-target="#runtime-status-panel" hx-swap="innerHTML">
                   <button class="btn" type="submit">抓取</button>
                 </form>
+                <div class="inline-metric entries-fetch-progress" title="复用设置里的抓取进度">
+                  <span class="label">抓取状态</span>
+                  <strong>{{ settings.status['success_sources_text'] }}</strong>
+                </div>
               </div>
               <form class="toolbar toolbar-inline toolbar-inline-spread entries-header-form entries-header-form-right" hx-get="/fragments/entries" hx-target="#entries-panel" hx-swap="innerHTML">
                 <input type="hidden" name="entries_sort" value="{{ entries.sort }}">
