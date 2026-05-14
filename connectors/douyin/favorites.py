@@ -8,7 +8,8 @@ from typing import Any
 
 from playwright.sync_api import sync_playwright
 
-from apps.laterhub.config import DEBUG_DIR, PW_DOUYIN_PROFILE
+from apps.laterhub.config import DEBUG_DIR
+from connectors.auth import get_auth_context_path
 
 
 DOUYIN_WEAK_TITLE_PATTERNS = [
@@ -121,11 +122,12 @@ def _extract_visible_items(page) -> list[dict[str, Any]]:
 
 
 def fetch_douyin_favorites(*args, **kwargs) -> list[dict[str, Any]]:
-    PW_DOUYIN_PROFILE.mkdir(parents=True, exist_ok=True)
+    profile_dir = get_auth_context_path("douyin_shared")
+    profile_dir.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
         _, browser_executable = _resolve_default_browser_executable()
         context = p.chromium.launch_persistent_context(
-            user_data_dir=str(PW_DOUYIN_PROFILE),
+            user_data_dir=str(profile_dir),
             executable_path=browser_executable,
             headless=False,
             args=["--new-window"],

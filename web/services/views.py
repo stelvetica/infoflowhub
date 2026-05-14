@@ -7,7 +7,6 @@ from typing import Any
 from urllib.parse import quote
 
 from apps.subscriptions.config import load_settings, load_sources, save_sources
-from apps.subscriptions.models import SourceItem
 from apps.subscriptions.rss_db import (
     delete_entries_by_source,
     delete_source_state,
@@ -16,8 +15,9 @@ from apps.subscriptions.rss_db import (
     rename_source,
     sanitize_db_text,
 )
-from connectors._shared.common import parse_published_datetime, resolve_web_target, validate_douyin_login_prerequisite, validate_x_login_prerequisite
-from connectors.wechat.auth import get_wechat_auth_status, validate_wechat_auth_prerequisite
+from connectors._shared.common import parse_published_datetime, resolve_web_target
+from connectors.auth import list_auth_statuses
+from connectors.wechat.auth import get_wechat_auth_status
 from web.services.utils import (
     build_source_id,
     compare_value,
@@ -28,7 +28,6 @@ from web.services.utils import (
     provider_label,
     source_channel_label,
     split_tags,
-    strip_invalid_unicode,
     to_sortable_time,
 )
 
@@ -79,30 +78,40 @@ def load_health() -> dict[str, Any]:
     return read_json(HEALTH_PATH, {"sources": {}})
 
 
-def default_auth_meta(channel: str, site_url: str) -> tuple[str, str]:
+def default_auth_key(channel: str, site_url: str, feed_url: str = "") -> str:
     normalized_site = normalize_text(site_url)
+    normalized_feed = normalize_text(feed_url)
+    combined = f"{normalized_site} {normalized_feed}"
     if channel == "wechat":
-        return ("wechat_session", "runtime/wechat_auth.json")
-    if normalized_site == "https://x.com/macromargin":
-        return ("chrome_profile_x", "Profile 2")
+        return "wechat_mp_main"
+    if "bilibili.com" in combined:
+        return "bilibili_main"
+    if normalized_site == "https://x.com/macromargin" or "x.com/" in combined:
+        return "x_profile2"
+    if "weibo.com/" in combined:
+        return "weibo_shared"
     if channel == "douyin":
-        return ("douyin_profile", "PW_DOUYIN_PROFILE")
-    return ("none", "")
+        return "douyin_shared"
+    return ""
 
 
-def get_login_requirement_meta(source: dict[str, Any]) -> dict[str, str] | None:
-    auth_type = str(source.get("auth_type") or "").strip().lower()
-    if auth_type == "wechat_session":
-        hint = validate_wechat_auth_prerequisite(source) or "请在环境变量或 runtime/wechat_auth.json 中维护 WECHAT_TOKEN 与 WECHAT_COOKIE。"
-        return {"requirement": "依赖微信公众号登录态", "hint": hint}
-    if auth_type == "chrome_profile_x":
-        requirement = "依赖本机 Chrome Profile 2 登录态"
-        hint = validate_x_login_prerequisite(source) or "请先在本机 Chrome 的 Profile 2 中登录 x.com，并确认 MacroMargin 时间线可正常加载。"
-        return {"requirement": requirement, "hint": hint}
-    if auth_type == "douyin_profile":
-        requirement = "依赖共享抖音登录态"
-        hint = validate_douyin_login_prerequisite(source) or "复用现有抖音登录态；若失效，重新执行现有抖音登录脚本即可。"
-        return {"requirement": requirement, "hint": hint}
+def auth_requirement_meta(auth_key: str) -> dict[str, str] | None:
+    for descriptor in list_auth_statuses():
+        if descriptor.auth_key != auth_key:
+            continue
+        requirement_map = {
+            "wechat_mp_main": "依赖微信公众号主账号登录态",
+            "douyin_shared": "依赖抖音共享登录态",
+            "bilibili_main": "依赖 B站主账号登录态",
+            "x_profile2": "依赖 X 平台共享登录态",
+            "weibo_shared": "依赖微博共享登录态",
+        }
+        return {
+            "requirement": requirement_map.get(auth_key, descriptor.display_name),
+            "hint": descriptor.hint,
+            "status_text": descriptor.status_text,
+            "status_level": descriptor.status_level,
+        }
     return None
 
 
@@ -144,9 +153,7 @@ def canonicalize_source(item: dict[str, Any]) -> dict[str, Any] | None:
     if not provider or not fetch_via or not kind:
         provider, fetch_via, kind = infer_source_meta(feed_url, site_url)
     channel = str(item.get("channel") or "").strip() or infer_channel(feed_url, site_url)
-    default_auth_type, default_auth_profile = default_auth_meta(channel, site_url)
-    auth_type = str(item.get("auth_type") or "").strip() or default_auth_type
-    auth_profile = str(item.get("auth_profile") or "").strip() or default_auth_profile
+    auth_key = str(item.get("auth_key") or "").strip() or default_auth_key(channel, site_url, feed_url)
     fallback_mode = str(item.get("fallback_mode") or "").strip() or ("web" if channel == "youtube" else "none")
     source_id = str(item.get("id") or "").strip()
     name = str(item.get("name") or "").strip()
@@ -164,8 +171,7 @@ def canonicalize_source(item: dict[str, Any]) -> dict[str, Any] | None:
         "enabled": bool(item.get("enabled", True)),
         "note": str(item.get("note") or ""),
         "channel": channel,
-        "auth_type": auth_type,
-        "auth_profile": auth_profile,
+        "auth_key": auth_key,
         "fallback_mode": fallback_mode,
     }
 
@@ -190,10 +196,17 @@ def normalize_sources() -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
     for item in load_source_catalog():
         source = dict(item)
-        login_meta = get_login_requirement_meta(source)
+        login_meta = auth_requirement_meta(source.get("auth_key", ""))
         if login_meta:
             source["login_requirement"] = login_meta["requirement"]
             source["login_hint"] = login_meta["hint"]
+            source["auth_status_text"] = login_meta["status_text"]
+            source["auth_status_level"] = login_meta["status_level"]
+        else:
+            source["login_requirement"] = ""
+            source["login_hint"] = ""
+            source["auth_status_text"] = ""
+            source["auth_status_level"] = ""
         normalized.append(source)
     return normalized
 
@@ -210,9 +223,7 @@ def save_source(payload: dict[str, str]) -> None:
     requested_source_id = sanitize_db_text(payload.get("source_id", "")).strip()
     provider, fetch_via, kind = infer_source_meta(clean_feed_url, clean_site_url)
     channel = infer_channel(clean_feed_url, clean_site_url)
-    default_auth_type, default_auth_profile = default_auth_meta(channel, clean_site_url)
-    auth_type = str(existing.get("auth_type") or "").strip() if existing else default_auth_type
-    auth_profile = str(existing.get("auth_profile") or "").strip() if existing else default_auth_profile
+    auth_key = str(existing.get("auth_key") or "").strip() if existing else default_auth_key(channel, clean_site_url, clean_feed_url)
     fallback_mode = str(existing.get("fallback_mode") or "").strip() if existing else ("web" if channel == "youtube" else "none")
     source_id = existing["id"] if existing else (requested_source_id or build_source_id(clean_name))
     target = {
@@ -227,8 +238,7 @@ def save_source(payload: dict[str, str]) -> None:
         "enabled": existing["enabled"] if existing else True,
         "note": str(existing.get("note") or "") if existing else "",
         "channel": channel,
-        "auth_type": auth_type,
-        "auth_profile": auth_profile,
+        "auth_key": auth_key,
         "fallback_mode": fallback_mode,
     }
     if not target["name"] or not target["feed_url"]:
@@ -361,11 +371,11 @@ def get_laterhub_summary() -> dict[str, int]:
 
 def laterhub_source_meta(source: str) -> dict[str, str]:
     mapping = {
-        "bilibili_watchlater": {"label": "B站稍后看", "purpose": "收藏/稍后处理", "fetch_mode": "私有 API 登录态"},
-        "douyin_favorite": {"label": "抖音收藏", "purpose": "收藏/稍后处理", "fetch_mode": "私有网页登录态"},
-        "manual_verify": {"label": "人工补录", "purpose": "资料核实/待整理", "fetch_mode": "人工录入"},
+        "bilibili_watchlater": {"label": "B站稍后看", "purpose": "收藏/稍后处理", "fetch_mode": "统一复用 bilibili_main", "auth_key": "bilibili_main"},
+        "douyin_favorite": {"label": "抖音收藏", "purpose": "收藏/稍后处理", "fetch_mode": "统一复用 douyin_shared", "auth_key": "douyin_shared"},
+        "manual_verify": {"label": "人工补录", "purpose": "资料核实/待整理", "fetch_mode": "人工录入", "auth_key": ""},
     }
-    return mapping.get(source, {"label": source, "purpose": "待分类", "fetch_mode": "待识别"})
+    return mapping.get(source, {"label": source, "purpose": "待分类", "fetch_mode": "待识别", "auth_key": ""})
 
 
 def get_laterhub_source_stats() -> list[dict[str, Any]]:
@@ -532,6 +542,24 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     direction = query.get("dir", "asc")
     wechat_auth = get_wechat_auth_status()
     wechat_login_url = f"/wechat-login?next={quote('/?view=settings', safe='')}"
+    auth_assets = []
+    for descriptor in list_auth_statuses():
+        row = {
+            "auth_key": descriptor.auth_key,
+            "display_name": descriptor.display_name,
+            "platform": descriptor.platform,
+            "auth_mode": descriptor.auth_mode,
+            "storage_ref": descriptor.storage_ref,
+            "renew_strategy": descriptor.renew_strategy,
+            "description": descriptor.description,
+            "status_text": descriptor.status_text,
+            "status_level": descriptor.status_level,
+            "hint": descriptor.hint,
+            "action_url": wechat_login_url if descriptor.auth_key == "wechat_mp_main" else "",
+            "action_label": "续期/登录" if descriptor.auth_key == "wechat_mp_main" else "查看说明",
+        }
+        auth_assets.append(row)
+
     rows = []
     for item in normalize_sources():
         stat = stats.get(item["id"], {})
@@ -543,7 +571,6 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             from datetime import datetime
 
             invalid_days = str(max((datetime.now() - failed_at).days, 0))
-        is_wechat = str(item.get("channel") or "").strip() == "wechat"
         row = {
             **item,
             "provider_label": provider_label(str(item.get("provider") or ""), str(item.get("fetch_via") or "")),
@@ -551,17 +578,12 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             "entry_count": int(stat.get("entry_count") or 0),
             "last_error": str(source_health.get("last_error") or ""),
             "last_success_at": str(source_health.get("last_success_at") or ""),
-            "login_requirement": str(item.get("login_requirement") or ""),
-            "login_hint": str(item.get("login_hint") or ""),
             "invalid_days": invalid_days,
             "is_failed": bool(invalid_days),
             "invalid_sort": int(invalid_days) if invalid_days else -1,
             "enabled_sort": 1 if item.get("enabled") else 0,
             "enabled_text": "生效" if item.get("enabled") else "停用",
-            "wechat_auth_status_text": wechat_auth["status_text"] if is_wechat else "",
-            "wechat_auth_status_level": wechat_auth["status_level"] if is_wechat else "",
-            "wechat_auth_hint": wechat_auth["hint"] if is_wechat else "",
-            "wechat_login_url": wechat_login_url if is_wechat else "",
+            "auth_asset_name": next((asset["display_name"] for asset in auth_assets if asset["auth_key"] == item.get("auth_key")), ""),
         }
         if keyword and not any(keyword in normalize_text(str(row.get(field) or "")) for field in ("name", "feed_url", "site_url")):
             continue
@@ -574,6 +596,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         "summary": summary,
         "laterhub_sources": laterhub_sources,
         "sources": rows,
+        "auth_assets": auth_assets,
         "q": query.get("source_q", ""),
         "source_filter": source_filter,
         "sort": sort,

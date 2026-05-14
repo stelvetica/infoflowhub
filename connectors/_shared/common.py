@@ -4,16 +4,15 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
-from pathlib import Path
 
-from apps.laterhub.config import PW_DOUYIN_PROFILE
 from apps.subscriptions.models import FeedFetchResult
+from connectors.auth import get_auth_context_path, validate_auth
 
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
-BASE_DIR = Path(__file__).resolve().parents[2]
-WEIBO_PROFILE_DIR = BASE_DIR / "runtime" / "browser_profiles" / "pw-weibo-profile"
-X_PROFILE_DIR = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data" / "Profile 2"
+WEIBO_PROFILE_DIR = get_auth_context_path("weibo_shared")
+X_PROFILE_DIR = get_auth_context_path("x_profile2")
+DOUYIN_PROFILE_DIR = get_auth_context_path("douyin_shared")
 X_LOGIN_HINT = "请先在本机 Chrome 的 Profile 2 中登录 x.com，并确认 MacroMargin 时间线可正常加载。"
 DOUYIN_LOGIN_HINT = "请先执行现有抖音登录流程，当前抖音订阅与抖音收藏共用同一份登录态。"
 
@@ -26,8 +25,8 @@ class WebSourceTarget:
 
 
 def is_macromargin_source(source: dict) -> bool:
-    auth_type = str(source.get("auth_type") or "").strip().lower()
-    if auth_type == "chrome_profile_x":
+    auth_key = str(source.get("auth_key") or "").strip().lower()
+    if auth_key == "x_profile2":
         return True
     feed_url = str(source.get("feed_url") or "").strip().lower()
     site_url = str(source.get("site_url") or "").strip().lower()
@@ -37,39 +36,18 @@ def is_macromargin_source(source: dict) -> bool:
 def validate_x_login_prerequisite(source: dict) -> str:
     if not is_macromargin_source(source):
         return ""
-    if not X_PROFILE_DIR.exists():
-        return f"MacroMargin 依赖本机 Chrome Profile 2 登录态。当前未找到目录：{X_PROFILE_DIR}"
-    cookies_candidates = [
-        X_PROFILE_DIR / "Cookies",
-        X_PROFILE_DIR / "Network" / "Cookies",
-    ]
-    missing: list[str] = []
-    if not any(path.exists() for path in cookies_candidates):
-        missing.append("Cookies")
-    if not (X_PROFILE_DIR / "Preferences").exists():
-        missing.append("Preferences")
-    if missing:
-        return f"MacroMargin 依赖本机 Chrome Profile 2 登录态。请先用该 Profile 登录 x.com，缺少关键文件：{', '.join(missing)}"
-    return ""
+    descriptor = validate_auth("x_profile2")
+    return "" if descriptor.is_available else descriptor.hint
 
 
 def validate_douyin_login_prerequisite(source: dict) -> str:
-    auth_type = str(source.get("auth_type") or "").strip().lower()
+    auth_key = str(source.get("auth_key") or "").strip().lower()
     site_url = str(source.get("site_url") or "").strip().lower()
     feed_url = str(source.get("feed_url") or "").strip().lower()
-    if auth_type != "douyin_profile" and "douyin.com/user/" not in site_url and "douyin.com/user/" not in feed_url:
+    if auth_key != "douyin_shared" and "douyin.com/user/" not in site_url and "douyin.com/user/" not in feed_url:
         return ""
-    if not PW_DOUYIN_PROFILE.exists():
-        return f"抖音订阅依赖共享登录态目录，当前未找到：{PW_DOUYIN_PROFILE}"
-    state_candidates = [
-        PW_DOUYIN_PROFILE / "Cookies",
-        PW_DOUYIN_PROFILE / "Network" / "Cookies",
-        PW_DOUYIN_PROFILE / "Preferences",
-        PW_DOUYIN_PROFILE / "Local State",
-    ]
-    if not any(path.exists() for path in state_candidates):
-        return f"抖音共享登录态目录存在，但未发现可用会话文件。{DOUYIN_LOGIN_HINT}"
-    return ""
+    descriptor = validate_auth("douyin_shared")
+    return "" if descriptor.is_available else descriptor.hint
 
 
 def resolve_web_target(source: dict) -> WebSourceTarget | None:
@@ -195,7 +173,7 @@ def normalize_english_date(text: str) -> str:
     line = (text or "").strip()
     if not line:
         return ""
-    for pattern in ("%b %d, %Y", "%b %d", "%I:%M %p · %b %d, %Y"):
+    for pattern in ("%b %d, %Y", "%b %d", "%I:%M %p 路 %b %d, %Y"):
         try:
             dt = datetime.strptime(line, pattern)
             if pattern == "%b %d":

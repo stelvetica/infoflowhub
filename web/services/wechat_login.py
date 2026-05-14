@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-import json
 import re
 import time
 import uuid
-from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+from connectors.auth.providers.wechat import save_wechat_credentials
 
 
-BASE_DIR = Path(__file__).resolve().parents[2]
-WECHAT_AUTH_PATH = BASE_DIR / "runtime" / "wechat_auth.json"
 MP_BASE_URL = "https://mp.weixin.qq.com"
 QR_ENDPOINT = f"{MP_BASE_URL}/cgi-bin/scanloginqrcode"
 BIZ_LOGIN_ENDPOINT = f"{MP_BASE_URL}/cgi-bin/bizlogin"
@@ -199,8 +196,3 @@ async def fetch_account_identity(*, token: str, cookie_header: str) -> tuple[str
             if not fakeid and accounts:
                 fakeid = str(accounts[0].get("fakeid") or "").strip()
     return nickname, fakeid
-
-
-def save_wechat_credentials(credentials: dict[str, object]) -> None:
-    WECHAT_AUTH_PATH.parent.mkdir(parents=True, exist_ok=True)
-    WECHAT_AUTH_PATH.write_text(json.dumps(credentials, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

@@ -38,6 +38,5 @@ class SourceItem:
     enabled: bool
     note: str
     channel: str = "rss"
-    auth_type: str = "none"
-    auth_profile: str = ""
+    auth_key: str = ""
     fallback_mode: str = "none"

@@ -10,8 +10,6 @@ DEBUG_DIR = RUNTIME_DIR / "debug"
 BROWSER_PROFILES_DIR = RUNTIME_DIR / "browser_profiles"
 DB_PATH = DATA_DIR / "laterhub.sqlite3"
 LOG_PATH = LOGS_DIR / "laterhub.log"
-PW_DOUYIN_PROFILE = BROWSER_PROFILES_DIR / "pw-douyin-profile"
-PW_BILI_PROFILE = BROWSER_PROFILES_DIR / "pw-bili-profile"
 
 __all__ = [
     "BROWSER_PROFILES_DIR",
@@ -21,7 +19,5 @@ __all__ = [
     "ENV_PATH",
     "LOG_PATH",
     "LOGS_DIR",
-    "PW_BILI_PROFILE",
-    "PW_DOUYIN_PROFILE",
     "RUNTIME_DIR",
 ]

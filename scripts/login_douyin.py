@@ -2,21 +2,23 @@ from __future__ import annotations
 
 from playwright.sync_api import sync_playwright
 
-from apps.laterhub.config import PW_DOUYIN_PROFILE
+from connectors.auth import get_auth_context_path
 from connectors.douyin.favorites import DOUYIN_FAVORITE_URL, _resolve_default_browser_executable
+
 
 DOUYIN_LOGIN_ENTRY_URL = "https://www.douyin.com/"
 
 
 def main() -> None:
-    PW_DOUYIN_PROFILE.mkdir(parents=True, exist_ok=True)
+    profile_dir = get_auth_context_path("douyin_shared")
+    profile_dir.mkdir(parents=True, exist_ok=True)
     prog_id, executable = _resolve_default_browser_executable()
-    print(f"使用浏览器 {prog_id} -> {executable}")
+    print(f"使用浏览器: {prog_id} -> {executable}")
     print("将打开抖音首页并跳转到收藏页。请在弹出的窗口中完成登录，完成后直接关闭浏览器窗口即可。")
 
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
-            user_data_dir=str(PW_DOUYIN_PROFILE),
+            user_data_dir=str(profile_dir),
             executable_path=executable,
             headless=False,
             args=["--new-window"],

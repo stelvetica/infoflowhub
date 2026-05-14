@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+from apps.laterhub.pipeline import run_main_flow
 from apps.subscriptions.config import load_settings, load_sources
 from apps.subscriptions.rss_db import save_entries
-from apps.laterhub.pipeline import run_main_flow
 from connectors.rss.fetch import fetch_many
-
-from web.services.views import load_health, load_status, write_json, HEALTH_PATH, STATUS_PATH
+from web.services.views import HEALTH_PATH, STATUS_PATH, load_health, load_status, write_json
 
 
 def now_text() -> str:
@@ -20,7 +19,7 @@ def clean_health_error(value: str) -> str:
 
 def is_expected_login_requirement_error(message: str) -> bool:
     text = clean_health_error(message)
-    return "依赖本机 Chrome Profile 2 登录态" in text
+    return "共享登录态" in text or "登录态" in text
 
 
 def update_source_health(result) -> None:

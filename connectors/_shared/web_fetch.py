@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from playwright.sync_api import sync_playwright
 
-from apps.laterhub.config import PW_DOUYIN_PROFILE
 from apps.subscriptions.models import FeedFetchResult
 from connectors._shared.common import (
     USER_AGENT,
@@ -13,6 +12,7 @@ from connectors._shared.common import (
     validate_douyin_login_prerequisite,
     validate_x_login_prerequisite,
 )
+from connectors.auth import get_auth_context_path
 from connectors.bilibili import fetch_bilibili_dynamic_feed
 from connectors.douyin import fetch_douyin_subscription_with_page
 from connectors.douyin.favorites import _resolve_default_browser_executable
@@ -23,10 +23,11 @@ from connectors.youtube import fetch_youtube_with_page
 
 
 def launch_douyin_context(playwright, headless: bool):
-    PW_DOUYIN_PROFILE.mkdir(parents=True, exist_ok=True)
+    profile_dir = get_auth_context_path("douyin_shared")
+    profile_dir.mkdir(parents=True, exist_ok=True)
     _, browser_executable = _resolve_default_browser_executable()
     return playwright.chromium.launch_persistent_context(
-        user_data_dir=str(PW_DOUYIN_PROFILE),
+        user_data_dir=str(profile_dir),
         executable_path=browser_executable,
         headless=headless,
         args=["--window-size=1440,960"],

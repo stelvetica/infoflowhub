@@ -201,7 +201,7 @@ def parse_x_article_text(raw_text: str) -> tuple[str, str]:
     }
     time_patterns = (
         r"\d+[smhdwy]$",
-        r"\d+\s*(秒|分钟|分|小时|天|周|月|年)前$",
+        r"\d+\s*(秒|分钟|小时|天|周|月|年)前",
         r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(,\s+\d{4})?$",
     )
     filtered: list[str] = []
@@ -212,7 +212,7 @@ def parse_x_article_text(raw_text: str) -> tuple[str, str]:
             continue
         if line.startswith("@"):
             continue
-        if line == "·":
+        if line == "路":
             continue
         if re.fullmatch(r"[\d,.]+[KMB]?", line):
             continue
@@ -234,6 +234,7 @@ def parse_x_article_text(raw_text: str) -> tuple[str, str]:
 
 
 def fetch_x_with_page(page, source: dict, timeout_ms: int = 60000) -> FeedFetchResult:
+    # X 不是普通 RSS 直连源。这里统一复用 x_profile2 这份共享真人登录态。
     target = resolve_web_target(source)
     if not target:
         return result_error(source, "暂不支持的 X 页面目标")

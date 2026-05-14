@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 import time
 from dataclasses import dataclass
@@ -10,6 +9,7 @@ from typing import Any
 
 import requests
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
+from connectors.auth.providers.bilibili import get_bilibili_cookie
 
 try:
     from dotenv import load_dotenv
@@ -42,22 +42,9 @@ class BilibiliConfig:
     @classmethod
     def from_env(cls, env_path: str | Path | None = None) -> "BilibiliConfig":
         load_project_env(env_path)
-        cookie = os.getenv("BILIBILI_COOKIE", "").strip()
-        sessdata = os.getenv("BILIBILI_SESSDATA", "").strip()
-        bili_jct = os.getenv("BILIBILI_BILI_JCT", "").strip()
-        dedeuserid = os.getenv("BILIBILI_DEDEUSERID", "").strip()
-
-        if not cookie and sessdata:
-            pieces = [f"SESSDATA={sessdata}"]
-            if bili_jct:
-                pieces.append(f"bili_jct={bili_jct}")
-            if dedeuserid:
-                pieces.append(f"DedeUserID={dedeuserid}")
-            cookie = "; ".join(pieces)
-
+        cookie = get_bilibili_cookie()
         if not cookie:
             raise ValueError("缺少 B 站登录态。请在 .env 中填写 BILIBILI_COOKIE，或至少填写 BILIBILI_SESSDATA")
-
         return cls(cookie=cookie)
 
 
@@ -236,7 +223,9 @@ def fetch_bilibili_user_dynamic(
     retry_delays: tuple[float, ...] = (1.5, 3.0, 6.0),
     env_path: str | Path | None = None,
 ) -> list[dict[str, Any]]:
-    config = BilibiliConfig.from_env(env_path)
+    load_project_env(env_path)
+    cookie = get_bilibili_cookie()
+    config = BilibiliConfig(cookie=cookie) if cookie else BilibiliConfig.from_env(env_path)
     client = BilibiliApiSession(config=config, timeout=timeout)
     referer = f"https://space.bilibili.com/{uid}/dynamic"
     offset = ""

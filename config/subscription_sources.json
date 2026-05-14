@@ -12,9 +12,8 @@
       "enabled": true,
       "note": "",
       "channel": "rss",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": ""
     },
     {
       "id": "labuladong",
@@ -28,9 +27,8 @@
       "enabled": true,
       "note": "",
       "channel": "bilibili",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "bilibili_main"
     },
     {
       "id": "code秘密花园",
@@ -44,9 +42,8 @@
       "enabled": true,
       "note": "",
       "channel": "bilibili",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "bilibili_main"
     },
     {
       "id": "路口大爷聊宏观",
@@ -60,9 +57,8 @@
       "enabled": true,
       "note": "",
       "channel": "bilibili",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "bilibili_main"
     },
     {
       "id": "硬核姬老板",
@@ -76,9 +72,8 @@
       "enabled": true,
       "note": "",
       "channel": "bilibili",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "bilibili_main"
     },
     {
       "id": "巫师财经",
@@ -92,9 +87,8 @@
       "enabled": true,
       "note": "",
       "channel": "bilibili",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "bilibili_main"
     },
     {
       "id": "MacroMargin",
@@ -106,11 +100,10 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "依赖本机 Chrome Profile 2 登录态",
+      "note": "???? x_profile2 ?????",
       "channel": "x",
-      "auth_type": "chrome_profile_x",
-      "auth_profile": "Profile 2",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "x_profile2"
     },
     {
       "id": "TeranceJiang",
@@ -124,9 +117,8 @@
       "enabled": true,
       "note": "用户手动补充",
       "channel": "bilibili",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "bilibili_main"
     },
     {
       "id": "Mark__Huang",
@@ -140,9 +132,8 @@
       "enabled": true,
       "note": "用户手动补充",
       "channel": "bilibili",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "bilibili_main"
     },
     {
       "id": "何佳心今天加薪了么",
@@ -156,9 +147,8 @@
       "enabled": true,
       "note": "用户手动补充",
       "channel": "bilibili",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "bilibili_main"
     },
     {
       "id": "laolihai_youtube",
@@ -172,9 +162,8 @@
       "enabled": true,
       "note": "2026-05-13 核验 feed 返回 404，先停用待更换有效频道源",
       "channel": "youtube",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "web"
+      "fallback_mode": "web",
+      "auth_key": ""
     },
     {
       "id": "阮一峰周刊",
@@ -188,9 +177,8 @@
       "enabled": true,
       "note": "",
       "channel": "rss",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": ""
     },
     {
       "id": "技术爬爬虾",
@@ -204,9 +192,8 @@
       "enabled": true,
       "note": "",
       "channel": "bilibili",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "bilibili_main"
     },
     {
       "id": "铁锤观察室",
@@ -220,9 +207,8 @@
       "enabled": true,
       "note": "",
       "channel": "bilibili",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "bilibili_main"
     },
     {
       "id": "肖恩周刊",
@@ -236,9 +222,8 @@
       "enabled": true,
       "note": "用户手动补充",
       "channel": "rss",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": ""
     },
     {
       "id": "星话大白",
@@ -252,9 +237,8 @@
       "enabled": false,
       "note": "用户手动补充",
       "channel": "bilibili",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "bilibili_main"
     },
     {
       "id": "土豆看财报",
@@ -268,9 +252,8 @@
       "enabled": true,
       "note": "用户手动补充",
       "channel": "bilibili",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "bilibili_main"
     },
     {
       "id": "投研部杨摸鱼",
@@ -284,9 +267,8 @@
       "enabled": true,
       "note": "用户手动补充",
       "channel": "bilibili",
-      "auth_type": "none",
-      "auth_profile": "",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "bilibili_main"
     },
     {
       "id": "wechat-zhenjiaolujun",
@@ -300,9 +282,8 @@
       "enabled": true,
       "note": "",
       "channel": "wechat",
-      "auth_type": "wechat_session",
-      "auth_profile": "runtime/wechat_auth.json",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "wechat_mp_main"
     },
     {
       "id": "wechat-finninvestrecord",
@@ -316,9 +297,8 @@
       "enabled": true,
       "note": "",
       "channel": "wechat",
-      "auth_type": "wechat_session",
-      "auth_profile": "runtime/wechat_auth.json",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "wechat_mp_main"
     },
     {
       "id": "wechat-canghaiyitugou",
@@ -332,9 +312,8 @@
       "enabled": true,
       "note": "",
       "channel": "wechat",
-      "auth_type": "wechat_session",
-      "auth_profile": "runtime/wechat_auth.json",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "wechat_mp_main"
     },
     {
       "id": "wechat-180k",
@@ -348,9 +327,8 @@
       "enabled": true,
       "note": "",
       "channel": "wechat",
-      "auth_type": "wechat_session",
-      "auth_profile": "runtime/wechat_auth.json",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "wechat_mp_main"
     },
     {
       "id": "wechat-bayes-beauty",
@@ -364,9 +342,8 @@
       "enabled": true,
       "note": "",
       "channel": "wechat",
-      "auth_type": "wechat_session",
-      "auth_profile": "runtime/wechat_auth.json",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "wechat_mp_main"
     },
     {
       "id": "wechat-bigmoneyfundsuncle",
@@ -380,9 +357,8 @@
       "enabled": true,
       "note": "",
       "channel": "wechat",
-      "auth_type": "wechat_session",
-      "auth_profile": "runtime/wechat_auth.json",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "wechat_mp_main"
     },
     {
       "id": "wechat-pangtegong",
@@ -396,9 +372,8 @@
       "enabled": true,
       "note": "",
       "channel": "wechat",
-      "auth_type": "wechat_session",
-      "auth_profile": "runtime/wechat_auth.json",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "wechat_mp_main"
     },
     {
       "id": "wechat-jingxuanjun",
@@ -412,9 +387,8 @@
       "enabled": true,
       "note": "",
       "channel": "wechat",
-      "auth_type": "wechat_session",
-      "auth_profile": "runtime/wechat_auth.json",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "wechat_mp_main"
     },
     {
       "id": "wechat-shuimujiyao",
@@ -428,9 +402,8 @@
       "enabled": false,
       "note": "",
       "channel": "wechat",
-      "auth_type": "wechat_session",
-      "auth_profile": "runtime/wechat_auth.json",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "wechat_mp_main"
     },
     {
       "id": "wechat-nasdaq-new-high",
@@ -444,9 +417,8 @@
       "enabled": true,
       "note": "",
       "channel": "wechat",
-      "auth_type": "wechat_session",
-      "auth_profile": "runtime/wechat_auth.json",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "wechat_mp_main"
     },
     {
       "id": "???",
@@ -458,11 +430,10 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "????????? PW_DOUYIN_PROFILE",
+      "note": "????????? douyin_shared",
       "channel": "douyin",
-      "auth_type": "douyin_profile",
-      "auth_profile": "PW_DOUYIN_PROFILE",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "douyin_shared"
     },
     {
       "id": "???",
@@ -474,11 +445,10 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "????????? PW_DOUYIN_PROFILE",
+      "note": "????????? douyin_shared",
       "channel": "douyin",
-      "auth_type": "douyin_profile",
-      "auth_profile": "PW_DOUYIN_PROFILE",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "douyin_shared"
     },
     {
       "id": "????",
@@ -490,11 +460,10 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "????????? PW_DOUYIN_PROFILE",
+      "note": "????????? douyin_shared",
       "channel": "douyin",
-      "auth_type": "douyin_profile",
-      "auth_profile": "PW_DOUYIN_PROFILE",
-      "fallback_mode": "none"
+      "fallback_mode": "none",
+      "auth_key": "douyin_shared"
     }
   ]
 }

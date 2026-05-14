@@ -2,10 +2,6 @@
   <div class="panel-title">
     <div class="panel-title-inline">
       <h3>订阅源管理</h3>
-      {% if settings.wechat_login_url %}
-      <span class="auth-status-badge {{ settings.wechat_auth.status_level }}">{{ settings.wechat_auth.status_text }}</span>
-      <a class="btn ghost" href="{{ settings.wechat_login_url }}">续期公众号登录</a>
-      {% endif %}
     </div>
     <form class="toolbar" hx-get="/fragments/sources" hx-target="#sources-panel" hx-swap="innerHTML">
       <input type="hidden" name="source_filter" value="{{ settings.source_filter }}">
@@ -17,6 +13,43 @@
       <button class="btn secondary" type="button" hx-get="/fragments/source-form?sort={{ settings.sort }}&dir={{ settings.dir }}&source_q={{ settings.q }}&source_filter={{ settings.source_filter }}" hx-target="#modal-root" hx-swap="innerHTML">新增订阅源</button>
     </form>
   </div>
+  <section class="auth-assets-panel">
+    <div class="panel-title panel-title-compact">
+      <h4>认证资产</h4>
+    </div>
+    <div class="table-wrap">
+      <table class="auth-assets-table">
+        <thead>
+          <tr>
+            <th>认证资产</th>
+            <th>平台</th>
+            <th>模式</th>
+            <th>状态</th>
+            <th>说明</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in settings.auth_assets %}
+          <tr>
+            <td title="{{ item.auth_key }}"><strong>{{ item.display_name }}</strong><div class="subtle">{{ item.auth_key }}</div></td>
+            <td>{{ item.platform }}</td>
+            <td>{{ item.auth_mode }}</td>
+            <td><span class="auth-status-badge {{ item.status_level }}">{{ item.status_text }}</span></td>
+            <td title="{{ item.hint }}"><span class="cell-ellipsis">{{ item.description }}</span></td>
+            <td>
+              {% if item.action_url %}
+              <a class="btn ghost" href="{{ item.action_url }}">{{ item.action_label }}</a>
+              {% else %}
+              <span class="subtle" title="{{ item.hint }}">{{ item.action_label }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
   <div class="table-wrap">
     <table class="sources-table">
       <colgroup>
@@ -39,7 +72,7 @@
           <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=enabled_sort&dir={{ 'asc' if settings.sort != 'enabled_sort' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=enabled_sort&dir={{ 'asc' if settings.sort != 'enabled_sort' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">生效</a></th>
           <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=channel_label&dir={{ 'asc' if settings.sort != 'channel_label' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=channel_label&dir={{ 'asc' if settings.sort != 'channel_label' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">渠道</a></th>
           <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=provider_label&dir={{ 'asc' if settings.sort != 'provider_label' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=provider_label&dir={{ 'asc' if settings.sort != 'provider_label' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">来源类型</a></th>
-          <th>登录要求</th>
+          <th>依赖认证资产</th>
           <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=entry_count&dir={{ 'desc' if settings.sort != 'entry_count' or settings.dir == 'asc' else 'asc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=entry_count&dir={{ 'desc' if settings.sort != 'entry_count' or settings.dir == 'asc' else 'asc' }}" hx-target="#sources-panel" hx-swap="innerHTML">条目数</a></th>
           <th>最近错误</th>
           <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=last_success_at&dir={{ 'desc' if settings.sort != 'last_success_at' or settings.dir == 'asc' else 'asc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=last_success_at&dir={{ 'desc' if settings.sort != 'last_success_at' or settings.dir == 'asc' else 'asc' }}" hx-target="#sources-panel" hx-swap="innerHTML">最近成功</a></th>
@@ -55,9 +88,13 @@
           <td class="cell-tight"><span class="status {% if item.enabled %}ok{% else %}warn{% endif %}">{{ item.enabled_text }}</span></td>
           <td title="{{ item.channel_label }}"><span class="cell-ellipsis">{{ item.channel_label }}</span></td>
           <td title="{{ item.provider_label }}"><span class="cell-ellipsis">{{ item.provider_label }}</span></td>
-          <td class="cell-login-requirement" title="{{ item.wechat_auth_hint or item.login_hint or item.login_requirement or '' }}">
-            {% if item.login_requirement %}<span class="requirement-badge">{{ item.login_requirement }}</span>{% else %}-{% endif %}
-            {% if item.channel == 'wechat' %}<span class="auth-status-badge {{ item.wechat_auth_status_level }}">{{ item.wechat_auth_status_text }}</span>{% endif %}
+          <td class="cell-login-requirement" title="{{ item.login_hint or '' }}">
+            {% if item.auth_asset_name %}
+            <span class="requirement-badge">{{ item.auth_asset_name }}</span>
+            {% if item.auth_status_text %}<span class="auth-status-badge {{ item.auth_status_level }}">{{ item.auth_status_text }}</span>{% endif %}
+            {% else %}
+            -
+            {% endif %}
           </td>
           <td class="cell-tight">{{ item.entry_count }}</td>
           <td class="cell-error-summary" title="{{ item.last_error or '' }}">{{ item.last_error or '-' }}</td>
