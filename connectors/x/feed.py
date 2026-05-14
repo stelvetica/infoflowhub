@@ -7,6 +7,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
 from connectors._shared.common import (
+    X_LOGIN_HINT,
     clean_line,
     fallback_published,
     is_macromargin_source,
@@ -234,20 +235,19 @@ def parse_x_article_text(raw_text: str) -> tuple[str, str]:
 
 def fetch_x_with_page(page, source: dict, timeout_ms: int = 60000) -> FeedFetchResult:
     target = resolve_web_target(source)
-    login_hint = "请先在本机 Chrome 的 Profile 2 打开 x.com，确认已登录且能直接看到 MacroMargin 时间线后再重试。"
     if not target:
-        return result_error(source, "暂不支持的网页直抓站点")
+        return result_error(source, "暂不支持的 X 页面目标")
     try:
         page.goto(target.page_url, wait_until="domcontentloaded", timeout=timeout_ms)
         page.wait_for_timeout(7000)
         body_text = page.locator("body").inner_text()
     except PlaywrightTimeoutError as exc:
         if is_macromargin_source(source):
-            return result_error(source, f"MacroMargin 抓取超时。{login_hint}")
+            return result_error(source, f"MacroMargin 抓取超时。{X_LOGIN_HINT}")
         return result_error(source, f"X 网页直抓超时: {exc}")
     except Exception as exc:
         if is_macromargin_source(source):
-            return result_error(source, f"MacroMargin 抓取失败：{exc}。{login_hint}")
+            return result_error(source, f"MacroMargin 抓取失败：{exc}。{X_LOGIN_HINT}")
         return result_error(source, f"X 网页直抓失败: {exc}")
 
     article_items = collect_x_articles(page, target.uid, limit=12, rounds=5)
@@ -299,7 +299,7 @@ def fetch_x_with_page(page, source: dict, timeout_ms: int = 60000) -> FeedFetchR
     )
     normalized_entries = normalized_entries[:12]
     if not normalized_entries and is_macromargin_source(source):
-        return result_error(source, f"MacroMargin 页面已打开，但未解析到可入库内容。{login_hint}")
+        return result_error(source, f"MacroMargin 页面已打开，但未解析到可入库内容。{X_LOGIN_HINT}")
 
     return FeedFetchResult(
         source_id=source["id"],

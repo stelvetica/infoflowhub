@@ -13,6 +13,7 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 BASE_DIR = Path(__file__).resolve().parents[2]
 WEIBO_PROFILE_DIR = BASE_DIR / "runtime" / "browser_profiles" / "pw-weibo-profile"
 X_PROFILE_DIR = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data" / "Profile 2"
+X_LOGIN_HINT = "请先在本机 Chrome 的 Profile 2 中登录 x.com，并确认 MacroMargin 时间线可正常加载。"
 
 
 @dataclass
@@ -218,9 +219,18 @@ def launch_weibo_context(playwright, headless: bool):
 
 
 def launch_x_context(playwright, headless: bool):
-    return playwright.chromium.launch_persistent_context(
-        user_data_dir=str(X_PROFILE_DIR),
-        headless=headless,
-        args=["--window-size=1440,960"],
-        user_agent=USER_AGENT,
-    )
+    last_error: Exception | None = None
+    for channel in ("chrome", None):
+        try:
+            kwargs = {
+                "user_data_dir": str(X_PROFILE_DIR),
+                "headless": headless,
+                "args": ["--window-size=1440,960"],
+                "user_agent": USER_AGENT,
+            }
+            if channel:
+                kwargs["channel"] = channel
+            return playwright.chromium.launch_persistent_context(**kwargs)
+        except Exception as exc:
+            last_error = exc
+    raise last_error or RuntimeError("X 浏览器上下文启动失败")
