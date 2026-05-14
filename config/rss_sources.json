@@ -18,7 +18,7 @@
     },
     {
       "id": "labuladong",
-      "name": "技术 算法 labuladong 的 bilibili 动态",
+      "name": "技术 算法 labuladong",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/14089380",
       "site_url": "https://space.bilibili.com/14089380/dynamic",
@@ -34,7 +34,7 @@
     },
     {
       "id": "code秘密花园",
-      "name": "技术 code秘密花园 的 bilibili 动态",
+      "name": "技术 code秘密花园",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/474921808",
       "site_url": "https://space.bilibili.com/474921808/dynamic",
@@ -50,7 +50,7 @@
     },
     {
       "id": "路口大爷聊宏观",
-      "name": "观点 路口大爷聊宏观 的 bilibili 动态",
+      "name": "观点 路口大爷聊宏观",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/1908067732",
       "site_url": "https://space.bilibili.com/1908067732/dynamic",
@@ -66,7 +66,7 @@
     },
     {
       "id": "硬核姬老板",
-      "name": "观点 基金 硬核姬老板 的 bilibili 动态",
+      "name": "观点 基金 硬核姬老板",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/2117498259",
       "site_url": "https://space.bilibili.com/2117498259/dynamic",
@@ -82,7 +82,7 @@
     },
     {
       "id": "巫师财经",
-      "name": "观点 产业 巫师财经 的 bilibili 动态",
+      "name": "观点 产业 巫师财经",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/472747194",
       "site_url": "https://space.bilibili.com/472747194/dynamic",
@@ -114,7 +114,7 @@
     },
     {
       "id": "TeranceJiang",
-      "name": "观点 Skills TeranceJiang 的 bilibili 动态",
+      "name": "观点 Skills TeranceJiang",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/260581706",
       "site_url": "https://space.bilibili.com/260581706/dynamic",
@@ -130,7 +130,7 @@
     },
     {
       "id": "Mark__Huang",
-      "name": "观点 成长股 Mark__Huang 的 bilibili 动态",
+      "name": "观点 成长股 Mark__Huang",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/424405794",
       "site_url": "https://space.bilibili.com/424405794/dynamic",
@@ -146,7 +146,7 @@
     },
     {
       "id": "何佳心今天加薪了么",
-      "name": "观点 价值解释 何佳心今天加薪了么 的 bilibili 动态",
+      "name": "观点 价值解释 何佳心今天加薪了么",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/160326026",
       "site_url": "https://space.bilibili.com/160326026/dynamic",
@@ -194,7 +194,7 @@
     },
     {
       "id": "技术爬爬虾",
-      "name": "技术 技术爬爬虾 的 bilibili 动态",
+      "name": "技术 技术爬爬虾",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/316183842",
       "site_url": "https://space.bilibili.com/316183842/dynamic",
@@ -210,7 +210,7 @@
     },
     {
       "id": "铁锤观察室",
-      "name": "观点 房产 铁锤观察室 的 bilibili 动态",
+      "name": "观点 房产 铁锤观察室",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/1257954297",
       "site_url": "https://space.bilibili.com/1257954297/dynamic",
@@ -242,7 +242,7 @@
     },
     {
       "id": "星话大白",
-      "name": "信息 星话大白 的 bilibili 动态",
+      "name": "信息 星话大白",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/2233213",
       "site_url": "https://space.bilibili.com/2233213/dynamic",
@@ -258,7 +258,7 @@
     },
     {
       "id": "土豆看财报",
-      "name": "观点 公司 土豆看财报 的 bilibili 动态",
+      "name": "观点 公司 土豆看财报",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/3706972811561025",
       "site_url": "https://space.bilibili.com/3706972811561025/dynamic",
@@ -274,7 +274,7 @@
     },
     {
       "id": "投研部杨摸鱼",
-      "name": "观点 公司 投研部杨摸鱼 的 bilibili 动态",
+      "name": "观点 公司 投研部杨摸鱼",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/13611123",
       "site_url": "https://space.bilibili.com/13611123/dynamic",
@@ -425,7 +425,7 @@
       "provider": "web",
       "fetch_via": "wechat-api",
       "kind": "web",
-      "enabled": true,
+      "enabled": false,
       "note": "",
       "channel": "wechat",
       "auth_type": "wechat_session",
