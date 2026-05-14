@@ -114,6 +114,8 @@ def fetch_feed(source_id: str, source_name: str, feed_url: str, timeout: int = 2
 
 
 def should_fallback_to_web(source: dict, result: FeedFetchResult) -> bool:
+    if source.get("provider") == "web":
+        return False
     if result.ok and result.entries:
         return False
     target = resolve_web_target(source)

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
-from connectors._shared.common import clean_line, parse_published_datetime, resolve_web_target, result_error
+from connectors._shared.common import clean_line, now_text, parse_published_datetime, resolve_web_target, result_error
 
 
 def normalize_youtube_published(text: str) -> str:
@@ -16,7 +16,29 @@ def normalize_youtube_published(text: str) -> str:
         return ""
     if parse_published_datetime(value):
         return value
-    return value
+
+    lowered = value.lower()
+    lowered = re.sub(r"^(streamed|premiered|updated)\s+", "", lowered)
+    match = re.search(r"(\d+)\s+(minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)\s+ago", lowered)
+    if not match:
+        return ""
+
+    amount = int(match.group(1))
+    unit = match.group(2)
+    now = datetime.now()
+    if unit.startswith("minute"):
+        target = now - timedelta(minutes=amount)
+    elif unit.startswith("hour"):
+        target = now - timedelta(hours=amount)
+    elif unit.startswith("day"):
+        target = now - timedelta(days=amount)
+    elif unit.startswith("week"):
+        target = now - timedelta(weeks=amount)
+    elif unit.startswith("month"):
+        target = now - timedelta(days=amount * 30)
+    else:
+        target = now - timedelta(days=amount * 365)
+    return target.strftime("%Y/%m/%d %H:%M")
 
 
 def _walk_renderer_items(node):
@@ -70,7 +92,7 @@ def extract_youtube_entries_from_initial_data(page, source: dict, limit: int = 1
                 source_name=source["name"],
                 title=title,
                 link=link,
-                published=published or datetime.now().strftime("%Y/%m/%d %H:%M"),
+                published=published or now_text(),
                 summary=summary,
             )
         )
@@ -83,6 +105,7 @@ def extract_youtube_entries(page, source: dict, limit: int = 12) -> list[FeedEnt
     entries = extract_youtube_entries_from_initial_data(page, source, limit=limit)
     if entries:
         return entries
+
     items = page.locator('a#video-title-link, a#video-title').evaluate_all(
         """(els, limit) => {
           const seen = new Set();
@@ -102,13 +125,14 @@ def extract_youtube_entries(page, source: dict, limit: int = 12) -> list[FeedEnt
         }""",
         limit,
     )
-    entries: list[FeedEntry] = []
+
+    entries = []
     for item in items:
         meta_lines = [clean_line(line) for line in str(item.get("metaText") or "").splitlines()]
         meta_lines = [line for line in meta_lines if line]
         published = ""
         for line in meta_lines:
-            if any(token in line for token in ("ago", "views", "观看次数")):
+            if "ago" in line.lower():
                 published = normalize_youtube_published(line)
                 if published:
                     break
@@ -119,7 +143,7 @@ def extract_youtube_entries(page, source: dict, limit: int = 12) -> list[FeedEnt
                 source_name=source["name"],
                 title=clean_line(str(item.get("title") or "")),
                 link=str(item.get("href") or "").strip(),
-                published=published or datetime.now().strftime("%Y/%m/%d %H:%M"),
+                published=published or now_text(),
                 summary=summary,
             )
         )
@@ -139,19 +163,18 @@ def extract_youtube_entries(page, source: dict, limit: int = 12) -> list[FeedEnt
             continue
         title = clean_line(lines[index + 1])
         views = clean_line(lines[index + 2])
-        published = clean_line(lines[index + 3]).lstrip("•").strip() if index + 3 < len(lines) else ""
+        published_text = clean_line(lines[index + 3]).lstrip("•").strip() if index + 3 < len(lines) else ""
         if not title or "views" not in views.lower():
             continue
-        if published and not any(token in published.lower() for token in ("ago", "hour", "hours", "day", "days", "week", "weeks", "month", "months", "year", "years")):
-            continue
+        normalized_published = normalize_youtube_published(published_text)
         text_entries.append(
             FeedEntry(
                 source_id=source["id"],
                 source_name=source["name"],
                 title=title,
                 link=target_youtube_channel_link(source),
-                published=published or datetime.now().strftime("%Y/%m/%d %H:%M"),
-                summary=clean_line(f"{line} {views} {published}".strip()),
+                published=normalized_published or now_text(),
+                summary=clean_line(f"{line} {views} {published_text}".strip()),
             )
         )
         if len(text_entries) >= limit:

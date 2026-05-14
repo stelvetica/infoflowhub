@@ -12,6 +12,7 @@ from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
 from web.services.wechat_login import check_login_scan, complete_login, get_login_qrcode, start_login
 from web.services.views import (
     delete_source,
+    format_success_sources_text,
     get_entries_view,
     get_laterhub_summary,
     get_laterhub_view,
@@ -49,6 +50,7 @@ def render_main(request: Request, params: dict[str, str]):
     entries = get_entries_view(params)
     laterhub = get_laterhub_view(params)
     settings = get_settings_view(params)
+    success_sources_text = settings["status"]["success_sources_text"]
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -57,6 +59,7 @@ def render_main(request: Request, params: dict[str, str]):
             "entries": entries,
             "laterhub": laterhub,
             "settings": settings,
+            "success_sources_text": success_sources_text,
             "params": params,
             "source_lookup": {item["id"]: item for item in normalize_sources()},
         },
@@ -101,8 +104,8 @@ async def source_form_fragment(request: Request, source_id: str = ""):
 
 
 @router.get("/wechat-login", response_class=HTMLResponse)
-async def wechat_login_page(request: Request):
-    return templates.TemplateResponse(request, "wechat_login.html", {})
+async def wechat_login_page(request: Request, next: str = "/?view=settings"):
+    return templates.TemplateResponse(request, "wechat_login.html", {"next_url": next or "/?view=settings"})
 
 
 @router.post("/actions/wechat-login/start")

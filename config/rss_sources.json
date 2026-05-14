@@ -110,9 +110,7 @@
       "channel": "x",
       "auth_type": "chrome_profile_x",
       "auth_profile": "Profile 2",
-      "fallback_mode": "none",
-      "login_requirement": "依赖本机 Chrome Profile 2 登录态",
-      "login_hint": "请先在本机 Chrome 的 Profile 2 中登录 x.com，并确认 MacroMargin 时间线可正常加载。"
+      "fallback_mode": "none"
     },
     {
       "id": "TeranceJiang",
@@ -168,9 +166,9 @@
       "group": "",
       "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC8gZZWIWmBuCb_gzC8DUrvw",
       "site_url": "https://www.youtube.com/channel/UC8gZZWIWmBuCb_gzC8DUrvw",
-      "provider": "native",
-      "fetch_via": "direct",
-      "kind": "native",
+      "provider": "web",
+      "fetch_via": "web",
+      "kind": "web",
       "enabled": true,
       "note": "2026-05-13 核验 feed 返回 404，先停用待更换有效频道源",
       "channel": "youtube",
@@ -404,7 +402,7 @@
     },
     {
       "id": "wechat-jingxuanjun",
-      "name": "观点 精选君",
+      "name": "生活 精选君",
       "group": "",
       "feed_url": "wechat://article?url=https%3A%2F%2Fmp.weixin.qq.com%2Fs%2FxSla4DBb8aMfdnG1eqYAWA",
       "site_url": "https://mp.weixin.qq.com/s/xSla4DBb8aMfdnG1eqYAWA",

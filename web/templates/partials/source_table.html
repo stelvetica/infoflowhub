@@ -1,6 +1,12 @@
 <section class="card">
   <div class="panel-title">
-    <h3>订阅源管理</h3>
+    <div class="panel-title-inline">
+      <h3>订阅源管理</h3>
+      {% if settings.wechat_login_url %}
+      <span class="auth-status-badge {{ settings.wechat_auth.status_level }}">{{ settings.wechat_auth.status_text }}</span>
+      <a class="btn ghost" href="{{ settings.wechat_login_url }}">续期公众号登录</a>
+      {% endif %}
+    </div>
     <form class="toolbar" hx-get="/fragments/sources" hx-target="#sources-panel" hx-swap="innerHTML">
       <input type="hidden" name="source_filter" value="{{ settings.source_filter }}">
       <input type="hidden" name="sort" value="{{ settings.sort }}">
@@ -49,7 +55,10 @@
           <td class="cell-tight"><span class="status {% if item.enabled %}ok{% else %}warn{% endif %}">{{ item.enabled_text }}</span></td>
           <td title="{{ item.channel_label }}"><span class="cell-ellipsis">{{ item.channel_label }}</span></td>
           <td title="{{ item.provider_label }}"><span class="cell-ellipsis">{{ item.provider_label }}</span></td>
-          <td class="cell-login-requirement" title="{{ item.login_hint or item.login_requirement or '' }}">{% if item.login_requirement %}<span class="requirement-badge">{{ item.login_requirement }}</span>{% else %}-{% endif %}</td>
+          <td class="cell-login-requirement" title="{{ item.wechat_auth_hint or item.login_hint or item.login_requirement or '' }}">
+            {% if item.login_requirement %}<span class="requirement-badge">{{ item.login_requirement }}</span>{% else %}-{% endif %}
+            {% if item.channel == 'wechat' %}<span class="auth-status-badge {{ item.wechat_auth_status_level }}">{{ item.wechat_auth_status_text }}</span>{% endif %}
+          </td>
           <td class="cell-tight">{{ item.entry_count }}</td>
           <td class="cell-error-summary" title="{{ item.last_error or '' }}">{{ item.last_error or '-' }}</td>
           <td class="cell-tight">{{ item.last_success_at[5:16] if item.last_success_at else '-' }}</td>

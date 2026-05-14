@@ -4,6 +4,7 @@ import json
 from functools import cmp_to_key
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from apps.subscriptions.config import load_settings, load_sources, save_sources
 from apps.subscriptions.models import SourceItem
@@ -17,7 +18,7 @@ from apps.subscriptions.rss_db import (
 )
 from connectors._shared.common import parse_published_datetime, resolve_web_target
 from connectors._shared.web_fetch import validate_x_login_prerequisite
-from connectors.wechat.auth import validate_wechat_auth_prerequisite
+from connectors.wechat.auth import get_wechat_auth_status, validate_wechat_auth_prerequisite
 
 from web.services.utils import (
     build_source_id,
@@ -72,21 +73,22 @@ def load_status() -> dict[str, Any]:
     )
 
 
+def format_success_sources_text(status: dict[str, Any]) -> str:
+    return f"{int(status.get('last_success_sources') or 0)}/{int(status.get('last_total_sources') or 0)}"
+
+
 def load_health() -> dict[str, Any]:
     return read_json(HEALTH_PATH, {"sources": {}})
 
 
 def get_login_requirement_meta(source: dict[str, Any]) -> dict[str, str] | None:
-    if str(source.get("auth_type") or "").strip().lower() == "wechat_session":
-        hint = validate_wechat_auth_prerequisite(source)
-        if not hint:
-            hint = "请在环境变量或 runtime/wechat_auth.json 中维护 WECHAT_TOKEN 与 WECHAT_COOKIE。"
+    auth_type = str(source.get("auth_type") or "").strip().lower()
+    if auth_type == "wechat_session":
+        hint = validate_wechat_auth_prerequisite(source) or "请在环境变量或 runtime/wechat_auth.json 中维护 WECHAT_TOKEN 与 WECHAT_COOKIE。"
         return {"requirement": "依赖微信公众号登录态", "hint": hint}
-    if str(source.get("auth_type") or "").strip().lower() == "chrome_profile_x":
+    if auth_type == "chrome_profile_x":
         requirement = "依赖本机 Chrome Profile 2 登录态"
-        hint = validate_x_login_prerequisite(source)
-        if not hint:
-            hint = "请先在本机 Chrome 的 Profile 2 中登录 x.com，并确认 MacroMargin 时间线可正常加载。"
+        hint = validate_x_login_prerequisite(source) or "请先在本机 Chrome 的 Profile 2 中登录 x.com，并确认 MacroMargin 时间线可正常加载。"
         return {"requirement": requirement, "hint": hint}
     return None
 
@@ -97,7 +99,7 @@ def infer_source_meta(feed_url: str, site_url: str) -> tuple[str, str, str]:
     combined = f"{feed} {site}"
     if "wechat://mp/" in combined or "mp.weixin.qq.com" in combined:
         return ("web", "wechat-api", "web")
-    if any(host in combined for host in ("bilibili.com", "x.com", "twitter.com", "weibo.com", "douyin.com")):
+    if any(host in combined for host in ("bilibili.com", "x.com", "twitter.com", "weibo.com", "douyin.com", "youtube.com", "youtu.be")):
         return ("web", "web", "web")
     if "rsshub" in feed:
         return ("rsshub", "rsshub-self-hosted", "rsshub")
@@ -131,9 +133,7 @@ def canonicalize_source(item: dict[str, Any]) -> dict[str, Any] | None:
     channel = str(item.get("channel") or "").strip() or infer_channel(feed_url, site_url)
     auth_type = str(item.get("auth_type") or "").strip() or ("wechat_session" if channel == "wechat" else ("chrome_profile_x" if normalize_text(site_url) == "https://x.com/macromargin" else "none"))
     auth_profile = str(item.get("auth_profile") or "").strip() or ("runtime/wechat_auth.json" if auth_type == "wechat_session" else ("Profile 2" if auth_type == "chrome_profile_x" else ""))
-    fallback_mode = str(item.get("fallback_mode") or "").strip()
-    if not fallback_mode:
-        fallback_mode = "web" if channel == "youtube" else "none"
+    fallback_mode = str(item.get("fallback_mode") or "").strip() or ("web" if channel == "youtube" else "none")
     source_id = str(item.get("id") or "").strip()
     name = str(item.get("name") or "").strip()
     if not source_id or not name:
@@ -157,11 +157,10 @@ def canonicalize_source(item: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def load_source_catalog() -> list[dict[str, Any]]:
-    payload = {"sources": load_sources()}
     sources: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     seen_feeds: set[str] = set()
-    for item in payload["sources"]:
+    for item in load_sources():
         source = canonicalize_source(item)
         if not source:
             continue
@@ -200,12 +199,7 @@ def save_source(payload: dict[str, str]) -> None:
     auth_type = str(existing.get("auth_type") or "").strip() if existing else ("wechat_session" if channel == "wechat" else ("chrome_profile_x" if normalize_text(clean_site_url) == "https://x.com/macromargin" else "none"))
     auth_profile = str(existing.get("auth_profile") or "").strip() if existing else ("runtime/wechat_auth.json" if auth_type == "wechat_session" else ("Profile 2" if auth_type == "chrome_profile_x" else ""))
     fallback_mode = str(existing.get("fallback_mode") or "").strip() if existing else ("web" if channel == "youtube" else "none")
-    if not existing:
-        source_id = requested_source_id
-        if not source_id:
-            source_id = build_source_id(clean_name)
-    else:
-        source_id = existing["id"]
+    source_id = existing["id"] if existing else (requested_source_id or build_source_id(clean_name))
     target = {
         "id": source_id,
         "name": clean_name,
@@ -224,10 +218,7 @@ def save_source(payload: dict[str, str]) -> None:
     }
     if not target["name"] or not target["feed_url"]:
         return
-    if existing:
-        next_sources = [target if str(item.get("id") or "").strip() == target["id"] else item for item in raw_sources]
-    else:
-        next_sources = [*raw_sources, target]
+    next_sources = [target if str(item.get("id") or "").strip() == target["id"] else item for item in raw_sources] if existing else [*raw_sources, target]
     save_sources(next_sources)
     if existing and previous_name != target["name"]:
         rename_source(target["id"], target["name"])
@@ -237,14 +228,10 @@ def toggle_source(source_id: str, enabled: bool) -> None:
     clean_id = sanitize_db_text(source_id).strip()
     if not clean_id:
         return
-    raw_sources = load_sources()
     next_sources: list[dict[str, Any]] = []
-    for item in raw_sources:
+    for item in load_sources():
         current_id = str(item.get("id") or "").strip()
-        if current_id == clean_id:
-            next_sources.append({**item, "enabled": enabled})
-        else:
-            next_sources.append(item)
+        next_sources.append({**item, "enabled": enabled} if current_id == clean_id else item)
     save_sources(next_sources)
 
 
@@ -290,6 +277,7 @@ def _count_entries() -> int:
 
 def _laterhub_conn():
     import sqlite3
+
     conn = sqlite3.connect(LATERHUB_DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -413,7 +401,9 @@ def mark_laterhub_finished(link_id: int, finished: bool) -> None:
 
 
 def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
-    enabled_ids = {item["id"] for item in normalize_sources() if item.get("enabled")}
+    current_sources = normalize_sources()
+    enabled_ids = {item["id"] for item in current_sources if item.get("enabled")}
+    current_name_map = {item["id"]: str(item.get("name") or "").strip() for item in current_sources}
     keyword = normalize_text(query.get("entries_q", ""))
     sort = query.get("entries_sort") or "sort_time"
     direction = query.get("entries_dir") or "desc"
@@ -424,12 +414,15 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
             continue
         if keyword and not any(keyword in normalize_text(str(item.get(field) or "")) for field in ("source_name", "title", "summary")):
             continue
-        row = {
-            **item,
-            "display_time": format_datetime(item.get("published_at") or item.get("published") or item.get("created_at") or ""),
-            "sort_time": to_sortable_time(item.get("published_at") or item.get("published") or item.get("created_at") or ""),
-        }
-        rows.append(row)
+        current_name = current_name_map.get(item["source_id"], "").strip()
+        rows.append(
+            {
+                **item,
+                "source_name": current_name or item.get("source_name") or "",
+                "display_time": format_datetime(item.get("published_at") or item.get("published") or item.get("created_at") or ""),
+                "sort_time": to_sortable_time(item.get("published_at") or item.get("published") or item.get("created_at") or ""),
+            }
+        )
     rows.sort(key=cmp_to_key(lambda a, b: compare_value(a.get(sort), b.get(sort), direction)))
     total = len(rows)
     total_pages = max((total + ENTRIES_PAGE_SIZE - 1) // ENTRIES_PAGE_SIZE, 1)
@@ -449,6 +442,7 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
 
 
 def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
+    status = load_status()
     sort = query.get("laterhub_sort") or "sort_time"
     direction = query.get("laterhub_dir") or "desc"
     keyword = normalize_text(query.get("laterhub_q", ""))
@@ -502,6 +496,7 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
         "sort": sort,
         "dir": direction,
         "q": query.get("laterhub_q", ""),
+        "status": status,
         "filter_finished": filter_finished,
         "page": safe_page,
         "page_size": LATERHUB_PAGE_SIZE,
@@ -511,6 +506,7 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
 
 def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     status = load_status()
+    status["success_sources_text"] = format_success_sources_text(status)
     summary = get_laterhub_summary()
     laterhub_sources = get_laterhub_source_stats()
     health_sources = load_health().get("sources", {})
@@ -519,6 +515,8 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     source_filter = query.get("source_filter", "")
     sort = query.get("sort", "name")
     direction = query.get("dir", "asc")
+    wechat_auth = get_wechat_auth_status()
+    wechat_login_url = f"/wechat-login?next={quote('/?view=settings', safe='')}"
     rows = []
     for item in normalize_sources():
         stat = stats.get(item["id"], {})
@@ -530,6 +528,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             from datetime import datetime
 
             invalid_days = str(max((datetime.now() - failed_at).days, 0))
+        is_wechat = str(item.get("channel") or "").strip() == "wechat"
         row = {
             **item,
             "provider_label": provider_label(str(item.get("provider") or ""), str(item.get("fetch_via") or "")),
@@ -544,6 +543,10 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             "invalid_sort": int(invalid_days) if invalid_days else -1,
             "enabled_sort": 1 if item.get("enabled") else 0,
             "enabled_text": "生效" if item.get("enabled") else "停用",
+            "wechat_auth_status_text": wechat_auth["status_text"] if is_wechat else "",
+            "wechat_auth_status_level": wechat_auth["status_level"] if is_wechat else "",
+            "wechat_auth_hint": wechat_auth["hint"] if is_wechat else "",
+            "wechat_login_url": wechat_login_url if is_wechat else "",
         }
         if keyword and not any(keyword in normalize_text(str(row.get(field) or "")) for field in ("name", "feed_url", "site_url")):
             continue
@@ -561,4 +564,6 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         "sort": sort,
         "dir": direction,
         "settings_raw": load_settings(),
+        "wechat_auth": wechat_auth,
+        "wechat_login_url": wechat_login_url,
     }
