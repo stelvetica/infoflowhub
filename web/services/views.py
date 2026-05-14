@@ -16,10 +16,8 @@ from apps.subscriptions.rss_db import (
     rename_source,
     sanitize_db_text,
 )
-from connectors._shared.common import parse_published_datetime, resolve_web_target
-from connectors._shared.web_fetch import validate_x_login_prerequisite
+from connectors._shared.common import parse_published_datetime, resolve_web_target, validate_douyin_login_prerequisite, validate_x_login_prerequisite
 from connectors.wechat.auth import get_wechat_auth_status, validate_wechat_auth_prerequisite
-
 from web.services.utils import (
     build_source_id,
     compare_value,
@@ -81,6 +79,17 @@ def load_health() -> dict[str, Any]:
     return read_json(HEALTH_PATH, {"sources": {}})
 
 
+def default_auth_meta(channel: str, site_url: str) -> tuple[str, str]:
+    normalized_site = normalize_text(site_url)
+    if channel == "wechat":
+        return ("wechat_session", "runtime/wechat_auth.json")
+    if normalized_site == "https://x.com/macromargin":
+        return ("chrome_profile_x", "Profile 2")
+    if channel == "douyin":
+        return ("douyin_profile", "PW_DOUYIN_PROFILE")
+    return ("none", "")
+
+
 def get_login_requirement_meta(source: dict[str, Any]) -> dict[str, str] | None:
     auth_type = str(source.get("auth_type") or "").strip().lower()
     if auth_type == "wechat_session":
@@ -89,6 +98,10 @@ def get_login_requirement_meta(source: dict[str, Any]) -> dict[str, str] | None:
     if auth_type == "chrome_profile_x":
         requirement = "依赖本机 Chrome Profile 2 登录态"
         hint = validate_x_login_prerequisite(source) or "请先在本机 Chrome 的 Profile 2 中登录 x.com，并确认 MacroMargin 时间线可正常加载。"
+        return {"requirement": requirement, "hint": hint}
+    if auth_type == "douyin_profile":
+        requirement = "依赖共享抖音登录态"
+        hint = validate_douyin_login_prerequisite(source) or "复用现有抖音登录态；若失效，重新执行现有抖音登录脚本即可。"
         return {"requirement": requirement, "hint": hint}
     return None
 
@@ -131,8 +144,9 @@ def canonicalize_source(item: dict[str, Any]) -> dict[str, Any] | None:
     if not provider or not fetch_via or not kind:
         provider, fetch_via, kind = infer_source_meta(feed_url, site_url)
     channel = str(item.get("channel") or "").strip() or infer_channel(feed_url, site_url)
-    auth_type = str(item.get("auth_type") or "").strip() or ("wechat_session" if channel == "wechat" else ("chrome_profile_x" if normalize_text(site_url) == "https://x.com/macromargin" else "none"))
-    auth_profile = str(item.get("auth_profile") or "").strip() or ("runtime/wechat_auth.json" if auth_type == "wechat_session" else ("Profile 2" if auth_type == "chrome_profile_x" else ""))
+    default_auth_type, default_auth_profile = default_auth_meta(channel, site_url)
+    auth_type = str(item.get("auth_type") or "").strip() or default_auth_type
+    auth_profile = str(item.get("auth_profile") or "").strip() or default_auth_profile
     fallback_mode = str(item.get("fallback_mode") or "").strip() or ("web" if channel == "youtube" else "none")
     source_id = str(item.get("id") or "").strip()
     name = str(item.get("name") or "").strip()
@@ -196,8 +210,9 @@ def save_source(payload: dict[str, str]) -> None:
     requested_source_id = sanitize_db_text(payload.get("source_id", "")).strip()
     provider, fetch_via, kind = infer_source_meta(clean_feed_url, clean_site_url)
     channel = infer_channel(clean_feed_url, clean_site_url)
-    auth_type = str(existing.get("auth_type") or "").strip() if existing else ("wechat_session" if channel == "wechat" else ("chrome_profile_x" if normalize_text(clean_site_url) == "https://x.com/macromargin" else "none"))
-    auth_profile = str(existing.get("auth_profile") or "").strip() if existing else ("runtime/wechat_auth.json" if auth_type == "wechat_session" else ("Profile 2" if auth_type == "chrome_profile_x" else ""))
+    default_auth_type, default_auth_profile = default_auth_meta(channel, clean_site_url)
+    auth_type = str(existing.get("auth_type") or "").strip() if existing else default_auth_type
+    auth_profile = str(existing.get("auth_profile") or "").strip() if existing else default_auth_profile
     fallback_mode = str(existing.get("fallback_mode") or "").strip() if existing else ("web" if channel == "youtube" else "none")
     source_id = existing["id"] if existing else (requested_source_id or build_source_id(clean_name))
     target = {

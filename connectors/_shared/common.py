@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
+from apps.laterhub.config import PW_DOUYIN_PROFILE
 from apps.subscriptions.models import FeedFetchResult
 
 
@@ -14,6 +15,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 WEIBO_PROFILE_DIR = BASE_DIR / "runtime" / "browser_profiles" / "pw-weibo-profile"
 X_PROFILE_DIR = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data" / "Profile 2"
 X_LOGIN_HINT = "请先在本机 Chrome 的 Profile 2 中登录 x.com，并确认 MacroMargin 时间线可正常加载。"
+DOUYIN_LOGIN_HINT = "请先执行现有抖音登录流程，当前抖音订阅与抖音收藏共用同一份登录态。"
 
 
 @dataclass
@@ -51,6 +53,25 @@ def validate_x_login_prerequisite(source: dict) -> str:
     return ""
 
 
+def validate_douyin_login_prerequisite(source: dict) -> str:
+    auth_type = str(source.get("auth_type") or "").strip().lower()
+    site_url = str(source.get("site_url") or "").strip().lower()
+    feed_url = str(source.get("feed_url") or "").strip().lower()
+    if auth_type != "douyin_profile" and "douyin.com/user/" not in site_url and "douyin.com/user/" not in feed_url:
+        return ""
+    if not PW_DOUYIN_PROFILE.exists():
+        return f"抖音订阅依赖共享登录态目录，当前未找到：{PW_DOUYIN_PROFILE}"
+    state_candidates = [
+        PW_DOUYIN_PROFILE / "Cookies",
+        PW_DOUYIN_PROFILE / "Network" / "Cookies",
+        PW_DOUYIN_PROFILE / "Preferences",
+        PW_DOUYIN_PROFILE / "Local State",
+    ]
+    if not any(path.exists() for path in state_candidates):
+        return f"抖音共享登录态目录存在，但未发现可用会话文件。{DOUYIN_LOGIN_HINT}"
+    return ""
+
+
 def resolve_web_target(source: dict) -> WebSourceTarget | None:
     site_url = (source.get("site_url") or "").strip()
     feed_url = (source.get("feed_url") or "").strip()
@@ -59,6 +80,8 @@ def resolve_web_target(source: dict) -> WebSourceTarget | None:
         uid = raw.split("wechat://mp/", 1)[1].strip().strip("/")
         if uid:
             return WebSourceTarget(site="wechat", uid=uid, page_url=f"https://mp.weixin.qq.com/cgi-bin/appmsgpublish?fakeid={uid}")
+    if feed_url.startswith("wechat://article?url=") or "mp.weixin.qq.com/s/" in site_url:
+        return WebSourceTarget(site="wechat", uid="", page_url=site_url or feed_url)
     match = re.search(r"space\.bilibili\.com/(\d+)", site_url)
     if match:
         uid = match.group(1)
@@ -71,6 +94,14 @@ def resolve_web_target(source: dict) -> WebSourceTarget | None:
     if match:
         uid = match.group(1)
         return WebSourceTarget(site="x", uid=uid, page_url=f"https://x.com/{uid}")
+    match = re.search(r"douyin\.com/user/([^/?#]+)", site_url)
+    if match:
+        uid = match.group(1)
+        return WebSourceTarget(site="douyin", uid=uid, page_url=site_url.split("?", 1)[0])
+    match = re.search(r"douyin\.com/user/([^/?#]+)", feed_url)
+    if match:
+        uid = match.group(1)
+        return WebSourceTarget(site="douyin", uid=uid, page_url=feed_url.split("?", 1)[0])
     match = re.search(r"[?&]channel_id=([A-Za-z0-9_-]+)", feed_url)
     if match:
         uid = match.group(1)

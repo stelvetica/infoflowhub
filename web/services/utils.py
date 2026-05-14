@@ -99,7 +99,7 @@ def compare_value(a: Any, b: Any, direction: str) -> int:
 
 def provider_label(provider: str, fetch_via: str) -> str:
     if provider == "rsshub":
-        return "RSSHub 公共" if fetch_via == "rsshub-public" else "RSSHub"
+        return "RSSHub 公开" if fetch_via == "rsshub-public" else "RSSHub"
     if provider == "web":
         return "网页直抓"
     return "原生 RSS"
@@ -113,6 +113,7 @@ def source_channel_label(feed_url: str, site_url: str, provider: str) -> str:
             "weibo": "微博",
             "wechat": "微信公众号",
             "x": "X",
+            "douyin": "抖音",
         }
         return mapping.get(target.site, target.site.upper())
     feed = normalize_text(feed_url)
@@ -140,9 +141,9 @@ def build_source_id(name: str) -> str:
         strip_invalid_unicode(name)
         .strip()
         .lower()
-        .replace("：", "-")
-        .replace("（", "-")
-        .replace("）", "-")
+        .replace("，", "-")
+        .replace("、", "-")
+        .replace("；", "-")
         .replace("(", "-")
         .replace(")", "-")
         .replace("/", "-")
