@@ -421,8 +421,8 @@
       "auth_key": "wechat_mp_main"
     },
     {
-      "id": "???",
-      "name": "?? ???",
+      "id": "破壁狗",
+      "name": "观点 破壁狗",
       "group": "",
       "feed_url": "https://www.douyin.com/user/MS4wLjABAAAA_Vbo0sbxI4rBJbHSupB1niZe0B9Sh9mE3vbD-utRgIW669BslyZhVVEKyFanjyfo",
       "site_url": "https://www.douyin.com/user/MS4wLjABAAAA_Vbo0sbxI4rBJbHSupB1niZe0B9Sh9mE3vbD-utRgIW669BslyZhVVEKyFanjyfo",
@@ -430,14 +430,14 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "????????? douyin_shared",
+      "note": "依赖抖音共享登录态 douyin_shared",
       "channel": "douyin",
       "fallback_mode": "none",
       "auth_key": "douyin_shared"
     },
     {
-      "id": "???",
-      "name": "?? ???",
+      "id": "江平舟",
+      "name": "观点 江平舟",
       "group": "",
       "feed_url": "https://www.douyin.com/user/MS4wLjABAAAAXvIF7Q5rh_hFtHVyeEqb0McY_psVD8SCKgbcH3ljIXc",
       "site_url": "https://www.douyin.com/user/MS4wLjABAAAAXvIF7Q5rh_hFtHVyeEqb0McY_psVD8SCKgbcH3ljIXc",
@@ -445,14 +445,14 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "????????? douyin_shared",
+      "note": "依赖抖音共享登录态 douyin_shared",
       "channel": "douyin",
       "fallback_mode": "none",
       "auth_key": "douyin_shared"
     },
     {
-      "id": "????",
-      "name": "?? ????",
+      "id": "黑猫星球",
+      "name": "军事 黑猫星球",
       "group": "",
       "feed_url": "https://www.douyin.com/user/MS4wLjABAAAAWbl2_YRRT530eb6SBFykytZQFanOiqGtIXzceTbulNo",
       "site_url": "https://www.douyin.com/user/MS4wLjABAAAAWbl2_YRRT530eb6SBFykytZQFanOiqGtIXzceTbulNo",
@@ -460,7 +460,7 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "????????? douyin_shared",
+      "note": "依赖抖音共享登录态 douyin_shared",
       "channel": "douyin",
       "fallback_mode": "none",
       "auth_key": "douyin_shared"
