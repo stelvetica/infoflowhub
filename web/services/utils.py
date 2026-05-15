@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import re
 from datetime import datetime
 from typing import Any
@@ -13,6 +14,14 @@ def strip_invalid_unicode(value: str) -> str:
 
 def normalize_text(value: str) -> str:
     return strip_invalid_unicode(value).strip().lower()
+
+
+def read_link_key(value: str) -> str:
+    text = strip_invalid_unicode(value or "").strip()
+    if not text:
+        return ""
+    encoded = base64.urlsafe_b64encode(text.encode("utf-8")).decode("ascii").rstrip("=")
+    return encoded[:24]
 
 
 def split_tags(value: str | None) -> list[str]:

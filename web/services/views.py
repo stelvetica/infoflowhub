@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from functools import cmp_to_key
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ from web.services.utils import (
     format_datetime,
     join_tags,
     normalize_text,
+    read_link_key,
     provider_label,
     source_channel_label,
     split_tags,
@@ -40,6 +42,7 @@ LATERHUB_DB_PATH = BASE_DIR / "data" / "laterhub.sqlite3"
 DELETED_SITE_URLS = {"https://www.huxiu.com/member/2321131.html"}
 ENTRIES_PAGE_SIZE = 20
 LATERHUB_PAGE_SIZE = 10
+ENTRIES_READ_CUTOFF = datetime(2026, 5, 1).timestamp()
 
 
 def read_json(path: Path, fallback: Any) -> Any:
@@ -438,6 +441,8 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
     enabled_ids = {item["id"] for item in current_sources if item.get("enabled")}
     current_name_map = {item["id"]: str(item.get("name") or "").strip() for item in current_sources}
     keyword = normalize_text(query.get("entries_q", ""))
+    unread_only = query.get("entries_unread_only", "0") == "1"
+    read_keys = {item for item in split_tags(query.get("entries_read_keys", "")) if item}
     sort = query.get("entries_sort") or "sort_time"
     direction = query.get("entries_dir") or "desc"
     page = max(int(query.get("entries_page", "1") or "1"), 1)
@@ -448,12 +453,19 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
         if keyword and not any(keyword in normalize_text(str(item.get(field) or "")) for field in ("source_name", "title", "summary")):
             continue
         current_name = current_name_map.get(item["source_id"], "").strip()
+        display_source_name = current_name or item.get("source_name") or ""
+        display_time_raw = item.get("published_at") or item.get("published") or item.get("created_at") or ""
+        sort_time = to_sortable_time(display_time_raw)
+        link = str(item.get("link") or "").strip()
+        if unread_only and (sort_time < ENTRIES_READ_CUTOFF or read_link_key(link) in read_keys):
+            continue
         rows.append(
             {
                 **item,
-                "source_name": current_name or item.get("source_name") or "",
-                "display_time": format_datetime(item.get("published_at") or item.get("published") or item.get("created_at") or ""),
-                "sort_time": to_sortable_time(item.get("published_at") or item.get("published") or item.get("created_at") or ""),
+                "link": link,
+                "source_name": display_source_name,
+                "display_time": format_datetime(display_time_raw),
+                "sort_time": sort_time,
             }
         )
     rows.sort(key=cmp_to_key(lambda a, b: compare_value(a.get(sort), b.get(sort), direction)))
@@ -471,6 +483,8 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
         "total_pages": total_pages,
         "filtered_total": total,
         "total": _count_entries(),
+        "unread_only": unread_only,
+        "read_keys_text": ",".join(sorted(read_keys)),
     }
 
 

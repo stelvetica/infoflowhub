@@ -1,46 +1,50 @@
 {% set base_params = {
   'entries_q': entries.q,
+  'entries_unread_only': '1' if entries.unread_only else '',
+  'entries_read_keys': entries.read_keys_text,
   'laterhub_q': params.get('laterhub_q', ''),
   'laterhub_filter_finished': params.get('laterhub_filter_finished', ''),
   'laterhub_filter_tag': params.get('laterhub_filter_tag', ''),
   'laterhub_sort': params.get('laterhub_sort', ''),
   'laterhub_dir': params.get('laterhub_dir', '')
 } %}
-<div class="table-wrap">
-  <table class="entries-table">
-    <colgroup>
-      <col class="col-time">
-      <col class="col-source">
-      <col class="col-title">
-    </colgroup>
-    <thead>
-      <tr>
-        <th><a class="sort" href="/fragments/entries?{{ base_params|urlencode }}&entries_sort=sort_time&entries_dir={{ 'desc' if entries.sort != 'sort_time' or entries.dir == 'asc' else 'asc' }}" hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort=sort_time&entries_dir={{ 'desc' if entries.sort != 'sort_time' or entries.dir == 'asc' else 'asc' }}" hx-target="#entries-panel" hx-swap="innerHTML">时间</a></th>
-        <th><a class="sort" href="/fragments/entries?{{ base_params|urlencode }}&entries_sort=source_name&entries_dir={{ 'asc' if entries.sort != 'source_name' or entries.dir == 'desc' else 'desc' }}" hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort=source_name&entries_dir={{ 'asc' if entries.sort != 'source_name' or entries.dir == 'desc' else 'desc' }}" hx-target="#entries-panel" hx-swap="innerHTML">来源</a></th>
-        <th><a class="sort" href="/fragments/entries?{{ base_params|urlencode }}&entries_sort=title&entries_dir={{ 'asc' if entries.sort != 'title' or entries.dir == 'desc' else 'desc' }}" hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort=title&entries_dir={{ 'asc' if entries.sort != 'title' or entries.dir == 'desc' else 'desc' }}" hx-target="#entries-panel" hx-swap="innerHTML">标题</a></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% if entries.rows %}
-        {% for item in entries.rows %}
+<div data-entries-fragment="1" data-page="{{ entries.page }}" data-unread-only="{{ '1' if entries.unread_only else '0' }}">
+  <div class="table-wrap">
+    <table class="entries-table">
+      <colgroup>
+        <col class="col-time">
+        <col class="col-source">
+        <col class="col-title">
+      </colgroup>
+      <thead>
         <tr>
-          <td class="cell-time">{{ item.display_time[:10] }}</td>
-          <td class="cell-ellipsis cell-muted" title="{{ item.source_name }}">{{ item.source_name }}</td>
-          <td><a class="cell-ellipsis cell-link cell-strong read-track" href="{{ item.link }}" target="_blank" rel="noreferrer" title="{{ item.title }}">{{ item.title }}</a></td>
+          <th><a class="sort" href="/fragments/entries?{{ base_params|urlencode }}&entries_sort=sort_time&entries_dir={{ 'desc' if entries.sort != 'sort_time' or entries.dir == 'asc' else 'asc' }}" hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort=sort_time&entries_dir={{ 'desc' if entries.sort != 'sort_time' or entries.dir == 'asc' else 'asc' }}" hx-target="#entries-panel" hx-swap="innerHTML">时间</a></th>
+          <th><a class="sort" href="/fragments/entries?{{ base_params|urlencode }}&entries_sort=source_name&entries_dir={{ 'asc' if entries.sort != 'source_name' or entries.dir == 'desc' else 'desc' }}" hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort=source_name&entries_dir={{ 'asc' if entries.sort != 'source_name' or entries.dir == 'desc' else 'desc' }}" hx-target="#entries-panel" hx-swap="innerHTML">来源</a></th>
+          <th><a class="sort" href="/fragments/entries?{{ base_params|urlencode }}&entries_sort=title&entries_dir={{ 'asc' if entries.sort != 'title' or entries.dir == 'desc' else 'desc' }}" hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort=title&entries_dir={{ 'asc' if entries.sort != 'title' or entries.dir == 'desc' else 'desc' }}" hx-target="#entries-panel" hx-swap="innerHTML">标题</a></th>
         </tr>
-        {% endfor %}
-      {% else %}
-        <tr><td colspan="3" class="empty">没有匹配内容</td></tr>
-      {% endif %}
-    </tbody>
-  </table>
-</div>
-<div class="pagination pagination-tight pagination-aligned">
-  <div class="subtle">第 {{ entries.page }} / {{ entries.total_pages }} 页，共 {{ entries.filtered_total }} 条</div>
-  <div class="toolbar">
-    {% set prev_page = entries.page - 1 if entries.page > 1 else 1 %}
-    {% set next_page = entries.page + 1 if entries.page < entries.total_pages else entries.total_pages %}
-    <button class="btn ghost {% if entries.page <= 1 %}disabled{% endif %}" type="button" {% if entries.page > 1 %}hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort={{ entries.sort }}&entries_dir={{ entries.dir }}&entries_page={{ prev_page }}" hx-target="#entries-panel" hx-swap="innerHTML"{% else %}disabled{% endif %}>上一页</button>
-    <button class="btn ghost {% if entries.page >= entries.total_pages %}disabled{% endif %}" type="button" {% if entries.page < entries.total_pages %}hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort={{ entries.sort }}&entries_dir={{ entries.dir }}&entries_page={{ next_page }}" hx-target="#entries-panel" hx-swap="innerHTML"{% else %}disabled{% endif %}>下一页</button>
+      </thead>
+      <tbody>
+        {% if entries.rows %}
+          {% for item in entries.rows %}
+          <tr>
+            <td class="cell-time">{{ item.display_time[:10] }}</td>
+            <td class="cell-ellipsis cell-muted" title="{{ item.source_name }}">{{ item.source_name }}</td>
+            <td><a class="cell-ellipsis cell-link cell-strong read-track" href="{{ item.link }}" target="_blank" rel="noreferrer" title="{{ item.title }}">{{ item.title }}</a></td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="3" class="empty">没有匹配内容</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+  <div class="pagination pagination-tight pagination-aligned">
+    <div class="subtle">第 {{ entries.page }} / {{ entries.total_pages }} 页，共 {{ entries.filtered_total }} 条</div>
+    <div class="toolbar">
+      {% set prev_page = entries.page - 1 if entries.page > 1 else 1 %}
+      {% set next_page = entries.page + 1 if entries.page < entries.total_pages else entries.total_pages %}
+      <button class="btn ghost {% if entries.page <= 1 %}disabled{% endif %}" type="button" {% if entries.page > 1 %}hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort={{ entries.sort }}&entries_dir={{ entries.dir }}&entries_page={{ prev_page }}" hx-target="#entries-panel" hx-swap="innerHTML"{% else %}disabled{% endif %}>上一页</button>
+      <button class="btn ghost {% if entries.page >= entries.total_pages %}disabled{% endif %}" type="button" {% if entries.page < entries.total_pages %}hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort={{ entries.sort }}&entries_dir={{ entries.dir }}&entries_page={{ next_page }}" hx-target="#entries-panel" hx-swap="innerHTML"{% else %}disabled{% endif %}>下一页</button>
+    </div>
   </div>
 </div>

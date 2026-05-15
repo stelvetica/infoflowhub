@@ -21,10 +21,96 @@
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
   }
 
+  function readLinkKey(value) {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    const bytes = new TextEncoder().encode(text);
+    let binary = "";
+    for (const byte of bytes) {
+      binary += String.fromCharCode(byte);
+    }
+    return window.btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "").slice(0, 24);
+  }
+
+  function getReadKeys() {
+    const readLinks = loadReadLinks();
+    return Object.keys(readLinks)
+      .filter((href) => readLinks[href])
+      .map((href) => readLinkKey(href))
+      .filter(Boolean);
+  }
+
+  function getEntriesFragment() {
+    return document.querySelector("[data-entries-fragment]");
+  }
+
+  function syncEntriesUnreadFields() {
+    const form = document.querySelector(".entries-header-form");
+    if (!form) return;
+
+    let unreadInput = form.querySelector('input[name="entries_unread_only"]');
+    if (!unreadInput) {
+      unreadInput = document.createElement("input");
+      unreadInput.type = "hidden";
+      unreadInput.name = "entries_unread_only";
+      form.appendChild(unreadInput);
+    }
+    unreadInput.value = unreadFilter.unreadOnly ? "1" : "";
+
+    let readKeysInput = form.querySelector('input[name="entries_read_keys"]');
+    if (!readKeysInput) {
+      readKeysInput = document.createElement("input");
+      readKeysInput.type = "hidden";
+      readKeysInput.name = "entries_read_keys";
+      form.appendChild(readKeysInput);
+    }
+    readKeysInput.value = getReadKeys().join(",");
+  }
+
+  function refreshEntriesPanel(extraParams = {}) {
+    if (!window.htmx) return;
+    const form = document.querySelector(".entries-header-form");
+    if (!form) return;
+
+    syncEntriesUnreadFields();
+    const params = new URLSearchParams();
+    const formData = new FormData(form);
+    formData.forEach((value, key) => {
+      const text = String(value || "");
+      if (text) params.set(key, text);
+    });
+
+    const meta = getEntriesFragment();
+    if (meta?.dataset.page && !Object.prototype.hasOwnProperty.call(extraParams, "entries_page")) {
+      params.set("entries_page", meta.dataset.page);
+    }
+
+    Object.entries(extraParams).forEach(([key, value]) => {
+      const text = String(value || "");
+      if (text) {
+        params.set(key, text);
+      } else {
+        params.delete(key);
+      }
+    });
+
+    window.htmx.ajax("GET", `/fragments/entries?${params.toString()}`, {
+      target: "#entries-panel",
+      swap: "innerHTML",
+    });
+  }
+
   function applyReadState() {
     const readLinks = loadReadLinks();
+    let changed = false;
     document.querySelectorAll(".read-track").forEach((anchor) => {
       const href = anchor.getAttribute("href") || "";
+      const row = anchor.closest("tr");
+      const timeText = row?.querySelector(".cell-time")?.textContent?.trim() || "";
+      if (timeText && timeText < "2026/05/01" && !readLinks[href]) {
+        readLinks[href] = true;
+        changed = true;
+      }
       if (readLinks[href]) {
         anchor.classList.remove("cell-strong");
         anchor.classList.add("cell-read");
@@ -38,25 +124,26 @@
         saveReadLinks(next);
         anchor.classList.remove("cell-strong");
         anchor.classList.add("cell-read");
+        syncEntriesUnreadFields();
+        if (unreadFilter.unreadOnly) {
+          window.setTimeout(() => refreshEntriesPanel(), 0);
+          return;
+        }
         renderUnreadToggle();
       };
     });
+    if (changed) {
+      saveReadLinks(readLinks);
+    }
   }
 
   function renderUnreadToggle() {
-    const panel = document.getElementById("entries-panel");
-    if (!panel) return;
     const { button, unreadOnly } = unreadFilter;
-    panel.querySelectorAll("tbody tr").forEach((row) => {
-      const anchor = row.querySelector(".read-track");
-      if (!anchor) return;
-      const href = anchor.getAttribute("href") || "";
-      row.style.display = unreadOnly && loadReadLinks()[href] ? "none" : "";
-    });
     if (button) {
       button.textContent = unreadOnly ? "默认未读" : "显示全部";
       button.classList.toggle("active-filter", unreadOnly);
     }
+    syncEntriesUnreadFields();
   }
 
   function setupUnreadToggle() {
@@ -70,6 +157,7 @@
       button.onclick = () => {
         unreadFilter.unreadOnly = !unreadFilter.unreadOnly;
         renderUnreadToggle();
+        refreshEntriesPanel({ entries_page: "1" });
       };
       unreadFilter.button = button;
     }
@@ -78,6 +166,10 @@
       slot.appendChild(button);
     }
     renderUnreadToggle();
+    const meta = getEntriesFragment();
+    if (meta && (meta.dataset.unreadOnly || "0") !== (unreadFilter.unreadOnly ? "1" : "0")) {
+      refreshEntriesPanel({ entries_page: "1" });
+    }
   }
 
   function clearModal() {
