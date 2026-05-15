@@ -1,5 +1,5 @@
 (() => {
-  const STORAGE_KEY = "infoflowhub:read-links";
+  const STORAGE_KEY = "infoflowhub:read-links:v2";
   const LATERHUB_WIDTH_KEY = "infoflowhub:laterhub-width";
   const unreadFilter = {
     unreadOnly: true,
