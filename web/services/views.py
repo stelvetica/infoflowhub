@@ -38,8 +38,8 @@ STATUS_PATH = RUNTIME_DIR / "health" / "subscriptions_status.json"
 LATERHUB_DB_PATH = BASE_DIR / "data" / "laterhub.sqlite3"
 
 DELETED_SITE_URLS = {"https://www.huxiu.com/member/2321131.html"}
-ENTRIES_PAGE_SIZE = 35
-LATERHUB_PAGE_SIZE = 18
+ENTRIES_PAGE_SIZE = 20
+LATERHUB_PAGE_SIZE = 10
 
 
 def read_json(path: Path, fallback: Any) -> Any:
