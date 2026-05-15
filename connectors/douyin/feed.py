@@ -61,6 +61,95 @@ def _normalize_douyin_published(text: str) -> str:
     return value if parse_published_datetime(value) else ""
 
 
+def _normalize_douyin_timestamp(value) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if raw.isdigit():
+        try:
+            ts = int(raw)
+            if ts > 10**12:
+                ts //= 1000
+            if ts > 10**9:
+                return datetime.fromtimestamp(ts).strftime("%Y/%m/%d %H:%M")
+        except Exception:
+            return ""
+    return _normalize_douyin_published(raw)
+
+
+def _extract_payload_maps(payload: dict) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    publish_map: dict[str, str] = {}
+    title_map: dict[str, str] = {}
+    summary_map: dict[str, str] = {}
+    aweme_list = payload.get("aweme_list") or []
+    if not isinstance(aweme_list, list):
+        return publish_map, title_map, summary_map
+    for item in aweme_list:
+        if not isinstance(item, dict):
+            continue
+        aweme_id = str(item.get("aweme_id") or item.get("awemeId") or "").strip()
+        if not aweme_id:
+            continue
+        published = _normalize_douyin_timestamp(
+            item.get("create_time") or item.get("createTime") or item.get("publish_time") or item.get("publishTime")
+        )
+        if published:
+            publish_map[aweme_id] = published
+        raw_title = clean_line(
+            str(
+                item.get("desc")
+                or item.get("title")
+                or ((item.get("share_info") or {}).get("share_title"))
+                or ((item.get("seo_info") or {}).get("seo_title"))
+                or ""
+            )
+        )
+        if raw_title:
+            title_map[aweme_id] = raw_title
+        raw_summary = clean_line(
+            str(
+                item.get("desc")
+                or item.get("raw_text")
+                or ((item.get("share_info") or {}).get("share_desc"))
+                or raw_title
+            )
+        )
+        if raw_summary:
+            summary_map[aweme_id] = raw_summary
+    return publish_map, title_map, summary_map
+
+
+def _collect_payload_maps_from_network(
+    page, target_url: str, timeout_ms: int
+) -> tuple[dict[str, str], dict[str, str], dict[str, str], str]:
+    publish_map: dict[str, str] = {}
+    title_map: dict[str, str] = {}
+    summary_map: dict[str, str] = {}
+    response_error = ""
+
+    def on_response(response):
+        nonlocal response_error
+        try:
+            url = response.url
+            if "/aweme/v1/web/aweme/post/" not in url:
+                return
+            payload = response.json()
+            payload_publish_map, payload_title_map, payload_summary_map = _extract_payload_maps(payload)
+            publish_map.update(payload_publish_map)
+            title_map.update(payload_title_map)
+            summary_map.update(payload_summary_map)
+        except Exception as exc:
+            response_error = str(exc)
+
+    page.on("response", on_response)
+    try:
+        page.goto(target_url, wait_until="domcontentloaded", timeout=timeout_ms)
+        page.wait_for_timeout(7000)
+    finally:
+        page.remove_listener("response", on_response)
+    return publish_map, title_map, summary_map, response_error
+
+
 def _extract_douyin_cards(page, limit: int = 12) -> list[dict]:
     js = r"""
     (limit) => {
@@ -119,23 +208,33 @@ def _extract_douyin_cards(page, limit: int = 12) -> list[dict]:
     return page.evaluate(js, limit)
 
 
-def _normalize_card_to_entry(source: dict, item: dict) -> FeedEntry | None:
+def _normalize_card_to_entry(
+    source: dict,
+    item: dict,
+    publish_map: dict[str, str],
+    title_map: dict[str, str],
+    summary_map: dict[str, str],
+) -> FeedEntry | None:
     link = _normalize_douyin_link(str(item.get("href") or ""))
     if not link:
         return None
     video_id = str(item.get("video_id") or "").strip()
     title = clean_line(str(item.get("title") or ""))
     raw_text = clean_line(str(item.get("raw_text") or ""))
+    payload_title = clean_line(title_map.get(video_id, ""))
+    payload_summary = clean_line(summary_map.get(video_id, ""))
+    if not title:
+        title = payload_title
     if not title:
         title = f"抖音视频 {video_id}" if video_id else "抖音视频"
-    published = _normalize_douyin_published(str(item.get("published") or ""))
+    published = publish_map.get(video_id) or _normalize_douyin_published(str(item.get("published") or ""))
     return FeedEntry(
         source_id=source["id"],
         source_name=source["name"],
         title=title,
         link=link,
         published=fallback_published(published or now_text()),
-        summary=raw_text or title,
+        summary=raw_text or payload_summary or title,
     )
 
 
@@ -146,8 +245,9 @@ def fetch_douyin_subscription_with_page(page, source: dict, timeout_ms: int = 60
         return result_error(source, "暂不支持的抖音订阅源")
 
     try:
-        page.goto(target.page_url, wait_until="domcontentloaded", timeout=timeout_ms)
-        page.wait_for_timeout(5000)
+        publish_map, title_map, summary_map, response_error = _collect_payload_maps_from_network(
+            page, target.page_url, timeout_ms
+        )
         try:
             page.locator('a[href*="/video/"]').first.wait_for(timeout=12000)
         except Exception:
@@ -163,11 +263,13 @@ def fetch_douyin_subscription_with_page(page, source: dict, timeout_ms: int = 60
         return result_error(source, f"抖音登录态失效或未登录。{DOUYIN_LOGIN_HINT}")
     if any(marker in body_text for marker in DOUYIN_RISK_MARKERS):
         return result_error(source, "抖音页面触发访问限制或风控，请稍后重试并确认当前登录态可正常访问该主页")
+    if response_error and not publish_map and not title_map:
+        return result_error(source, f"抖音订阅时间解析失败: {response_error}")
 
     entries: list[FeedEntry] = []
     seen_links: set[str] = set()
     for card in cards:
-        entry = _normalize_card_to_entry(source, card)
+        entry = _normalize_card_to_entry(source, card, publish_map, title_map, summary_map)
         if not entry or entry.link in seen_links:
             continue
         seen_links.add(entry.link)
