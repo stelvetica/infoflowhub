@@ -10,7 +10,7 @@ from typing import Any
 from apps.laterhub.config import DB_PATH, ENV_PATH, LOG_PATH, LOGS_DIR
 from apps.laterhub.db import DBManager, LinkRecord
 from apps.laterhub.feishu import FeishuBitableClient, FeishuConfig, load_project_env
-from apps.laterhub.tagger import ContentTagger, DEFAULT_TAG, LLMConfig
+from apps.laterhub.tagger import ContentTagger, DEFAULT_TAG, LLMConfig, TaggerServiceUnavailable
 from connectors.bilibili import fetch_bilibili_watchlater
 from connectors.douyin import fetch_douyin_favorites
 
@@ -32,7 +32,7 @@ def parse_tags_text(tags: str | None) -> list[str]:
     text = (tags or "").strip()
     if not text:
         return [DEFAULT_TAG]
-    normalized = re.sub(r"[，、]+", ",", text.replace("/ ", "/"))
+    normalized = re.sub(r"[??]+", ",", text.replace("/ ", "/"))
     parts = [part.strip() for part in normalized.split(",") if part.strip()]
     deduped: list[str] = []
     for part in parts:
@@ -43,13 +43,13 @@ def parse_tags_text(tags: str | None) -> list[str]:
 
 def build_feishu_fields(row: Any) -> dict[str, Any]:
     return {
-        "标题": row["title"],
-        "标签": parse_tags_text(row["tags"]),
-        "链接": {"text": row["title"], "link": row["url"]},
-        "已看完": False,
-        "来源": row["source"],
-        "入库时间": _iso_to_millis(row["created_at"]),
-        "推送状态": row["status"],
+        "??": row["title"],
+        "??": parse_tags_text(row["tags"]),
+        "??": {"text": row["title"], "link": row["url"]},
+        "???": False,
+        "??": row["source"],
+        "????": _iso_to_millis(row["created_at"]),
+        "????": row["status"],
     }
 
 
@@ -65,14 +65,14 @@ def log_line(message: str) -> None:
             file.write(stamped + "\n")
     except OSError as exc:
         LOG_FILE_DISABLED = True
-        print(f"[警告] 日志文件不可写，已跳过文件日志 {LOG_PATH} -> {exc}")
+        print(f"[??] ??????????????? {LOG_PATH} -> {exc}")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="PKM Auto-Hub 主流程")
-    parser.add_argument("--retry-failed", action="store_true", help="运行前把 failed 记录重置为 pending 再重推")
-    parser.add_argument("--fetch-bilibili", action="store_true", help="抓取 B 站稍后看并写入本地数据库")
-    parser.add_argument("--fetch-douyin", action="store_true", help="抓取抖音收藏并写入本地数据库")
+    parser = argparse.ArgumentParser(description="PKM Auto-Hub ???")
+    parser.add_argument("--retry-failed", action="store_true", help="???? failed ????? pending ???")
+    parser.add_argument("--fetch-bilibili", action="store_true", help="?? B ????????????")
+    parser.add_argument("--fetch-douyin", action="store_true", help="??????????????")
     return parser.parse_args(argv)
 
 
@@ -83,10 +83,10 @@ def _load_tagger() -> ContentTagger | None:
             backup_config = LLMConfig.from_env(ENV_PATH, backup=True)
         except Exception:
             backup_config = None
-        log_line("[补充] 已加载主/备标签模型配置")
+        log_line("[??] ????/???????")
         return ContentTagger(primary_config, backup_config=backup_config)
     except Exception as exc:  # noqa: BLE001
-        log_line(f"[补充] 标签模型不可用，先回退默认标签: {exc}")
+        log_line(f"[??] ???????????????: {exc}")
         return None
 
 
@@ -110,28 +110,49 @@ def _save_items(db: DBManager, items: list[dict[str, Any]]) -> None:
 def _fetch_source(*, enabled: bool, label: str, fetcher, db: DBManager) -> bool:
     if not enabled:
         return False
-    log_line(f"[3/6] 抓取{label}")
+    log_line(f"[3/6] ??{label}")
     try:
         fetched = fetcher(ENV_PATH)
         _save_items(db, fetched)
-        log_line(f"[3/6] {label}抓取完成，共 {len(fetched)} 条")
+        log_line(f"[3/6] {label}?????? {len(fetched)} ?")
     except Exception as exc:  # noqa: BLE001
-        log_line(f"[3/6] {label}抓取失败，但不中断主流程: {exc}")
+        log_line(f"[3/6] {label}????????????: {exc}")
     return True
 
 
 def _tag_pending_rows(db: DBManager, tagger: ContentTagger | None) -> None:
-    log_line("[4/6] 为待推送记录补齐标签")
-    rows_to_prepare = db.list_by_status("pending")
-    for row in rows_to_prepare:
-        tags = row["tags"] or DEFAULT_TAG
-        if tagger:
-            try:
-                tags = tagger.tag(title=row["title"], source=row["source"])
-            except Exception as exc:  # noqa: BLE001
-                log_line(f"  - 标签生成失败，回退默认标签: {row['title']} -> {exc}")
-                tags = row["tags"] or DEFAULT_TAG
-        db.update_tags(row["url"], tags)
+    log_line("[4/6] ??????????")
+    rows_to_prepare = db.list_pending_tag_rows()
+    if not rows_to_prepare:
+        log_line("[4/6] ????????? pending ??")
+        return
+    if not tagger:
+        for row in rows_to_prepare:
+            db.mark_tag_skipped(row["url"], row["tags"] or DEFAULT_TAG, "LLM ???????????")
+        log_line(f"[4/6] LLM ?????? {len(rows_to_prepare)} ????????????????")
+        return
+
+    prepared_count = 0
+    skipped_count = 0
+    for index, row in enumerate(rows_to_prepare):
+        fallback_tags = row["tags"] or DEFAULT_TAG
+        try:
+            tags = tagger.tag(title=row["title"], source=row["source"])
+            db.update_tags(row["url"], tags)
+            prepared_count += 1
+        except TaggerServiceUnavailable as exc:
+            remaining_rows = rows_to_prepare[index:]
+            for pending_row in remaining_rows:
+                db.mark_tag_skipped(pending_row["url"], pending_row["tags"] or DEFAULT_TAG, str(exc))
+            skipped_count += len(remaining_rows)
+            log_line(f"[4/6] LLM ??????????? {len(remaining_rows)} ????????: {exc}")
+            break
+        except Exception as exc:  # noqa: BLE001
+            db.mark_tag_skipped(row["url"], fallback_tags, f"????????????: {exc}")
+            skipped_count += 1
+            log_line(f"  - ?????????????: {row['title']} -> {exc}")
+
+    log_line(f"[4/6] ????????? {prepared_count} ???? {skipped_count} ?")
 
 
 def prepare_pending_tags(db: DBManager | None = None, tagger: ContentTagger | None = None) -> int:
@@ -144,15 +165,15 @@ def prepare_pending_tags(db: DBManager | None = None, tagger: ContentTagger | No
 def _push_pending_rows(db: DBManager) -> int:
     if not ENABLE_FEISHU_PUSH:
         pending_count = len(db.list_by_status("pending"))
-        log_line(f"[5/6] 已关闭推送到飞书，保留 {pending_count} 条 pending 记录")
+        log_line(f"[5/6] ??????????? {pending_count} ? pending ??")
         return 0
     rows_to_push = db.list_by_status("pending")
     if not rows_to_push:
-        log_line("[5/6] 没有需要推送到飞书的新数据，流程结束")
+        log_line("[5/6] ??????????????????")
         return 0
-    log_line(f"[5/6] 检查飞书配置 {ENV_PATH}")
+    log_line(f"[5/6] ?????? {ENV_PATH}")
     client = FeishuBitableClient(FeishuConfig.from_env(ENV_PATH))
-    log_line(f"[6/6] 准备推送 {len(rows_to_push)} 条记录到飞书")
+    log_line(f"[6/6] ???? {len(rows_to_push)} ??????")
     success_count = 0
     for row in rows_to_push:
         try:
@@ -160,28 +181,28 @@ def _push_pending_rows(db: DBManager) -> int:
             record_id = ((response.get("data") or {}).get("record") or {}).get("record_id")
             db.mark_pushed(row["url"], feishu_record_id=record_id)
             success_count += 1
-            log_line(f"  - 已推送 {row['title']}")
+            log_line(f"  - ??? {row['title']}")
         except Exception as exc:  # noqa: BLE001
             db.mark_failed(row["url"], str(exc))
-            log_line(f"  - 推送失败 {row['title']} -> {exc}")
-    log_line(f"完成: 成功 {success_count} 条，失败 {len(rows_to_push) - success_count} 条")
+            log_line(f"  - ???? {row['title']} -> {exc}")
+    log_line(f"??: ?? {success_count} ???? {len(rows_to_push) - success_count} ?")
     return 0
 
 
 def run(args: argparse.Namespace) -> int:
     load_project_env(ENV_PATH)
-    log_line("[1/6] 初始化数据库")
+    log_line("[1/6] ??????")
     db = DBManager(DB_PATH)
     tagger = _load_tagger()
     if args.retry_failed:
         reset_count = db.reset_failed_to_pending()
-        log_line(f"[补充] 已重置 failed 记录 {reset_count} 条")
-    log_line("[2/6] 准备抓取与整理流程")
+        log_line(f"[??] ??? failed ?? {reset_count} ?")
+    log_line("[2/6] ?????????")
     fetched_any = False
-    fetched_any = _fetch_source(enabled=args.fetch_bilibili, label="B 站稍后看", fetcher=fetch_bilibili_watchlater, db=db) or fetched_any
-    fetched_any = _fetch_source(enabled=args.fetch_douyin, label="抖音收藏", fetcher=fetch_douyin_favorites, db=db) or fetched_any
+    fetched_any = _fetch_source(enabled=args.fetch_bilibili, label="B ????", fetcher=fetch_bilibili_watchlater, db=db) or fetched_any
+    fetched_any = _fetch_source(enabled=args.fetch_douyin, label="????", fetcher=fetch_douyin_favorites, db=db) or fetched_any
     if not fetched_any:
-        log_line("[3/6] 跳过外部抓取")
+        log_line("[3/6] ??????")
     _tag_pending_rows(db, tagger)
     return _push_pending_rows(db)
 

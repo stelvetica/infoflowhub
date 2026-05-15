@@ -8,64 +8,64 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from requests import Response
 
 from apps.laterhub.config import ENV_PATH
 from apps.laterhub.feishu import load_project_env
 
 
-DEFAULT_TAG = "解说-综艺/吃瓜"
+DEFAULT_TAG = "??-??/??"
 TAG_OPTIONS = [
-    "心理-认知",
-    "心理-自我/情绪",
-    "心理-他人/关系",
-    "心理-职场",
-    "技术-AI",
-    "技术-效率/工具/开发",
-    "技术-英语/写作",
-    "技术-音乐/唱歌",
-    "技术-摄影/剪辑",
-    "技术-科学/科普",
-    "社科-金融/商业/经济",
-    "社科-历史",
-    "社科-社会/时政",
-    "人文-哲学/艺术",
-    "人文-玄学",
-    "生活-健康/健身",
-    "生活-穿搭/保养",
-    "生活-美食/旅行",
-    "解说-影视/游戏/动漫",
-    "解说-综艺/吃瓜",
-    "解说-文学",
+    "??-??",
+    "??-??/??",
+    "??-??/??",
+    "??-??",
+    "??-AI",
+    "??-??/??/??",
+    "??-??/??",
+    "??-??/??",
+    "??-??/??",
+    "??-??/??",
+    "??-??/??/??",
+    "??-??",
+    "??-??/??",
+    "??-??/??",
+    "??-??",
+    "??-??/??",
+    "??-??/??",
+    "??-??/??",
+    "??-??/??/??",
+    "??-??/??",
+    "??-??",
 ]
 
-SYSTEM_PROMPT = """你是内容标签助手。
-你只能够从下面 21 个标签里选择，不能自造新标签：
-心理-认知
-心理-自我/情绪
-心理-他人/关系
-心理-职场
-技术-AI
-技术-效率/工具/开发
-技术-英语/写作
-技术-音乐/唱歌
-技术-摄影/剪辑
-技术-科学/科普
-社科-金融/商业/经济
-社科-历史
-社科-社会/时政
-人文-哲学/艺术
-人文-玄学
-生活-健康/健身
-生活-穿搭/保养
-生活-美食/旅行
-解说-影视/游戏/动漫
-解说-综艺/吃瓜
-解说-文学
+SYSTEM_PROMPT = """???????????????? 21 ???????????????
+??-??
+??-??/??
+??-??/??
+??-??
+??-AI
+??-??/??/??
+??-??/??
+??-??/??
+??-??/??
+??-??/??
+??-??/??/??
+??-??
+??-??/??
+??-??/??
+??-??
+??-??/??
+??-??/??
+??-??/??
+??-??/??/??
+??-??/??
+??-??
 
-规则：
-1. 最多返回 2 个最核心标签。
-2. 信息不足或明显偏娱乐杂谈时，返回 ["解说-综艺/吃瓜"]。
-3. 只返回 JSON 数组，不要解释，不要 Markdown。"""
+???
+1. ???? 2 ???????
+2. ???????????????? ["??-??/??"]?
+3. ??? JSON ?????????? Markdown?"""
 
 
 @dataclass(slots=True)
@@ -89,7 +89,7 @@ class LLMConfig:
         api_key = os.getenv(f"{prefix}LLM_API_KEY", "").strip()
         model = os.getenv(f"{prefix}LLM_MODEL", "").strip()
         if not base_url or not api_key:
-            raise ValueError(f"缺少 {prefix}LLM_BASE_URL 或 {prefix}LLM_API_KEY 配置")
+            raise ValueError(f"?? {prefix}LLM_BASE_URL ? {prefix}LLM_API_KEY ??")
         if not model:
             response = requests.get(
                 f"{base_url}/v1/models",
@@ -100,9 +100,13 @@ class LLMConfig:
             data = response.json()
             items = data.get("data") or []
             if not items:
-                raise RuntimeError("模型列表为空，无法自动识别 model")
+                raise RuntimeError("????????????? model")
             model = (items[0] or {}).get("id", "").strip()
         return cls(base_url=base_url, api_key=api_key, model=model)
+
+
+class TaggerServiceUnavailable(RuntimeError):
+    pass
 
 
 class ContentTagger:
@@ -110,14 +114,22 @@ class ContentTagger:
         self.config = config
         self.backup_config = backup_config
         self.timeout = timeout
+        self._disabled_reason: str | None = None
 
     def tag(self, *, title: str, source: str) -> str:
+        if self._disabled_reason:
+            raise TaggerServiceUnavailable(self._disabled_reason)
         try:
             return self._tag_with_config(self.config, title=title, source=source)
-        except Exception:
+        except Exception as exc:
             if not self.backup_config:
+                self._remember_service_failure(exc)
                 raise
+        try:
             return self._tag_with_config(self.backup_config, title=title, source=source)
+        except Exception as exc:
+            self._remember_service_failure(exc)
+            raise
 
     def _tag_with_config(self, config: LLMConfig, *, title: str, source: str) -> str:
         payload = {
@@ -127,9 +139,9 @@ class ContentTagger:
                 {
                     "role": "user",
                     "content": (
-                        f"来源: {source}\n"
-                        f"标题: {title}\n"
-                        "请直接返回 JSON 数组，例如 [\"技术-AI\"]"
+                        f"??: {source}\n"
+                        f"??: {title}\n"
+                        "????? JSON ????? [\"??-AI\"]"
                     ),
                 },
             ],
@@ -155,8 +167,23 @@ class ContentTagger:
             if normalized and normalized not in cleaned:
                 cleaned.append(normalized)
         if not cleaned:
-            raise RuntimeError(f"标签响应无效: {content}")
-        return "、".join(cleaned[:2])
+            raise RuntimeError(f"??????: {content}")
+        return "?".join(cleaned[:2])
+
+    def _remember_service_failure(self, exc: Exception) -> None:
+        if not self._is_service_failure(exc):
+            return
+        self._disabled_reason = f"LLM ???????????????: {exc}"
+
+    @staticmethod
+    def _is_service_failure(exc: Exception) -> bool:
+        if isinstance(exc, requests.RequestException):
+            response = getattr(exc, "response", None)
+            if isinstance(response, Response) and response.status_code in {429, 502, 503, 504}:
+                return True
+            if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+                return True
+        return False
 
     @staticmethod
     def _parse_json_array(text: str) -> list[Any]:
