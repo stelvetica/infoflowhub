@@ -47,7 +47,10 @@ def source_url(params: dict[str, str], **extra: str) -> str:
 
 def render_main(request: Request, params: dict[str, str]):
     view = params.get("view", "entries")
-    entries = get_entries_view(params)
+    entries_params = dict(params)
+    if view != "settings":
+        entries_params.setdefault("entries_unread_only", "1")
+    entries = get_entries_view(entries_params)
     laterhub = get_laterhub_view(params)
     settings = get_settings_view(params)
     success_sources_text = settings["status"]["success_sources_text"]
@@ -60,7 +63,7 @@ def render_main(request: Request, params: dict[str, str]):
             "laterhub": laterhub,
             "settings": settings,
             "success_sources_text": success_sources_text,
-            "params": params,
+            "params": entries_params if view != "settings" else params,
             "source_lookup": {item["id"]: item for item in normalize_sources()},
         },
     )
