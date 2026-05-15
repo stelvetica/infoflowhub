@@ -7,18 +7,55 @@ from typing import Any, Dict, List
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 CONFIG_DIR = BASE_DIR / "config"
-SOURCES_PATH = CONFIG_DIR / "rss_sources.json"
+SOURCES_PATH = CONFIG_DIR / "subscription_sources.json"
 SETTINGS_PATH = CONFIG_DIR / "rss_settings.json"
+REQUIRED_SOURCE_FIELDS = (
+    "id",
+    "name",
+    "group",
+    "feed_url",
+    "site_url",
+    "provider",
+    "fetch_via",
+    "kind",
+    "enabled",
+    "note",
+    "channel",
+    "auth_key",
+    "fallback_mode",
+)
+
+
+def _normalize_source_payload(item: Dict[str, Any]) -> Dict[str, Any]:
+    return {field: item[field] for field in REQUIRED_SOURCE_FIELDS}
+
+
+def _validate_sources_payload(data: Any) -> List[Dict[str, Any]]:
+    if not isinstance(data, dict):
+        raise ValueError("subscription_sources.json 顶层必须是对象")
+    rows = data.get("sources")
+    if not isinstance(rows, list):
+        raise ValueError("subscription_sources.json 必须包含 sources 数组")
+    normalized: List[Dict[str, Any]] = []
+    for index, item in enumerate(rows):
+        if not isinstance(item, dict):
+            raise ValueError(f"第 {index + 1} 个订阅源必须是对象")
+        missing = [field for field in REQUIRED_SOURCE_FIELDS if field not in item]
+        if missing:
+            raise ValueError(f"第 {index + 1} 个订阅源缺少字段: {', '.join(missing)}")
+        normalized.append(_normalize_source_payload(item))
+    return normalized
 
 
 def load_sources() -> List[Dict[str, Any]]:
     data = json.loads(SOURCES_PATH.read_text(encoding="utf-8"))
-    return data.get("sources", [])
+    return _validate_sources_payload(data)
 
 
 def save_sources(sources: List[Dict[str, Any]]) -> None:
+    normalized = _validate_sources_payload({"sources": sources})
     SOURCES_PATH.write_text(
-        json.dumps({"sources": sources}, ensure_ascii=False, indent=2) + "\n",
+        json.dumps({"sources": normalized}, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
 

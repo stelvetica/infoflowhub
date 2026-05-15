@@ -143,21 +143,19 @@ def infer_channel(feed_url: str, site_url: str) -> str:
 
 
 def canonicalize_source(item: dict[str, Any]) -> dict[str, Any] | None:
+    source_id = str(item.get("id") or "").strip()
+    name = str(item.get("name") or "").strip()
     feed_url = str(item.get("feed_url") or "").strip()
     site_url = str(item.get("site_url") or "").strip()
-    if not feed_url or site_url in DELETED_SITE_URLS:
-        return None
     provider = str(item.get("provider") or "").strip()
     fetch_via = str(item.get("fetch_via") or "").strip()
     kind = str(item.get("kind") or "").strip()
-    if not provider or not fetch_via or not kind:
-        provider, fetch_via, kind = infer_source_meta(feed_url, site_url)
-    channel = str(item.get("channel") or "").strip() or infer_channel(feed_url, site_url)
-    auth_key = str(item.get("auth_key") or "").strip() or default_auth_key(channel, site_url, feed_url)
-    fallback_mode = str(item.get("fallback_mode") or "").strip() or ("web" if channel == "youtube" else "none")
-    source_id = str(item.get("id") or "").strip()
-    name = str(item.get("name") or "").strip()
-    if not source_id or not name:
+    channel = str(item.get("channel") or "").strip()
+    auth_key = str(item.get("auth_key") or "").strip()
+    fallback_mode = str(item.get("fallback_mode") or "").strip()
+    if not all((source_id, name, feed_url, provider, fetch_via, kind, channel, fallback_mode)):
+        return None
+    if not feed_url or site_url in DELETED_SITE_URLS:
         return None
     return {
         "id": source_id,
@@ -209,6 +207,16 @@ def normalize_sources() -> list[dict[str, Any]]:
             source["auth_status_level"] = ""
         normalized.append(source)
     return normalized
+
+
+def source_runtime_health(source_id: str) -> dict[str, str]:
+    source_health = load_health().get("sources", {}).get(source_id, {})
+    return {
+        "last_checked_at": str(source_health.get("last_checked_at") or ""),
+        "last_success_at": str(source_health.get("last_success_at") or ""),
+        "last_failed_at": str(source_health.get("last_failed_at") or ""),
+        "last_error": str(source_health.get("last_error") or ""),
+    }
 
 
 def save_source(payload: dict[str, str]) -> None:
@@ -268,7 +276,7 @@ def delete_source(source_id: str) -> None:
     delete_entries_by_source(clean_id)
     delete_source_state(clean_id)
     health = load_health()
-    if health["sources"].get(clean_id):
+    if health.get("sources", {}).get(clean_id):
         del health["sources"][clean_id]
         write_json(HEALTH_PATH, health)
 
@@ -534,7 +542,6 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     status["success_sources_text"] = format_success_sources_text(status)
     summary = get_laterhub_summary()
     laterhub_sources = get_laterhub_source_stats()
-    health_sources = load_health().get("sources", {})
     stats = {item["source_id"]: item for item in list_source_stats()}
     keyword = normalize_text(query.get("source_q", ""))
     source_filter = query.get("source_filter", "")
@@ -563,7 +570,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     rows = []
     for item in normalize_sources():
         stat = stats.get(item["id"], {})
-        source_health = health_sources.get(item["id"], {})
+        source_health = source_runtime_health(item["id"])
         failed_at = parse_published_datetime(source_health.get("last_failed_at", "") or "")
         success_at = parse_published_datetime(source_health.get("last_success_at", "") or "")
         invalid_days = ""

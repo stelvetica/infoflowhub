@@ -18,8 +18,12 @@ def clean_health_error(value: str) -> str:
 
 
 def is_expected_login_requirement_error(message: str) -> bool:
-    text = clean_health_error(message)
-    return "共享登录态" in text or "登录态" in text
+    text = clean_health_error(message).lower()
+    return "登录态" in text or "login" in text
+
+
+def is_successful_run(success_sources: int, failure_count: int) -> bool:
+    return success_sources > 0 and failure_count == 0
 
 
 def update_source_health(result) -> None:
@@ -34,7 +38,12 @@ def update_source_health(result) -> None:
     else:
         current["last_error"] = clean_health_error(result.error or str(result.status))
         current["last_failed_at"] = current["last_checked_at"]
-    source_health[result.source_id] = current
+    source_health[result.source_id] = {
+        "last_checked_at": str(current.get("last_checked_at") or ""),
+        "last_success_at": str(current.get("last_success_at") or ""),
+        "last_failed_at": str(current.get("last_failed_at") or ""),
+        "last_error": str(current.get("last_error") or ""),
+    }
     write_json(HEALTH_PATH, health)
 
 
@@ -67,9 +76,10 @@ def fetch_now() -> dict:
             success_sources += 1
             inserted_total += save_entries(result.entries)
         status = load_status()
-        status["fetch_state"] = "success" if not failures else "error"
+        run_success = is_successful_run(success_sources, len(failures))
+        status["fetch_state"] = "success" if run_success else "error"
         status["last_run_at"] = now_text()
-        status["last_success_at"] = status["last_run_at"] if success_sources else status.get("last_success_at", "")
+        status["last_success_at"] = status["last_run_at"] if run_success else status.get("last_success_at", "")
         status["last_total_sources"] = len(sources)
         status["last_success_sources"] = success_sources
         status["last_inserted_entries"] = inserted_total

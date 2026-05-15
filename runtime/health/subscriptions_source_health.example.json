@@ -1,8 +1,6 @@
 {
   "sources": {
     "example-source": {
-      "source_name": "示例订阅源",
-      "feed_url": "https://example.com/feed.xml",
       "last_checked_at": "",
       "last_success_at": "",
       "last_failed_at": "",
