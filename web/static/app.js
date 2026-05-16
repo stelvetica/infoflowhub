@@ -211,6 +211,10 @@
   function setupUnreadToggle() {
     const slot = document.getElementById("entries-unread-slot");
     if (!slot) return;
+    const meta = getEntriesFragment();
+    if (meta) {
+      unreadFilter.unreadOnly = (meta.dataset.unreadOnly || "0") === "1";
+    }
     let button = unreadFilter.button;
     if (!button) {
       button = document.createElement("button");
@@ -228,17 +232,6 @@
       slot.appendChild(button);
     }
     renderUnreadToggle();
-    const meta = getEntriesFragment();
-    const currentReadKeys = getReadKeys().join(",");
-    if (
-      meta &&
-      (
-        (meta.dataset.unreadOnly || "0") !== (unreadFilter.unreadOnly ? "1" : "0") ||
-        (meta.dataset.readKeys || "") !== currentReadKeys
-      )
-    ) {
-      refreshEntriesPanel({ entries_page: "1" });
-    }
   }
 
   function clearModal() {
