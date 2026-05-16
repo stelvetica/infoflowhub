@@ -198,35 +198,43 @@ def parse_x_article_text(raw_text: str) -> tuple[str, str]:
         "Pinned post",
         "Post",
         "Replying to",
+        "Article",
+        "\u6587\u7ae0",
+        "\u00b7",
+        "\u2022",
+        "\u2026",
+        "...",
     }
     time_patterns = (
         r"\d+[smhdwy]$",
-        r"\d+\s*(秒|分钟|小时|天|周|月|年)前",
+        r"\d+\s*(?:\u79d2|\u5206\u949f|\u5c0f\u65f6|\u5929|\u5468|\u6708|\u5e74)\u524d",
+        r"\d{1,2}\u6708\d{1,2}\u65e5",
         r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(,\s+\d{4})?$",
     )
     filtered: list[str] = []
     for line in lines:
         if line in skip_exact:
             continue
-        if line == "Article":
-            continue
         if line.startswith("@"):
-            continue
-        if line == "路":
             continue
         if re.fullmatch(r"[\d,.]+[KMB]?", line):
             continue
         if any(re.fullmatch(pattern, line, flags=re.IGNORECASE) for pattern in time_patterns):
             continue
-        if re.search(r"(关注中|正在关注|Following)$", line):
+        if re.search(r"(?:\u5173\u6ce8\u4e2d|\u6b63\u5728\u5173\u6ce8|Following)$", line):
             continue
-        if len(line) <= 40 and re.fullmatch(r"[\w\u4e00-\u9fff][\w\u4e00-\u9fff ._-]*", line):
-            next_line = ""
-            if filtered:
-                next_line = filtered[-1]
-            if not next_line and len(filtered) == 0:
-                continue
         filtered.append(line)
+
+    article_title = ""
+    joined = clean_line(" ".join(lines))
+    match = re.search(
+        r"\u6587\u7ae0\s+(.+?)(?=\s+(?:\u672c\u5468|\u4eca\u65e5|\u4eca\u5929|\u6628\u65e5|\u539f\u6587|\u5168\u6587|\u9605\u8bfb|http|https)|$)",
+        joined,
+    )
+    if match:
+        article_title = clean_line(match.group(1))
+    if article_title and article_title not in skip_exact:
+        filtered = [article_title, *[line for line in filtered if line != article_title]]
 
     if not filtered:
         return "", ""
