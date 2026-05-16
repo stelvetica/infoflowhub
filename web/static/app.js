@@ -156,14 +156,22 @@
     });
   }
 
+  function setEntryReadState(anchor, isRead) {
+    anchor.classList.remove("cell-read", "cell-unread", "cell-strong");
+    if (isRead) {
+      anchor.classList.add("cell-read");
+      return;
+    }
+    anchor.classList.add("cell-unread");
+  }
+
   function applyReadState() {
     const readLinks = loadReadLinks();
     let changed = false;
     document.querySelectorAll(".read-track").forEach((anchor) => {
       const href = anchor.getAttribute("href") || "";
       if (!href || !/^https?:\/\//i.test(href)) {
-        anchor.classList.remove("cell-strong");
-        anchor.classList.add("cell-read");
+        setEntryReadState(anchor, true);
         return;
       }
       const row = anchor.closest("tr");
@@ -172,19 +180,12 @@
         readLinks[href] = true;
         changed = true;
       }
-      if (readLinks[href]) {
-        anchor.classList.remove("cell-strong");
-        anchor.classList.add("cell-read");
-      } else {
-        anchor.classList.remove("cell-read");
-        anchor.classList.add("cell-strong");
-      }
+      setEntryReadState(anchor, Boolean(readLinks[href]));
       anchor.onclick = () => {
         const next = loadReadLinks();
         next[href] = true;
         saveReadLinks(next);
-        anchor.classList.remove("cell-strong");
-        anchor.classList.add("cell-read");
+        setEntryReadState(anchor, true);
         syncEntriesUnreadFields();
         if (unreadFilter.unreadOnly) {
           window.setTimeout(() => refreshEntriesPanel(), 0);

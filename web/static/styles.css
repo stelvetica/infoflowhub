@@ -123,8 +123,8 @@ th { font-size: 12px; color: var(--muted); white-space: nowrap; background: rgba
 .sources-table td .cell-ellipsis, .sources-table th .cell-ellipsis { display: block; }
 .cell-link { display: block; max-width: 100%; }
 .cell-link-disabled { color: var(--muted); cursor: not-allowed; text-decoration: none; }
-.cell-strong { color: var(--text); }
-.cell-read { color: #8c959f; }
+.cell-strong, .cell-unread { color: var(--text); font-weight: 600; }
+.cell-read { color: #8c959f; font-weight: 400; }
 .cell-muted { color: var(--muted); }
 .cell-tight { white-space: nowrap; }
 .laterhub-link-cell a { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
