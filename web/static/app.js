@@ -1,5 +1,5 @@
 (() => {
-  const STORAGE_KEY = "infoflowhub:read-links:v2";
+  const STORAGE_KEY = "infoflowhub:read-links:v3";
   const LATERHUB_WIDTH_KEY = "infoflowhub:laterhub-width";
   const unreadFilter = {
     unreadOnly: true,
@@ -24,12 +24,18 @@
   function readLinkKey(value) {
     const text = String(value || "").trim();
     if (!text) return "";
-    const bytes = new TextEncoder().encode(text);
-    let binary = "";
-    for (const byte of bytes) {
-      binary += String.fromCharCode(byte);
+    let h1 = 0x811c9dc5;
+    let h2 = 0x811c9dc5;
+    for (let i = 0; i < text.length; i += 1) {
+      const code = text.charCodeAt(i);
+      h1 ^= code;
+      h1 = Math.imul(h1, 0x01000193);
+      h2 ^= code ^ 0x9e37;
+      h2 = Math.imul(h2, 0x01000193);
     }
-    return window.btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "").slice(0, 24);
+    const a = (h1 >>> 0).toString(16).padStart(8, "0");
+    const b = (h2 >>> 0).toString(16).padStart(8, "0");
+    return `${a}${b}${a}${b}${a}`;
   }
 
   function getReadKeys() {

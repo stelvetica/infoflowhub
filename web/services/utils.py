@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import base64
+import hashlib
 import re
 from datetime import datetime
 from typing import Any
@@ -20,8 +20,7 @@ def read_link_key(value: str) -> str:
     text = strip_invalid_unicode(value or "").strip()
     if not text:
         return ""
-    encoded = base64.urlsafe_b64encode(text.encode("utf-8")).decode("ascii").rstrip("=")
-    return encoded[:24]
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
 
 def split_tags(value: str | None) -> list[str]:
