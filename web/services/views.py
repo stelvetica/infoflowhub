@@ -6,6 +6,7 @@ from datetime import datetime
 from functools import cmp_to_key
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from urllib.parse import quote
 
 from apps.subscriptions.config import load_settings, load_sources, save_sources
@@ -46,6 +47,7 @@ ENTRIES_PAGE_SIZE = 20
 LATERHUB_PAGE_SIZE = 10
 ENTRIES_READ_CUTOFF = datetime(2026, 5, 1).timestamp()
 ABSOLUTE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
+BILIBILI_DYNAMIC_PATH_RE = re.compile(r"^/(\d+)$")
 
 
 def read_json(path: Path, fallback: Any) -> Any:
@@ -62,6 +64,11 @@ def write_json(path: Path, value: Any) -> None:
 def normalize_entry_link(link: str, fallback: str = "") -> str:
     primary = str(link or "").strip()
     if ABSOLUTE_URL_RE.match(primary):
+        parsed = urlparse(primary)
+        if parsed.netloc.lower() == "t.bilibili.com":
+            matched = BILIBILI_DYNAMIC_PATH_RE.match(parsed.path or "")
+            if matched:
+                return f"https://www.bilibili.com/opus/{matched.group(1)}"
         return primary
     backup = str(fallback or "").strip()
     if ABSOLUTE_URL_RE.match(backup):
