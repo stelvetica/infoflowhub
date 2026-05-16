@@ -41,6 +41,7 @@ RUNTIME_DIR = BASE_DIR / "runtime"
 HEALTH_PATH = RUNTIME_DIR / "health" / "subscriptions_source_health.json"
 STATUS_PATH = RUNTIME_DIR / "health" / "subscriptions_status.json"
 LATERHUB_DB_PATH = BASE_DIR / "data" / "laterhub.sqlite3"
+WEB_LOG_PATH = RUNTIME_DIR / "web.log"
 
 DELETED_SITE_URLS = {"https://www.huxiu.com/member/2321131.html"}
 ENTRIES_PAGE_SIZE = 20
@@ -59,6 +60,15 @@ def read_json(path: Path, fallback: Any) -> Any:
 
 def write_json(path: Path, value: Any) -> None:
     dump_json_utf8(path, value)
+
+
+def read_log_tail(path: Path, max_lines: int = 80) -> str:
+    try:
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except Exception:
+        return ""
+    tail = [line for line in lines[-max_lines:] if line.strip()]
+    return "\n".join(tail)
 
 
 def normalize_entry_link(link: str, fallback: str = "") -> str:
@@ -576,6 +586,8 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
 def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     status = load_status()
     status["success_sources_text"] = format_success_sources_text(status)
+    status["last_run_inserted_entries"] = int(status.get("last_inserted_entries") or 0)
+    status["run_log_text"] = read_log_tail(WEB_LOG_PATH)
     summary = get_laterhub_summary()
     laterhub_sources = get_laterhub_source_stats()
     stats = {item["source_id"]: item for item in list_source_stats()}

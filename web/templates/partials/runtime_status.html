@@ -1,14 +1,22 @@
 {% set status = settings.status %}
 <div class="settings-topbar">
   <div class="metric-strip metric-strip-5">
-    <div class="metric-chip"><span class="label">运行状态</span><strong>{% if status.fetch_state == 'running' %}运行中{% elif status.fetch_state == 'error' %}最近一次失败{% elif status.fetch_state == 'success' %}最近一次完成{% else %}空闲{% endif %}</strong></div>
-    <div class="metric-chip"><span class="label">本次开始</span><strong>{{ status.current_run_started_at[5:16] if status.current_run_started_at else '-' }}</strong></div>
-    <div class="metric-chip"><span class="label">最近完成</span><strong>{{ status.last_run_at[5:16] if status.last_run_at else '-' }}</strong></div>
-    <div class="metric-chip"><span class="label">成功源数</span><strong>{{ status['success_sources_text'] }}</strong></div>
-    <div class="metric-chip"><span class="label">新增条目</span><strong>{{ status.last_inserted_entries }}</strong></div>
+    <div class="metric-chip metric-chip-compact"><span class="label">运行状态</span><strong>{% if status.fetch_state == 'running' %}运行中{% elif status.fetch_state == 'error' %}最近一次失败{% elif status.fetch_state == 'success' %}最近一次完成{% else %}空闲{% endif %}</strong></div>
+    <div class="metric-chip metric-chip-compact"><span class="label">本次开始</span><strong>{{ status.current_run_started_at[5:16] if status.current_run_started_at else '-' }}</strong></div>
+    <div class="metric-chip metric-chip-compact"><span class="label">最近完成</span><strong>{{ status.last_run_at[5:16] if status.last_run_at else '-' }}</strong></div>
+    <div class="metric-chip metric-chip-compact"><span class="label">成功源数</span><strong>{{ status['success_sources_text'] }}</strong></div>
+    <div class="metric-chip metric-chip-compact"><span class="label">本次新增</span><strong>{{ status.last_run_inserted_entries }}</strong></div>
   </div>
 </div>
 <div class="settings-error-block">
-  <div class="subtle">错误摘要</div>
-  <pre class="codebox compact">{{ status.last_error or '-' }}</pre>
+  <div class="runtime-dual-panel">
+    <section class="runtime-log-card">
+      <div class="subtle">运行日志</div>
+      <pre class="codebox compact codebox-scroll">{{ status.run_log_text or '-' }}</pre>
+    </section>
+    <section class="runtime-log-card">
+      <div class="subtle">错误摘要</div>
+      <pre class="codebox compact codebox-scroll">{{ status.last_error or '-' }}</pre>
+    </section>
+  </div>
 </div>

@@ -171,8 +171,14 @@ th { font-size: 12px; color: var(--muted); white-space: nowrap; background: rgba
 .metric-chip { display: grid; gap: 6px; padding: 14px 16px; border-radius: 14px; background: linear-gradient(180deg, #fff 0%, #f6f8fa 100%); border: 1px solid var(--line); }
 .metric-chip .label { color: var(--muted); font-size: 13px; }
 .metric-chip strong { font-size: 26px; line-height: 1.15; }
+.metric-chip-compact { gap: 4px; padding: 12px 14px; }
+.metric-chip-compact .label { font-size: 11px; }
+.metric-chip-compact strong { font-size: 22px; line-height: 1.1; }
 .settings-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .settings-error-block { margin-top: 16px; }
+.runtime-dual-panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.runtime-log-card { min-width: 0; }
+.codebox-scroll { margin-top: 8px; height: 168px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 .cell-error-summary { max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
 .cell-login-requirement { max-width: 170px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .auth-status-badge { display: inline-flex; align-items: center; margin-top: 6px; padding: 4px 8px; border-radius: 999px; font-size: 11px; line-height: 1.4; border: 1px solid var(--line); background: #fff; color: var(--muted); }
@@ -211,6 +217,7 @@ th { font-size: 12px; color: var(--muted); white-space: nowrap; background: rgba
   .main { padding: 14px; }
   .topbar { margin-bottom: 12px; }
   .metric-strip { grid-template-columns: 1fr; }
+  .runtime-dual-panel { grid-template-columns: 1fr; }
   .settings-topbar, .pagination { align-items: stretch; }
   .panel-title { align-items: flex-start; }
   .toolbar-inline, .toolbar-inline-spread, .laterhub-top-row { flex-wrap: wrap; }
