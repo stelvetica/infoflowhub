@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timedelta
+from urllib.parse import parse_qs, urljoin, urlparse
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
@@ -11,14 +12,32 @@ from connectors._shared.common import clean_line, now_text, parse_published_date
 
 
 def normalize_youtube_published(text: str) -> str:
-    value = clean_line(text).lstrip("•").strip()
+    value = clean_line(text).replace("•", "").strip()
     if not value:
         return ""
     if parse_published_datetime(value):
         return value
 
-    lowered = value.lower()
-    lowered = re.sub(r"^(streamed|premiered|updated)\s+", "", lowered)
+    lowered = re.sub(r"^(streamed|premiered|updated)\s+", "", value.lower())
+    compact_match = re.search(r"(\d+)\s*(m|h|d|w|mo|y)\s+ago", lowered)
+    if compact_match:
+        amount = int(compact_match.group(1))
+        unit = compact_match.group(2)
+        now = datetime.now()
+        if unit == "m":
+            target = now - timedelta(minutes=amount)
+        elif unit == "h":
+            target = now - timedelta(hours=amount)
+        elif unit == "d":
+            target = now - timedelta(days=amount)
+        elif unit == "w":
+            target = now - timedelta(weeks=amount)
+        elif unit == "mo":
+            target = now - timedelta(days=amount * 30)
+        else:
+            target = now - timedelta(days=amount * 365)
+        return target.strftime("%Y/%m/%d %H:%M")
+
     match = re.search(r"(\d+)\s+(minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)\s+ago", lowered)
     if not match:
         return ""
@@ -41,10 +60,25 @@ def normalize_youtube_published(text: str) -> str:
     return target.strftime("%Y/%m/%d %H:%M")
 
 
+def extract_video_id_from_url(url: str) -> str:
+    value = (url or "").strip()
+    if not value:
+        return ""
+    parsed = urlparse(value)
+    query_id = parse_qs(parsed.query).get("v", [""])[0].strip()
+    if query_id:
+        return query_id
+    match = re.search(r"/watch\?v=([A-Za-z0-9_-]+)", value)
+    if match:
+        return match.group(1)
+    return ""
+
+
 def _walk_renderer_items(node):
     if isinstance(node, dict):
-        if "gridVideoRenderer" in node:
-            yield node["gridVideoRenderer"]
+        for key in ("gridVideoRenderer", "videoRenderer", "reelItemRenderer"):
+            if key in node:
+                yield node[key]
         if "richItemRenderer" in node:
             yield from _walk_renderer_items(node["richItemRenderer"])
         if "content" in node:
@@ -54,6 +88,30 @@ def _walk_renderer_items(node):
     elif isinstance(node, list):
         for item in node:
             yield from _walk_renderer_items(item)
+
+
+def _entry_from_renderer(source: dict, renderer: dict) -> FeedEntry | None:
+    video_id = str(renderer.get("videoId") or "").strip()
+    title_runs = ((renderer.get("title") or {}).get("runs") or [])
+    title = clean_line(" ".join(str(part.get("text") or "") for part in title_runs))
+    if not video_id or not title:
+        return None
+    published_text = (
+        ((renderer.get("publishedTimeText") or {}).get("simpleText"))
+        or " ".join(str(part.get("text") or "") for part in ((renderer.get("publishedTimeText") or {}).get("runs") or []))
+    ).strip()
+    view_text = (
+        ((renderer.get("viewCountText") or {}).get("simpleText"))
+        or " ".join(str(part.get("text") or "") for part in ((renderer.get("viewCountText") or {}).get("runs") or []))
+    ).strip()
+    return FeedEntry(
+        source_id=source["id"],
+        source_name=source["name"],
+        title=title,
+        link=f"https://www.youtube.com/watch?v={video_id}",
+        published=normalize_youtube_published(published_text) or now_text(),
+        summary=clean_line(" ".join(part for part in (published_text, view_text) if part)),
+    )
 
 
 def extract_youtube_entries_from_initial_data(page, source: dict, limit: int = 12) -> list[FeedEntry]:
@@ -71,21 +129,68 @@ def extract_youtube_entries_from_initial_data(page, source: dict, limit: int = 1
     entries: list[FeedEntry] = []
     seen_links: set[str] = set()
     for renderer in _walk_renderer_items(payload):
-        video_id = str(renderer.get("videoId") or "").strip()
-        title_runs = ((renderer.get("title") or {}).get("runs") or [])
-        title = clean_line(" ".join(str(part.get("text") or "") for part in title_runs))
-        if not video_id or not title:
+        entry = _entry_from_renderer(source, renderer)
+        if not entry or entry.link in seen_links:
+            continue
+        seen_links.add(entry.link)
+        entries.append(entry)
+        if len(entries) >= limit:
+            break
+    return entries
+
+
+def extract_youtube_entries_from_lockups(page, source: dict, limit: int = 12) -> list[FeedEntry]:
+    rows = page.locator("ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer").evaluate_all(
+        """(els, limit) => {
+          const items = [];
+          for (const el of els) {
+            if (items.length >= limit) break;
+            const root = el.querySelector('.ytLockupViewModelHost') || el;
+            const imageLink = root.querySelector('a.ytLockupViewModelContentImage[href*="/watch"]');
+            const href = imageLink?.getAttribute('href') || '';
+            const classes = root.className || '';
+            const contentIdMatch = classes.match(/content-id-([A-Za-z0-9_-]+)/);
+            const rawText = (el.innerText || '').trim();
+            const lines = rawText.split('\\n').map(x => x.trim()).filter(Boolean);
+            items.push({
+              href,
+              contentId: contentIdMatch ? contentIdMatch[1] : '',
+              lines,
+              text: rawText,
+            });
+          }
+          return items;
+        }""",
+        limit,
+    )
+
+    entries: list[FeedEntry] = []
+    seen_links: set[str] = set()
+    for item in rows:
+        href = str(item.get("href") or "").strip()
+        video_id = extract_video_id_from_url(href) or str(item.get("contentId") or "").strip()
+        if not video_id:
             continue
         link = f"https://www.youtube.com/watch?v={video_id}"
         if link in seen_links:
             continue
-        seen_links.add(link)
+
+        lines = [clean_line(line) for line in (item.get("lines") or []) if clean_line(line)]
+        if len(lines) < 3:
+            continue
+
+        title = lines[1]
         published = ""
-        published_text = (((renderer.get("publishedTimeText") or {}).get("simpleText")) or "").strip()
-        if published_text:
-            published = normalize_youtube_published(published_text)
-        view_text = (((renderer.get("viewCountText") or {}).get("simpleText")) or "").strip()
-        summary = clean_line(" ".join(part for part in (published_text, view_text) if part))
+        summary_parts: list[str] = []
+        for line in lines[2:]:
+            normalized = normalize_youtube_published(line)
+            if normalized and not published:
+                published = normalized
+            summary_parts.append(line)
+        if not title:
+            continue
+
+        seen_links.add(link)
         entries.append(
             FeedEntry(
                 source_id=source["id"],
@@ -93,7 +198,7 @@ def extract_youtube_entries_from_initial_data(page, source: dict, limit: int = 1
                 title=title,
                 link=link,
                 published=published or now_text(),
-                summary=summary,
+                summary=clean_line(" ".join(summary_parts[:4])),
             )
         )
         if len(entries) >= limit:
@@ -102,102 +207,23 @@ def extract_youtube_entries_from_initial_data(page, source: dict, limit: int = 1
 
 
 def extract_youtube_entries(page, source: dict, limit: int = 12) -> list[FeedEntry]:
-    entries = extract_youtube_entries_from_initial_data(page, source, limit=limit)
-    if entries:
-        return entries
-
-    items = page.locator('a#video-title-link, a#video-title').evaluate_all(
-        """(els, limit) => {
-          const seen = new Set();
-          const rows = [];
-          for (const el of els) {
-            if (rows.length >= limit) break;
-            const href = el.href || '';
-            if (!href || !href.includes('/watch')) continue;
-            const title = (el.getAttribute('title') || el.textContent || '').trim();
-            if (!title || seen.has(href)) continue;
-            seen.add(href);
-            const card = el.closest('ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer');
-            const metaText = card ? (card.innerText || card.textContent || '') : '';
-            rows.push({ href, title, metaText });
-          }
-          return rows;
-        }""",
-        limit,
-    )
-
-    entries = []
-    for item in items:
-        meta_lines = [clean_line(line) for line in str(item.get("metaText") or "").splitlines()]
-        meta_lines = [line for line in meta_lines if line]
-        published = ""
-        for line in meta_lines:
-            if "ago" in line.lower():
-                published = normalize_youtube_published(line)
-                if published:
-                    break
-        summary = " ".join(meta_lines[:6]).strip()
-        entries.append(
-            FeedEntry(
-                source_id=source["id"],
-                source_name=source["name"],
-                title=clean_line(str(item.get("title") or "")),
-                link=str(item.get("href") or "").strip(),
-                published=published or now_text(),
-                summary=summary,
-            )
-        )
-        if len(entries) >= limit:
-            break
-    if entries:
-        return entries
-
-    body_text = page.locator("body").inner_text()
-    lines = [clean_line(line) for line in body_text.splitlines()]
-    lines = [line for line in lines if line]
-    text_entries: list[FeedEntry] = []
-    for index, line in enumerate(lines):
-        if not re.fullmatch(r"\d{1,2}:\d{2}", line):
-            continue
-        if index + 2 >= len(lines):
-            continue
-        title = clean_line(lines[index + 1])
-        views = clean_line(lines[index + 2])
-        published_text = clean_line(lines[index + 3]).lstrip("•").strip() if index + 3 < len(lines) else ""
-        if not title or "views" not in views.lower():
-            continue
-        normalized_published = normalize_youtube_published(published_text)
-        text_entries.append(
-            FeedEntry(
-                source_id=source["id"],
-                source_name=source["name"],
-                title=title,
-                link=target_youtube_channel_link(source),
-                published=normalized_published or now_text(),
-                summary=clean_line(f"{line} {views} {published_text}".strip()),
-            )
-        )
-        if len(text_entries) >= limit:
-            break
-    return text_entries
-
-
-def target_youtube_channel_link(source: dict) -> str:
-    target = resolve_web_target(source)
-    if not target:
-        return str(source.get("site_url") or source.get("feed_url") or "").strip()
-    return target.page_url
+    for extractor in (extract_youtube_entries_from_initial_data, extract_youtube_entries_from_lockups):
+        entries = extractor(page, source, limit=limit)
+        if entries:
+            return entries
+    return []
 
 
 def fetch_youtube_with_page(page, source: dict, timeout_ms: int = 60000, limit: int = 12) -> FeedFetchResult:
+    limit = max(1, min(limit, 12))
     target = resolve_web_target(source)
     if not target or target.site != "youtube":
         return result_error(source, "暂不支持的 YouTube 网页源")
     try:
         page.goto(target.page_url, wait_until="domcontentloaded", timeout=timeout_ms)
-        page.wait_for_timeout(4000)
+        page.wait_for_timeout(5000)
         try:
-            page.locator("ytd-rich-grid-renderer, ytd-grid-renderer, ytd-section-list-renderer").first.wait_for(timeout=12000)
+            page.locator("ytd-rich-grid-renderer, ytd-section-list-renderer, ytd-rich-item-renderer").first.wait_for(timeout=15000)
         except Exception:
             pass
         entries = extract_youtube_entries(page, source, limit=limit)

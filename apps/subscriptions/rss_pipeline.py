@@ -63,10 +63,10 @@ def fetch_enabled() -> int:
 
 
 def init_sources() -> int:
-    example_path = BASE_DIR / "config" / "rss_sources.example.json"
+    example_path = BASE_DIR / "config" / "subscription_sources.example.json"
     sources = json.loads(example_path.read_text(encoding="utf-8")).get("sources", [])
     save_sources(sources)
-    _safe_print("已初始化 rss_sources.json")
+    _safe_print("已初始化 subscription_sources.json")
     return 0
 
 

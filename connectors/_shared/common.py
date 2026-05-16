@@ -17,6 +17,24 @@ X_LOGIN_HINT = "请先在本机 Chrome 的 Profile 2 中登录 x.com，并确认
 DOUYIN_LOGIN_HINT = "请先执行现有抖音登录流程，当前抖音订阅与抖音收藏共用同一份登录态。"
 
 
+TRANSIENT_FETCH_ERROR_KEYWORDS = (
+    "connection reset",
+    "connectionreseterror",
+    "connection aborted",
+    "connection closed",
+    "err_connection_closed",
+    "unexpected eof",
+    "eof occurred in violation of protocol",
+    "ssl eof",
+    "remote end closed connection",
+    "temporarily unavailable",
+    "net::err_",
+    "timed out",
+    "timeout",
+    "10054",
+)
+
+
 @dataclass
 class WebSourceTarget:
     site: str
@@ -215,6 +233,13 @@ def result_error(source: dict, error: str) -> FeedFetchResult:
         entries=[],
         error=error,
     )
+
+
+def is_transient_fetch_error(message: str) -> bool:
+    text = clean_line(message).lower()
+    if not text:
+        return False
+    return any(keyword in text for keyword in TRANSIENT_FETCH_ERROR_KEYWORDS)
 
 
 def launch_weibo_context(playwright, headless: bool):

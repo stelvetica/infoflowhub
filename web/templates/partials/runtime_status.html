@@ -4,7 +4,7 @@
     <div class="metric-chip"><span class="label">运行状态</span><strong>{% if status.fetch_state == 'running' %}运行中{% elif status.fetch_state == 'error' %}最近一次失败{% elif status.fetch_state == 'success' %}最近一次完成{% else %}空闲{% endif %}</strong></div>
     <div class="metric-chip"><span class="label">本次开始</span><strong>{{ status.current_run_started_at[5:16] if status.current_run_started_at else '-' }}</strong></div>
     <div class="metric-chip"><span class="label">最近完成</span><strong>{{ status.last_run_at[5:16] if status.last_run_at else '-' }}</strong></div>
-    <div class="metric-chip"><span class="label">成功源数</span><strong>{{ status.last_success_sources }}/{{ status.last_total_sources }}</strong></div>
+    <div class="metric-chip"><span class="label">成功源数</span><strong>{{ status['success_sources_text'] }}</strong></div>
     <div class="metric-chip"><span class="label">新增条目</span><strong>{{ status.last_inserted_entries }}</strong></div>
   </div>
 </div>

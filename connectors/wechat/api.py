@@ -1,16 +1,34 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.parse
 import urllib.request
 
+from connectors._shared.common import is_transient_fetch_error
 from connectors.wechat.auth import extract_wechat_fakeid, load_wechat_credentials
 
 
 WECHAT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
 WECHAT_ARTICLE_LIST_URL = "https://mp.weixin.qq.com/cgi-bin/appmsgpublish"
 WECHAT_SEARCH_BIZ_URL = "https://mp.weixin.qq.com/cgi-bin/searchbiz"
+WECHAT_RETRY_DELAYS = (0.0, 1.5)
+
+
+def _open_json_with_retry(request: urllib.request.Request, timeout: int = 30) -> dict:
+    last_error: Exception | None = None
+    for attempt, delay in enumerate(WECHAT_RETRY_DELAYS, start=1):
+        if delay:
+            time.sleep(delay)
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8", errors="ignore"))
+        except Exception as exc:
+            last_error = exc
+            if attempt >= len(WECHAT_RETRY_DELAYS) or not is_transient_fetch_error(str(exc)):
+                raise
+    raise last_error or RuntimeError("wechat request failed")
 
 
 def fetch_wechat_articles(source: dict, begin: int = 0, count: int = 10, keyword: str = "") -> dict:
@@ -19,7 +37,11 @@ def fetch_wechat_articles(source: dict, begin: int = 0, count: int = 10, keyword
     cookie = str(credentials.get("cookie") or "").strip()
     fakeid = extract_wechat_fakeid(source)
     if not fakeid:
-        raise ValueError("微信公众号 source 缺少 fakeid，请使用 wechat://mp/<fakeid> 形式的 feed_url。")
+        article_url = extract_wechat_article_url(source)
+        if article_url:
+            fakeid = resolve_fakeid_from_article(article_url)
+    if not fakeid:
+        raise ValueError("微信公众号 source 缺少 fakeid，且未能从文章链接自动解析。")
     if not token or not cookie:
         raise ValueError("缺少微信公众号登录凭证。")
 
@@ -48,9 +70,7 @@ def fetch_wechat_articles(source: dict, begin: int = 0, count: int = 10, keyword
             "Accept": "application/json, text/plain, */*",
         },
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        payload = json.loads(response.read().decode("utf-8", errors="ignore"))
-    return payload
+    return _open_json_with_retry(request, timeout=30)
 
 
 def search_wechat_accounts(query: str, count: int = 5) -> dict:
@@ -82,9 +102,7 @@ def search_wechat_accounts(query: str, count: int = 5) -> dict:
             "Accept": "application/json, text/plain, */*",
         },
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        payload = json.loads(response.read().decode("utf-8", errors="ignore"))
-    return payload
+    return _open_json_with_retry(request, timeout=30)
 
 
 def parse_wechat_search_list(payload: dict) -> tuple[list[dict], str]:
@@ -155,3 +173,44 @@ def parse_wechat_publish_list(payload: dict) -> tuple[list[dict], str]:
                 }
             )
     return articles, ""
+
+
+def extract_wechat_article_url(source: dict) -> str:
+    feed_url = str(source.get("feed_url") or "").strip()
+    site_url = str(source.get("site_url") or "").strip()
+    for value in (feed_url, site_url):
+        if value.startswith("wechat://article?url="):
+            encoded = value.split("wechat://article?url=", 1)[1]
+            return urllib.parse.unquote(encoded)
+        if value.startswith("https://mp.weixin.qq.com/s/"):
+            return value
+    return ""
+
+
+def parse_wechat_article_meta(article_url: str) -> dict[str, str]:
+    request = urllib.request.Request(article_url, headers={"User-Agent": WECHAT_USER_AGENT})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        html = response.read().decode("utf-8", errors="ignore")
+    nickname_match = re.search(r'var\s+nickname\s*=\s*htmlDecode\("([^"]+)"\)', html)
+    user_name_match = re.search(r'var\s+user_name\s*=\s*"([^"]+)"', html)
+    title_match = re.search(r"<title>([^<]+)</title>", html, flags=re.IGNORECASE)
+    return {
+        "nickname": str(nickname_match.group(1) if nickname_match else "").strip(),
+        "user_name": str(user_name_match.group(1) if user_name_match else "").strip(),
+        "title": str(title_match.group(1) if title_match else "").strip(),
+    }
+
+
+def resolve_fakeid_from_article(article_url: str) -> str:
+    article_meta = parse_wechat_article_meta(article_url)
+    nickname = article_meta.get("nickname", "")
+    if not nickname:
+        return ""
+    payload = search_wechat_accounts(nickname, count=10)
+    items, err = parse_wechat_search_list(payload)
+    if err:
+        return ""
+    for item in items:
+        if item.get("nickname") == nickname:
+            return str(item.get("fakeid") or "").strip()
+    return str(items[0].get("fakeid") or "").strip() if items else ""

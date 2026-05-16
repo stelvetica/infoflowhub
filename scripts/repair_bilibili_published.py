@@ -39,7 +39,7 @@ def main() -> int:
                 source_uid_map[source_id] = uid
 
         # 从配置名无法反推 uid，改为从配置表读取站点 URL
-        config_path = BASE_DIR / "config" / "rss_sources.json"
+        config_path = BASE_DIR / "config" / "subscription_sources.json"
         if config_path.exists():
             import json
             import re

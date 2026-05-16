@@ -24,8 +24,7 @@ CREATE TABLE IF NOT EXISTS rss_entries (
   published TEXT NOT NULL DEFAULT '',
   published_at TEXT NOT NULL DEFAULT '',
   summary TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(source_id, link)
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 """
 
@@ -43,6 +42,30 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     if "published_at" not in columns:
         conn.execute("ALTER TABLE rss_entries ADD COLUMN published_at TEXT NOT NULL DEFAULT ''")
         conn.commit()
+        columns.add("published_at")
+    required_columns = {"source_id", "source_name", "title", "link", "published", "published_at", "summary", "created_at"}
+    if not required_columns.issubset(columns):
+        return
+    conn.execute(
+        """
+        DELETE FROM rss_entries
+        WHERE id IN (
+            SELECT older.id
+            FROM rss_entries AS older
+            JOIN rss_entries AS newer
+              ON older.link = newer.link
+             AND (
+                  COALESCE(NULLIF(older.published_at, ''), NULLIF(older.published, ''), older.created_at)
+                    < COALESCE(NULLIF(newer.published_at, ''), NULLIF(newer.published, ''), newer.created_at)
+                  OR (
+                    COALESCE(NULLIF(older.published_at, ''), NULLIF(older.published, ''), older.created_at)
+                      = COALESCE(NULLIF(newer.published_at, ''), NULLIF(newer.published, ''), newer.created_at)
+                    AND older.id < newer.id
+                  )
+             )
+        )
+        """
+    )
     conn.execute(
         """
         UPDATE rss_entries
@@ -55,6 +78,14 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_rss_entries_published_at
         ON rss_entries(published_at DESC, id DESC)
+        """
+    )
+    conn.execute("DROP INDEX IF EXISTS idx_rss_entries_source_link_unique")
+    conn.execute("DROP INDEX IF EXISTS idx_rss_entries_link_unique")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_rss_entries_link_unique
+        ON rss_entries(link)
         """
     )
     conn.commit()
@@ -106,7 +137,8 @@ def save_entries(entries: Iterable[FeedEntry]) -> int:
                 INSERT INTO rss_entries
                 (source_id, source_name, title, link, published, published_at, summary)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(source_id, link) DO UPDATE SET
+                ON CONFLICT(link) DO UPDATE SET
+                  source_id=excluded.source_id,
                   source_name=excluded.source_name,
                   title=CASE WHEN excluded.title != '' THEN excluded.title ELSE rss_entries.title END,
                   published=CASE WHEN excluded.published != '' THEN excluded.published ELSE rss_entries.published END,
