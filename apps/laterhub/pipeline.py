@@ -32,7 +32,15 @@ def parse_tags_text(tags: str | None) -> list[str]:
     text = (tags or "").strip()
     if not text:
         return [DEFAULT_TAG]
-    normalized = re.sub(r"[??]+", ",", text.replace("/ ", "/"))
+    normalized = (
+        text.replace("/ ", "/")
+        .replace("：", ",")
+        .replace(":", ",")
+        .replace("?", ",")
+        .replace(";", ",")
+        .replace("|", ",")
+    )
+    normalized = re.sub(r"[??]+", ",", normalized)
     parts = [part.strip() for part in normalized.split(",") if part.strip()]
     deduped: list[str] = []
     for part in parts:

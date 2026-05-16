@@ -531,13 +531,15 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
     page = max(int(query.get("laterhub_page", "1") or "1"), 1)
     all_rows: list[dict[str, Any]] = []
     for item in _load_laterhub_items():
-        tags_text = str(item.get("tags") or "")
-        tag_list = split_tags(tags_text)
+        raw_tags_text = str(item.get("tags") or "")
+        tag_list = split_tags(raw_tags_text)
+        tags_text = join_tags(tag_list)
         all_rows.append(
             {
                 **item,
                 "display_time": format_date(item.get("created_at", "")),
                 "sort_time": to_sortable_time(item.get("created_at", "")),
+                "raw_tags_text": raw_tags_text,
                 "tags_text": tags_text,
                 "tag_list": tag_list,
                 "tag_keys": {normalize_text(tag) for tag in tag_list},
