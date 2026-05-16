@@ -64,11 +64,10 @@
           <div id="runtime-status-panel">
             {% include "partials/runtime_status.html" %}
           </div>
+          <div id="sources-panel">
+            {% include "partials/source_table.html" %}
+          </div>
         </section>
-
-        <div id="sources-panel">
-          {% include "partials/source_table.html" %}
-        </div>
       </div>
     {% else %}
       <section class="card news-card">
