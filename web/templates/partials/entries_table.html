@@ -8,7 +8,7 @@
   'laterhub_sort': params.get('laterhub_sort', ''),
   'laterhub_dir': params.get('laterhub_dir', '')
 } %}
-<div data-entries-fragment="1" data-page="{{ entries.page }}" data-unread-only="{{ '1' if entries.unread_only else '0' }}">
+<div data-entries-fragment="1" data-page="{{ entries.page }}" data-unread-only="{{ '1' if entries.unread_only else '0' }}" data-read-keys="{{ entries.read_keys_text }}">
   <div class="table-wrap">
     <table class="entries-table">
       <colgroup>
