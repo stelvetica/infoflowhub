@@ -95,6 +95,9 @@ button, input, select, textarea { font: inherit; }
 .panel-title { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; }
 .panel-title h3 { margin: 0; }
 .panel-title-inline { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.panel-title-settings-nowrap,
+.panel-title-settings-nowrap .panel-title-inline { flex-wrap: nowrap; align-items: center; }
+.panel-title-settings-nowrap h3 { white-space: nowrap; }
 .panel-heading-nowrap { white-space: nowrap; }
 .table-wrap { overflow: auto; overflow-x: auto; scrollbar-gutter: stable both-edges; }
 table { width: 100%; border-collapse: collapse; table-layout: fixed; }
