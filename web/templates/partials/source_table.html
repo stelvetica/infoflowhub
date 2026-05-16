@@ -18,6 +18,7 @@
       <colgroup>
         <col class="col-index">
         <col class="col-name">
+        <col class="col-enabled">
         <col class="col-channel">
         <col class="col-provider">
         <col class="col-login">
@@ -31,6 +32,7 @@
         <tr>
           <th>序号</th>
           <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=name&dir={{ 'asc' if settings.sort != 'name' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=name&dir={{ 'asc' if settings.sort != 'name' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">名称</a></th>
+          <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=enabled_sort&dir={{ 'asc' if settings.sort != 'enabled_sort' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=enabled_sort&dir={{ 'asc' if settings.sort != 'enabled_sort' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">生效</a></th>
           <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=channel_label&dir={{ 'asc' if settings.sort != 'channel_label' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=channel_label&dir={{ 'asc' if settings.sort != 'channel_label' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">渠道</a></th>
           <th><a class="sort" href="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=provider_label&dir={{ 'asc' if settings.sort != 'provider_label' or settings.dir == 'desc' else 'desc' }}" hx-get="/fragments/sources?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort=provider_label&dir={{ 'asc' if settings.sort != 'provider_label' or settings.dir == 'desc' else 'desc' }}" hx-target="#sources-panel" hx-swap="innerHTML">来源类型</a></th>
           <th>依赖认证资产</th>
@@ -46,6 +48,12 @@
         <tr>
           <td class="cell-tight">{{ loop.index }}</td>
           <td title="{{ item.name }}"><span class="cell-ellipsis">{{ item.name }}</span></td>
+          <td class="cell-tight">
+            <form hx-post="/actions/source/{{ item.id }}/toggle-enabled?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort={{ settings.sort }}&dir={{ settings.dir }}" hx-target="#sources-panel" hx-swap="innerHTML">
+              <input type="hidden" name="enabled" value="{{ 0 if item.enabled else 1 }}">
+              <button class="btn {% if item.enabled %}warn{% else %}success{% endif %}" type="submit">{{ '停用' if item.enabled else '启用' }}</button>
+            </form>
+          </td>
           <td title="{{ item.channel_label }}"><span class="cell-ellipsis">{{ item.channel_label }}</span></td>
           <td title="{{ item.provider_label }}"><span class="cell-ellipsis">{{ item.provider_label }}</span></td>
           <td class="cell-login-requirement" title="{{ item.login_hint or '' }}">
@@ -62,10 +70,6 @@
           <td class="cell-tight">{{ item.invalid_days or '-' }}</td>
           <td class="cell-actions">
             <div class="source-actions">
-              <form hx-post="/actions/source/{{ item.id }}/toggle-enabled?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort={{ settings.sort }}&dir={{ settings.dir }}" hx-target="#sources-panel" hx-swap="innerHTML">
-                <input type="hidden" name="enabled" value="{{ 0 if item.enabled else 1 }}">
-                <button class="btn {% if item.enabled %}warn{% else %}success{% endif %}" type="submit">{{ '停用' if item.enabled else '启用' }}</button>
-              </form>
               <button class="btn ghost" type="button" hx-get="/fragments/source-form?source_id={{ item.id }}&source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort={{ settings.sort }}&dir={{ settings.dir }}" hx-target="#modal-root" hx-swap="innerHTML">编辑</button>
               <form hx-post="/actions/source/{{ item.id }}/delete?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort={{ settings.sort }}&dir={{ settings.dir }}" hx-target="#sources-panel" hx-swap="innerHTML">
                 <button class="btn ghost" type="submit">删除</button>

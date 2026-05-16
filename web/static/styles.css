@@ -109,14 +109,15 @@ th { font-size: 12px; color: var(--muted); white-space: nowrap; background: rgba
 .sources-table .col-index { width: 4%; }
 .sources-table { width: 100%; min-width: 0; }
 .sources-table .col-name { width: 13%; }
-.sources-table .col-channel { width: 9%; }
-.sources-table .col-provider { width: 10%; }
-.sources-table .col-login { width: 13%; }
+.sources-table .col-enabled { width: 6%; }
+.sources-table .col-channel { width: 8%; }
+.sources-table .col-provider { width: 9%; }
+.sources-table .col-login { width: 12%; }
 .sources-table .col-count { width: 6%; }
-.sources-table .col-error { width: 15%; }
+.sources-table .col-error { width: 14%; }
 .sources-table .col-success { width: 8%; }
 .sources-table .col-invalid { width: 7%; }
-.sources-table .col-action { width: 15%; }
+.sources-table .col-action { width: 13%; }
 .laterhub-table .col-time { width: 82px; }
 .laterhub-table .col-title { width: auto; }
 .laterhub-table .col-action { width: 68px; }
