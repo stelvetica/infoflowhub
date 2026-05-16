@@ -4,6 +4,7 @@
   const unreadFilter = {
     unreadOnly: true,
     button: null,
+    lastSyncSignature: "",
   };
   const wechatLogin = {
     timer: null,
@@ -232,6 +233,17 @@
       slot.appendChild(button);
     }
     renderUnreadToggle();
+    const currentReadKeys = getReadKeys().join(",");
+    if (!meta) return;
+    const currentPage = meta.dataset.page || "1";
+    const renderedSignature = `${currentPage}|${meta.dataset.unreadOnly || "0"}|${meta.dataset.readKeys || ""}`;
+    const targetSignature = `${currentPage}|${unreadFilter.unreadOnly ? "1" : "0"}|${currentReadKeys}`;
+    if (renderedSignature !== targetSignature && unreadFilter.lastSyncSignature !== targetSignature) {
+      unreadFilter.lastSyncSignature = targetSignature;
+      refreshEntriesPanel({ entries_page: currentPage });
+      return;
+    }
+    unreadFilter.lastSyncSignature = targetSignature;
   }
 
   function clearModal() {
