@@ -161,6 +161,11 @@
     let changed = false;
     document.querySelectorAll(".read-track").forEach((anchor) => {
       const href = anchor.getAttribute("href") || "";
+      if (!href || !/^https?:\/\//i.test(href)) {
+        anchor.classList.remove("cell-strong");
+        anchor.classList.add("cell-read");
+        return;
+      }
       const row = anchor.closest("tr");
       const timeText = row?.querySelector(".cell-time")?.textContent?.trim() || "";
       if (timeText && timeText < "2026/05/01" && !readLinks[href]) {

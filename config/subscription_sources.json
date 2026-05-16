@@ -100,7 +100,7 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "???? x_profile2 ?????",
+      "note": "依赖 x_profile2 登录态",
       "channel": "x",
       "fallback_mode": "none",
       "auth_key": "x_profile2"

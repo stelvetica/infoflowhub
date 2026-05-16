@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+from infra.utf8_json import dump_json_utf8, load_json_utf8
+
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 CONFIG_DIR = BASE_DIR / "config"
@@ -48,16 +50,13 @@ def _validate_sources_payload(data: Any) -> List[Dict[str, Any]]:
 
 
 def load_sources() -> List[Dict[str, Any]]:
-    data = json.loads(SOURCES_PATH.read_text(encoding="utf-8"))
+    data = load_json_utf8(SOURCES_PATH)
     return _validate_sources_payload(data)
 
 
 def save_sources(sources: List[Dict[str, Any]]) -> None:
     normalized = _validate_sources_payload({"sources": sources})
-    SOURCES_PATH.write_text(
-        json.dumps({"sources": normalized}, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    dump_json_utf8(SOURCES_PATH, {"sources": normalized})
 
 
 def load_settings() -> Dict[str, Any]:
@@ -69,4 +68,4 @@ def load_settings() -> Dict[str, Any]:
                 "prefer_self_hosted": False,
             }
         }
-    return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+    return load_json_utf8(SETTINGS_PATH)

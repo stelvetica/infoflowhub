@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from functools import cmp_to_key
 from pathlib import Path
@@ -19,6 +20,7 @@ from apps.subscriptions.rss_db import (
 from connectors._shared.common import parse_published_datetime, resolve_web_target
 from connectors.auth import list_auth_statuses
 from connectors.wechat.auth import get_wechat_auth_status
+from infra.utf8_json import dump_json_utf8, load_json_utf8
 from web.services.utils import (
     build_source_id,
     compare_value,
@@ -43,18 +45,28 @@ DELETED_SITE_URLS = {"https://www.huxiu.com/member/2321131.html"}
 ENTRIES_PAGE_SIZE = 20
 LATERHUB_PAGE_SIZE = 10
 ENTRIES_READ_CUTOFF = datetime(2026, 5, 1).timestamp()
+ABSOLUTE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 
 
 def read_json(path: Path, fallback: Any) -> Any:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return load_json_utf8(path)
     except Exception:
         return fallback
 
 
 def write_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    dump_json_utf8(path, value)
+
+
+def normalize_entry_link(link: str, fallback: str = "") -> str:
+    primary = str(link or "").strip()
+    if ABSOLUTE_URL_RE.match(primary):
+        return primary
+    backup = str(fallback or "").strip()
+    if ABSOLUTE_URL_RE.match(backup):
+        return backup
+    return ""
 
 
 def load_status() -> dict[str, Any]:
@@ -440,6 +452,7 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
     current_sources = normalize_sources()
     enabled_ids = {item["id"] for item in current_sources if item.get("enabled")}
     current_name_map = {item["id"]: str(item.get("name") or "").strip() for item in current_sources}
+    current_site_map = {item["id"]: str(item.get("site_url") or "").strip() for item in current_sources}
     keyword = normalize_text(query.get("entries_q", ""))
     unread_only = query.get("entries_unread_only", "0") == "1"
     read_keys = {item for item in split_tags(query.get("entries_read_keys", "")) if item}
@@ -456,13 +469,15 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
         display_source_name = current_name or item.get("source_name") or ""
         display_time_raw = item.get("published_at") or item.get("published") or item.get("created_at") or ""
         sort_time = to_sortable_time(display_time_raw)
-        link = str(item.get("link") or "").strip()
+        source_site_url = current_site_map.get(item["source_id"], "").strip()
+        link = normalize_entry_link(item.get("link") or "", source_site_url)
         if unread_only and (sort_time < ENTRIES_READ_CUTOFF or read_link_key(link) in read_keys):
             continue
         rows.append(
             {
                 **item,
                 "link": link,
+                "has_link": bool(link),
                 "source_name": display_source_name,
                 "display_time": format_datetime(display_time_raw),
                 "sort_time": sort_time,

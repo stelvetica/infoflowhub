@@ -6,6 +6,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from infra.utf8_json import dump_json_utf8, load_json_utf8
+
 
 BASE_DIR = Path(__file__).resolve().parents[3]
 RUNTIME_DIR = BASE_DIR / "runtime"
@@ -30,7 +32,7 @@ def get_wechat_credentials() -> dict[str, object]:
         return env_credentials
     for path in (WECHAT_AUTH_PATH, LEGACY_WECHAT_AUTH_PATH):
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload = load_json_utf8(path)
         except Exception:
             continue
         if isinstance(payload, dict):
@@ -46,9 +48,8 @@ def get_wechat_credentials() -> dict[str, object]:
 
 def save_wechat_credentials(credentials: dict[str, object]) -> None:
     AUTH_DIR.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(credentials, ensure_ascii=False, indent=2) + "\n"
-    WECHAT_AUTH_PATH.write_text(payload, encoding="utf-8")
-    LEGACY_WECHAT_AUTH_PATH.write_text(payload, encoding="utf-8")
+    dump_json_utf8(WECHAT_AUTH_PATH, credentials)
+    dump_json_utf8(LEGACY_WECHAT_AUTH_PATH, credentials)
 
 
 def validate_wechat_auth() -> dict[str, object]:

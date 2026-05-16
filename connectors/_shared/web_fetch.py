@@ -47,7 +47,7 @@ def _should_retry_web_result(result: FeedFetchResult) -> bool:
 def _fetch_web_source_once(playwright, source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
     target = resolve_web_target(source)
     if not target:
-        return result_error(source, "鏆備笉鏀寔鐨勭綉椤电洿鎶撴簮")
+        return result_error(source, "暂不支持的网页直抓源")
 
     if target.site == "bilibili":
         return fetch_bilibili_dynamic_feed(source, limit=limit, timeout_ms=timeout_ms)
@@ -93,7 +93,7 @@ def _fetch_web_source_once(playwright, source: dict, *, limit: int = 12, timeout
         finally:
             browser.close()
 
-    return result_error(source, "鏆備笉鏀寔鐨勭綉椤电洿鎶撴簮")
+    return result_error(source, "暂不支持的网页直抓源")
 
 
 def _fetch_web_source_with_retry(source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:

@@ -122,6 +122,7 @@ th { font-size: 12px; color: var(--muted); white-space: nowrap; background: rgba
 .cell-ellipsis { display: block; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .sources-table td .cell-ellipsis, .sources-table th .cell-ellipsis { display: block; }
 .cell-link { display: block; max-width: 100%; }
+.cell-link-disabled { color: var(--muted); cursor: not-allowed; text-decoration: none; }
 .cell-strong { color: var(--text); }
 .cell-read { color: #8c959f; }
 .cell-muted { color: var(--muted); }
