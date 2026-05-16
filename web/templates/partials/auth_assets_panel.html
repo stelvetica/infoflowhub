@@ -1,0 +1,37 @@
+<section class="card auth-assets-panel">
+  <div class="panel-title panel-title-compact">
+    <h3>认证资产</h3>
+  </div>
+  <div class="table-wrap">
+    <table class="auth-assets-table">
+      <thead>
+        <tr>
+          <th>认证资产</th>
+          <th>平台</th>
+          <th>模式</th>
+          <th>状态</th>
+          <th>说明</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in settings.auth_assets %}
+        <tr>
+          <td title="{{ item.auth_key }}"><strong>{{ item.display_name }}</strong><div class="subtle">{{ item.auth_key }}</div></td>
+          <td>{{ item.platform }}</td>
+          <td>{{ item.auth_mode }}</td>
+          <td><span class="auth-status-badge {{ item.status_level }}">{{ item.status_text }}</span></td>
+          <td title="{{ item.hint }}"><span class="cell-ellipsis">{{ item.description }}</span></td>
+          <td>
+            {% if item.action_url %}
+            <a class="btn ghost" href="{{ item.action_url }}">{{ item.action_label }}</a>
+            {% else %}
+            <span class="subtle" title="{{ item.hint }}">{{ item.action_label }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
