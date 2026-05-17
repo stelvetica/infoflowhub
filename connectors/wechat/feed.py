@@ -6,6 +6,7 @@ from apps.subscriptions.models import FeedEntry, FeedFetchResult
 from connectors._shared.common import result_error
 from connectors.wechat.api import fetch_wechat_articles, parse_wechat_publish_list
 from connectors.wechat.auth import validate_wechat_auth_prerequisite
+from connectors.wechat.renew import ensure_wechat_auth_fresh_for_fetch
 
 
 def _format_timestamp(value: int) -> str:
@@ -15,6 +16,7 @@ def _format_timestamp(value: int) -> str:
 
 
 def fetch_wechat_feed(source: dict, limit: int = 12) -> FeedFetchResult:
+    ensure_wechat_auth_fresh_for_fetch()
     auth_error = validate_wechat_auth_prerequisite(source)
     if auth_error:
         return result_error(source, auth_error)
