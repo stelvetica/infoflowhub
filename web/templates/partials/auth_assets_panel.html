@@ -16,15 +16,34 @@
       </thead>
       <tbody>
         {% for item in settings.auth_assets %}
-        <tr>
-          <td title="{{ item.auth_key }}"><strong>{{ item.display_name }}</strong><div class="subtle">{{ item.auth_key }}</div></td>
+        <tr class="{% if item.is_expired %}auth-row-expired{% elif item.is_expiring_soon %}auth-row-warning{% endif %}">
+          <td title="{{ item.auth_key }}">
+            <strong>{{ item.display_name }}</strong>
+            <div class="subtle">{{ item.auth_key }}</div>
+            {% if item.nickname %}
+            <div class="subtle">当前账号：{{ item.nickname }}</div>
+            {% endif %}
+          </td>
           <td>{{ item.platform }}</td>
           <td>{{ item.auth_mode }}</td>
-          <td><span class="auth-status-badge {{ item.status_level }}">{{ item.status_text }}</span></td>
-          <td title="{{ item.hint }}"><span class="cell-ellipsis">{{ item.description }}</span></td>
+          <td>
+            <span class="auth-status-badge {{ item.status_level }}">{{ item.status_text }}</span>
+            {% if item.expire_summary %}
+            <div class="subtle auth-expire-text">剩余：{{ item.expire_summary }}</div>
+            {% endif %}
+            {% if item.expire_at_text %}
+            <div class="subtle auth-expire-text">到期：{{ item.expire_at_text }}</div>
+            {% endif %}
+          </td>
+          <td title="{{ item.hint }}">
+            <div>{{ item.description }}</div>
+            {% if item.hint %}
+            <div class="subtle auth-hint-text">{{ item.hint }}</div>
+            {% endif %}
+          </td>
           <td>
             {% if item.action_url %}
-            <a class="btn ghost" href="{{ item.action_url }}">{{ item.action_label }}</a>
+            <a class="btn {% if item.is_expired %}warn{% else %}ghost{% endif %}" href="{{ item.action_url }}">{{ item.action_label }}</a>
             {% else %}
             <span class="subtle" title="{{ item.hint }}">{{ item.action_label }}</span>
             {% endif %}

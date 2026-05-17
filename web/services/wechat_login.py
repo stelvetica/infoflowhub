@@ -6,7 +6,7 @@ import uuid
 from urllib.parse import parse_qs, urlparse
 
 import httpx
-from connectors.auth.providers.wechat import save_wechat_credentials
+from connectors.auth.providers.wechat import WECHAT_AUTH_EXPIRE_WINDOW_MS, log_wechat_auth_event, save_wechat_credentials
 
 
 MP_BASE_URL = "https://mp.weixin.qq.com"
@@ -131,17 +131,19 @@ async def complete_login(cookie_header: str) -> tuple[dict, list[str]]:
     payload = response.json()
     if payload.get("base_resp", {}).get("ret") != 0:
         error = str(payload.get("base_resp", {}).get("err_msg") or "微信登录失败").strip()
+        log_wechat_auth_event(f"公众号扫码登录失败：{error}")
         raise RuntimeError(error)
 
     redirect_url = str(payload.get("redirect_url") or "").strip()
     parsed = urlparse(f"http://localhost{redirect_url}")
     token = parse_qs(parsed.query).get("token", [""])[0].strip()
     if not token:
+        log_wechat_auth_event("公众号扫码登录失败：未从登录结果中解析到 token。")
         raise RuntimeError("未从微信登录结果中解析到 token。")
 
     merged_cookie = _merge_cookie_headers(cookie_header, response)
     nickname, fakeid = await fetch_account_identity(token=token, cookie_header=merged_cookie)
-    expire_time = int((time.time() + 4 * 24 * 3600) * 1000)
+    expire_time = int(time.time() * 1000) + WECHAT_AUTH_EXPIRE_WINDOW_MS
     credentials = {
         "token": token,
         "cookie": merged_cookie,
@@ -150,6 +152,7 @@ async def complete_login(cookie_header: str) -> tuple[dict, list[str]]:
         "expire_time": expire_time,
     }
     save_wechat_credentials(credentials)
+    log_wechat_auth_event(f"公众号登录成功，账号={nickname or '公众号'}，expire_time={expire_time}。")
     return credentials, _filter_set_cookie_headers(response, is_https=False)
 
 

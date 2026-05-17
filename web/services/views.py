@@ -601,6 +601,18 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     wechat_login_url = f"/wechat-login?next={quote('/?view=settings', safe='')}"
     auth_assets = []
     for descriptor in list_auth_statuses():
+        expire_summary = ""
+        expire_at_text = ""
+        hint = descriptor.hint
+        if descriptor.auth_key == "wechat_mp_main":
+            expire_summary = str(wechat_auth.get("remaining_text") or "")
+            expire_at_text = str(wechat_auth.get("expire_time_text") or "")
+            if wechat_auth.get("is_expired"):
+                hint = "本地认证文件中的公众号登录态已过期，请点击续期/登录重新扫码。"
+            elif wechat_auth.get("is_expiring_soon"):
+                hint = f"距离过期还剩 {expire_summary}，建议现在续期。"
+            elif expire_at_text:
+                hint = f"当前登录态可用，预计到期时间 {expire_at_text}。"
         row = {
             "auth_key": descriptor.auth_key,
             "display_name": descriptor.display_name,
@@ -611,9 +623,14 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             "description": descriptor.description,
             "status_text": descriptor.status_text,
             "status_level": descriptor.status_level,
-            "hint": descriptor.hint,
+            "hint": hint,
             "action_url": wechat_login_url if descriptor.auth_key == "wechat_mp_main" else "",
             "action_label": "续期/登录" if descriptor.auth_key == "wechat_mp_main" else "查看说明",
+            "expire_summary": expire_summary,
+            "expire_at_text": expire_at_text,
+            "is_expired": bool(wechat_auth.get("is_expired")) if descriptor.auth_key == "wechat_mp_main" else False,
+            "is_expiring_soon": bool(wechat_auth.get("is_expiring_soon")) if descriptor.auth_key == "wechat_mp_main" else False,
+            "nickname": str(wechat_auth.get("nickname") or "") if descriptor.auth_key == "wechat_mp_main" else "",
         }
         auth_assets.append(row)
 
