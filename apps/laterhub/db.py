@@ -190,6 +190,20 @@ class DBManager:
     def mark_tag_skipped(self, url: str, tags: str, reason: str) -> None:
         self.update_tags(url, tags, tag_status="skipped", tag_error_message=reason)
 
+    def mark_pending_retry(self, url: str, error_message: str) -> None:
+        now = self._now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE links
+                SET status = 'pending',
+                    updated_at = ?,
+                    error_message = ?
+                WHERE url = ?
+                """,
+                (now, error_message, url),
+            )
+
     def mark_pushed(self, url: str, feishu_record_id: str | None = None) -> None:
         now = self._now_iso()
         with self._connect() as conn:

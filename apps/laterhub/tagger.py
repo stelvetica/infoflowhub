@@ -290,27 +290,41 @@ class TaggerServiceUnavailable(RuntimeError):
     pass
 
 
+class TaggerTemporaryError(RuntimeError):
+    pass
+
+
+class TaggerPermanentError(RuntimeError):
+    pass
+
+
 class ContentTagger:
     def __init__(self, config: LLMConfig, backup_config: LLMConfig | None = None, timeout: int = 45) -> None:
         self.config = config
         self.backup_config = backup_config
         self.timeout = timeout
-        self._disabled_reason: str | None = None
 
     def tag(self, *, title: str, source: str) -> str:
-        if self._disabled_reason:
-            raise TaggerServiceUnavailable(self._disabled_reason)
-        try:
-            return self._tag_with_config(self.config, title=title, source=source)
-        except Exception as exc:
-            if not self.backup_config:
-                self._remember_service_failure(exc)
-                raise
-        try:
-            return self._tag_with_config(self.backup_config, title=title, source=source)
-        except Exception as exc:
-            self._remember_service_failure(exc)
-            raise
+        attempts: list[tuple[str, LLMConfig]] = [("primary", self.config)]
+        if self.backup_config:
+            attempts.append(("backup", self.backup_config))
+        transient_errors: list[str] = []
+        permanent_errors: list[str] = []
+        for label, config in attempts:
+            try:
+                return self._tag_with_config(config, title=title, source=source)
+            except Exception as exc:
+                formatted = self._format_provider_error(label, exc)
+                if self._is_service_failure(exc):
+                    transient_errors.append(formatted)
+                    continue
+                permanent_errors.append(formatted)
+                break
+        if permanent_errors:
+            raise TaggerPermanentError("; ".join(permanent_errors))
+        if transient_errors:
+            raise TaggerTemporaryError("; ".join(transient_errors))
+        raise TaggerServiceUnavailable("LLM 标签服务未返回可用结果")
 
     def _tag_with_config(self, config: LLMConfig, *, title: str, source: str) -> str:
         payload = {
@@ -366,11 +380,6 @@ class ContentTagger:
             raise RuntimeError(f"标签解析失败: {content}")
         return ",".join(cleaned[:2])
 
-    def _remember_service_failure(self, exc: Exception) -> None:
-        if not self._is_service_failure(exc):
-            return
-        self._disabled_reason = f"LLM 标签服务暂不可用: {exc}"
-
     @staticmethod
     def _is_service_failure(exc: Exception) -> bool:
         if isinstance(exc, requests.RequestException):
@@ -380,6 +389,17 @@ class ContentTagger:
             if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
                 return True
         return False
+
+    @staticmethod
+    def _format_provider_error(label: str, exc: Exception) -> str:
+        if isinstance(exc, requests.RequestException):
+            response = getattr(exc, "response", None)
+            if isinstance(response, Response):
+                body = response.text.strip()
+                if body:
+                    return f"{label}: HTTP {response.status_code} {body[:200]}"
+                return f"{label}: HTTP {response.status_code}"
+        return f"{label}: {exc}"
 
     @staticmethod
     def _parse_json_array(text: str) -> list[Any]:
