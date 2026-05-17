@@ -6,8 +6,7 @@ from datetime import datetime
 from functools import cmp_to_key
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from apps.subscriptions.config import load_settings, load_sources, save_sources
 from apps.subscriptions.rss_db import (
@@ -29,8 +28,8 @@ from web.services.utils import (
     format_datetime,
     join_tags,
     normalize_text,
-    read_link_key,
     provider_label,
+    read_link_key,
     source_channel_label,
     split_tags,
     to_sortable_time,
@@ -449,8 +448,6 @@ def mark_laterhub_finished(link_id: int, finished: bool) -> None:
         return
     conn = _laterhub_conn()
     try:
-        from datetime import datetime
-
         now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
             """
@@ -599,11 +596,16 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     direction = query.get("dir", "asc")
     wechat_auth = get_wechat_auth_status()
     wechat_login_url = f"/wechat-login?next={quote('/?view=settings', safe='')}"
+    wechat_renew_url = "/actions/wechat-login/renew?view=settings"
     auth_assets = []
     for descriptor in list_auth_statuses():
         expire_summary = ""
         expire_at_text = ""
         hint = descriptor.hint
+        action_url = wechat_login_url if descriptor.auth_key == "wechat_mp_main" else ""
+        action_label = "续期/登录" if descriptor.auth_key == "wechat_mp_main" else "查看说明"
+        renew_action_url = ""
+        renew_action_label = ""
         if descriptor.auth_key == "wechat_mp_main":
             expire_summary = str(wechat_auth.get("remaining_text") or "")
             expire_at_text = str(wechat_auth.get("expire_time_text") or "")
@@ -611,8 +613,12 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
                 hint = "本地认证文件中的公众号登录态已过期，请点击续期/登录重新扫码。"
             elif wechat_auth.get("is_expiring_soon"):
                 hint = f"距离过期还剩 {expire_summary}，建议现在续期。"
+                renew_action_url = wechat_renew_url
+                renew_action_label = "免扫码续期"
             elif expire_at_text:
                 hint = f"当前登录态可用，预计到期时间 {expire_at_text}。"
+                renew_action_url = wechat_renew_url
+                renew_action_label = "免扫码续期"
         row = {
             "auth_key": descriptor.auth_key,
             "display_name": descriptor.display_name,
@@ -624,8 +630,10 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             "status_text": descriptor.status_text,
             "status_level": descriptor.status_level,
             "hint": hint,
-            "action_url": wechat_login_url if descriptor.auth_key == "wechat_mp_main" else "",
-            "action_label": "续期/登录" if descriptor.auth_key == "wechat_mp_main" else "查看说明",
+            "action_url": action_url,
+            "action_label": action_label,
+            "renew_action_url": renew_action_url,
+            "renew_action_label": renew_action_label,
             "expire_summary": expire_summary,
             "expire_at_text": expire_at_text,
             "is_expired": bool(wechat_auth.get("is_expired")) if descriptor.auth_key == "wechat_mp_main" else False,
@@ -642,8 +650,6 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         success_at = parse_published_datetime(source_health.get("last_success_at", "") or "")
         invalid_days = ""
         if failed_at and (not success_at or failed_at > success_at):
-            from datetime import datetime
-
             invalid_days = str(max((datetime.now() - failed_at).days, 0))
         row = {
             **item,

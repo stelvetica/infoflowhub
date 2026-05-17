@@ -9,7 +9,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
-from web.services.wechat_login import check_login_scan, complete_login, get_login_qrcode, start_login
+from web.services.wechat_login import check_login_scan, complete_login, get_login_qrcode, renew_login_with_existing_credentials, start_login
 from web.services.views import (
     delete_source,
     format_success_sources_text,
@@ -98,6 +98,12 @@ async def sources_fragment(request: Request):
     return templates.TemplateResponse(request, "partials/source_table.html", {"settings": get_settings_view(params), "params": params})
 
 
+@router.get("/fragments/auth-assets", response_class=HTMLResponse)
+async def auth_assets_fragment(request: Request):
+    params = query_dict(request)
+    return templates.TemplateResponse(request, "partials/auth_assets_panel.html", {"settings": get_settings_view(params), "params": params})
+
+
 @router.get("/fragments/source-form", response_class=HTMLResponse)
 async def source_form_fragment(request: Request, source_id: str = ""):
     params = query_dict(request)
@@ -148,6 +154,16 @@ async def wechat_login_complete(request: Request):
         return response
     except Exception as exc:
         return JSONResponse({"success": False, "error": str(exc)}, status_code=400)
+
+
+@router.post("/actions/wechat-login/renew", response_class=HTMLResponse)
+async def wechat_login_renew(request: Request):
+    try:
+        await renew_login_with_existing_credentials()
+    except Exception:
+        pass
+    params = query_dict(request)
+    return templates.TemplateResponse(request, "partials/auth_assets_panel.html", {"settings": get_settings_view(params), "params": params})
 
 
 @router.post("/actions/fetch-now", response_class=HTMLResponse)

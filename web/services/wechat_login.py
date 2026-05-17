@@ -3,15 +3,19 @@ from __future__ import annotations
 import re
 import time
 import uuid
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from http.cookies import SimpleCookie
 from urllib.parse import parse_qs, urlparse
 
 import httpx
-from connectors.auth.providers.wechat import WECHAT_AUTH_EXPIRE_WINDOW_MS, log_wechat_auth_event, save_wechat_credentials
+from connectors.auth.providers.wechat import get_wechat_credentials, log_wechat_auth_event, save_wechat_credentials
 
 
 MP_BASE_URL = "https://mp.weixin.qq.com"
 QR_ENDPOINT = f"{MP_BASE_URL}/cgi-bin/scanloginqrcode"
 BIZ_LOGIN_ENDPOINT = f"{MP_BASE_URL}/cgi-bin/bizlogin"
+WECHAT_HOME_URL = f"{MP_BASE_URL}/cgi-bin/home"
 WECHAT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
 
 
@@ -45,6 +49,33 @@ def _filter_set_cookie_headers(response: httpx.Response, is_https: bool) -> list
     if is_https:
         return values
     return [value.replace("; Secure", "") for value in values]
+
+
+def _extract_cookie_expire_time_ms(set_cookie_headers: list[str]) -> int:
+    expire_candidates: list[int] = []
+    for raw in set_cookie_headers:
+        cookie = SimpleCookie()
+        try:
+            cookie.load(raw)
+        except Exception:
+            continue
+        for morsel in cookie.values():
+            expires = str(morsel["expires"] or "").strip()
+            if not expires:
+                continue
+            try:
+                dt = parsedate_to_datetime(expires)
+            except Exception:
+                continue
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            expire_candidates.append(int(dt.timestamp() * 1000))
+    return min(expire_candidates) if expire_candidates else 0
+
+
+def _resolve_expire_time_ms(set_cookie_headers: list[str]) -> int:
+    expire_time = _extract_cookie_expire_time_ms(set_cookie_headers)
+    return expire_time if expire_time > 0 else int(time.time() * 1000)
 
 
 async def proxy_wechat_request(
@@ -142,8 +173,9 @@ async def complete_login(cookie_header: str) -> tuple[dict, list[str]]:
         raise RuntimeError("未从微信登录结果中解析到 token。")
 
     merged_cookie = _merge_cookie_headers(cookie_header, response)
+    set_cookie_headers = _filter_set_cookie_headers(response, is_https=False)
     nickname, fakeid = await fetch_account_identity(token=token, cookie_header=merged_cookie)
-    expire_time = int(time.time() * 1000) + WECHAT_AUTH_EXPIRE_WINDOW_MS
+    expire_time = _resolve_expire_time_ms(set_cookie_headers)
     credentials = {
         "token": token,
         "cookie": merged_cookie,
@@ -152,8 +184,8 @@ async def complete_login(cookie_header: str) -> tuple[dict, list[str]]:
         "expire_time": expire_time,
     }
     save_wechat_credentials(credentials)
-    log_wechat_auth_event(f"公众号登录成功，账号={nickname or '公众号'}，expire_time={expire_time}。")
-    return credentials, _filter_set_cookie_headers(response, is_https=False)
+    log_wechat_auth_event(f"公众号登录成功，账号={nickname or '公众号'}，expire_time={datetime.fromtimestamp(expire_time / 1000)}。")
+    return credentials, set_cookie_headers
 
 
 async def fetch_account_identity(*, token: str, cookie_header: str) -> tuple[str, str]:
@@ -165,7 +197,7 @@ async def fetch_account_identity(*, token: str, cookie_header: str) -> tuple[str
     }
     async with httpx.AsyncClient(timeout=30.0) as client:
         info_response = await client.get(
-            f"{MP_BASE_URL}/cgi-bin/home",
+            WECHAT_HOME_URL,
             params={"t": "home/index", "token": token, "lang": "zh_CN"},
             headers=headers,
         )
@@ -199,3 +231,37 @@ async def fetch_account_identity(*, token: str, cookie_header: str) -> tuple[str
             if not fakeid and accounts:
                 fakeid = str(accounts[0].get("fakeid") or "").strip()
     return nickname, fakeid
+
+
+async def renew_login_with_existing_credentials() -> tuple[dict[str, object], list[str]]:
+    credentials = get_wechat_credentials()
+    token = str(credentials.get("token") or "").strip()
+    cookie = str(credentials.get("cookie") or "").strip()
+    if not token or not cookie:
+        raise RuntimeError("当前没有可续期的公众号登录态，请重新扫码登录。")
+
+    response = await proxy_wechat_request(
+        url=WECHAT_HOME_URL,
+        cookie_header=cookie,
+        params={"t": "home/index", "token": token, "lang": "zh_CN"},
+    )
+    final_url = str(response.url)
+    html = response.text
+    if "/cgi-bin/home" not in final_url or "login" in final_url.lower() or "wx.passport" in html.lower():
+        log_wechat_auth_event("免扫码续期失败：现有登录态已失效，需要重新扫码。")
+        raise RuntimeError("当前公众号登录态已失效，无法免扫码续期，请重新扫码登录。")
+
+    merged_cookie = _merge_cookie_headers(cookie, response)
+    set_cookie_headers = _filter_set_cookie_headers(response, is_https=False)
+    expire_time = _resolve_expire_time_ms(set_cookie_headers)
+    nickname, fakeid = await fetch_account_identity(token=token, cookie_header=merged_cookie)
+    renewed = {
+        "token": token,
+        "cookie": merged_cookie,
+        "fakeid": fakeid or str(credentials.get("fakeid") or "").strip(),
+        "nickname": nickname or str(credentials.get("nickname") or "").strip(),
+        "expire_time": expire_time,
+    }
+    save_wechat_credentials(renewed)
+    log_wechat_auth_event(f"公众号登录态免扫码续期成功，账号={renewed['nickname'] or '公众号'}，expire_time={datetime.fromtimestamp(expire_time / 1000)}。")
+    return renewed, set_cookie_headers

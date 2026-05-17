@@ -208,6 +208,8 @@ th { font-size: 11px; color: var(--muted); white-space: nowrap; background: rgba
 .auth-assets-table th:nth-child(6) { width: 136px; }
 .auth-assets-table td:last-child { white-space: nowrap; }
 .auth-assets-table .btn { min-width: 88px; white-space: nowrap; }
+.auth-actions-cell { white-space: nowrap; }
+.auth-actions-cell form { display: inline-flex; margin: 0 6px 0 0; }
 .auth-row-warning { background: rgba(255, 248, 197, 0.45); }
 .auth-row-expired { background: rgba(255, 235, 233, 0.55); }
 .auth-expire-text { margin-top: 4px; font-size: 12px; }

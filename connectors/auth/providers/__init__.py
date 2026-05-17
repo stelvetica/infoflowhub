@@ -16,6 +16,7 @@ from connectors.auth.providers.wechat import (
     WECHAT_AUTH_PATH,
     get_wechat_credentials,
     get_wechat_status,
+    log_wechat_auth_event,
     save_wechat_credentials,
     validate_wechat_auth,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "get_context_path",
     "get_wechat_credentials",
     "get_wechat_status",
+    "log_wechat_auth_event",
     "save_wechat_credentials",
     "validate_bilibili_auth",
     "validate_douyin_auth",

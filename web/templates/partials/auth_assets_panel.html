@@ -41,7 +41,12 @@
             <div class="subtle auth-hint-text">{{ item.hint }}</div>
             {% endif %}
           </td>
-          <td>
+          <td class="auth-actions-cell">
+            {% if item.renew_action_url %}
+            <form hx-post="{{ item.renew_action_url }}" hx-target="#auth-assets-panel-root" hx-swap="outerHTML">
+              <button class="btn ghost" type="submit">{{ item.renew_action_label }}</button>
+            </form>
+            {% endif %}
             {% if item.action_url %}
             <a class="btn {% if item.is_expired %}warn{% else %}ghost{% endif %}" href="{{ item.action_url }}">{{ item.action_label }}</a>
             {% else %}
