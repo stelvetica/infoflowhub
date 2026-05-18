@@ -70,6 +70,25 @@ def read_log_tail(path: Path, max_lines: int = 80) -> str:
     return "\n".join(tail)
 
 
+def _repair_utf8_text(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        repaired = text.encode("latin1", "ignore").decode("utf-8", "ignore").strip()
+    except Exception:
+        return text
+    return repaired or text
+
+
+def _is_login_state_error(message: str) -> bool:
+    text = _repair_utf8_text(message).lower()
+    if not text:
+        return False
+    keywords = ("登录态", "登录", "过期", "扫码", "login", "expired", "cookie", "token")
+    return any(keyword in text for keyword in keywords)
+
+
 def normalize_entry_link(link: str, fallback: str = "") -> str:
     primary = str(link or "").strip()
     if ABSOLUTE_URL_RE.match(primary):
@@ -648,15 +667,24 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         source_health = source_runtime_health(item["id"])
         failed_at = parse_published_datetime(source_health.get("last_failed_at", "") or "")
         success_at = parse_published_datetime(source_health.get("last_success_at", "") or "")
+        last_error = str(source_health.get("last_error") or "")
         invalid_days = ""
         if failed_at and (not success_at or failed_at > success_at):
             invalid_days = str(max((datetime.now() - failed_at).days, 0))
+        if (
+            str(item.get("auth_key") or "").strip() == "wechat_mp_main"
+            and wechat_auth.get("is_available")
+            and not wechat_auth.get("is_expired")
+            and _is_login_state_error(last_error)
+        ):
+            last_error = ""
+            invalid_days = ""
         row = {
             **item,
             "provider_label": provider_label(str(item.get("provider") or ""), str(item.get("fetch_via") or "")),
             "channel_label": source_channel_label(str(item.get("feed_url") or ""), str(item.get("site_url") or ""), str(item.get("provider") or "")),
             "entry_count": int(stat.get("entry_count") or 0),
-            "last_error": str(source_health.get("last_error") or ""),
+            "last_error": last_error,
             "last_success_at": str(source_health.get("last_success_at") or ""),
             "invalid_days": invalid_days,
             "is_failed": bool(invalid_days),
