@@ -71,6 +71,10 @@ class DBManager:
                 conn.execute("ALTER TABLE links ADD COLUMN is_finished INTEGER NOT NULL DEFAULT 0")
             if "finished_at" not in columns:
                 conn.execute("ALTER TABLE links ADD COLUMN finished_at TEXT")
+            if "is_opened" not in columns:
+                conn.execute("ALTER TABLE links ADD COLUMN is_opened INTEGER NOT NULL DEFAULT 0")
+            if "opened_at" not in columns:
+                conn.execute("ALTER TABLE links ADD COLUMN opened_at TEXT")
             if "feishu_last_synced_at" not in columns:
                 conn.execute("ALTER TABLE links ADD COLUMN feishu_last_synced_at TEXT")
             conn.execute(

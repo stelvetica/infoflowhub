@@ -374,7 +374,7 @@ def _load_laterhub_items(limit: int | None = None) -> list[dict[str, Any]]:
         if limit is None:
             rows = conn.execute(
                 """
-                SELECT id, url, title, tags, created_at, updated_at, is_finished
+                SELECT id, url, title, tags, created_at, updated_at, is_finished, is_opened, opened_at
                 FROM links
                 ORDER BY id DESC
                 """
@@ -382,7 +382,7 @@ def _load_laterhub_items(limit: int | None = None) -> list[dict[str, Any]]:
         else:
             rows = conn.execute(
                 """
-                SELECT id, url, title, tags, created_at, updated_at, is_finished
+                SELECT id, url, title, tags, created_at, updated_at, is_finished, is_opened, opened_at
                 FROM links
                 ORDER BY id DESC
                 LIMIT ?
@@ -427,14 +427,15 @@ def count_laterhub_items() -> int:
 
 def get_laterhub_summary() -> dict[str, int]:
     if not LATERHUB_DB_PATH.exists():
-        return {"total_count": 0, "unfinished_count": 0, "finished_count": 0}
+        return {"total_count": 0, "unfinished_count": 0, "finished_count": 0, "opened_count": 0}
     conn = _laterhub_conn()
     try:
         row = conn.execute(
             """
             SELECT COUNT(*) AS total_count,
                    SUM(CASE WHEN is_finished = 1 THEN 1 ELSE 0 END) AS finished_count,
-                   SUM(CASE WHEN is_finished = 0 THEN 1 ELSE 0 END) AS unfinished_count
+                   SUM(CASE WHEN is_opened = 1 THEN 1 ELSE 0 END) AS opened_count,
+                   SUM(CASE WHEN is_finished = 0 AND COALESCE(is_opened, 0) = 0 THEN 1 ELSE 0 END) AS unfinished_count
             FROM links
             """
         ).fetchone()
@@ -444,6 +445,7 @@ def get_laterhub_summary() -> dict[str, int]:
         "total_count": int(row["total_count"] or 0),
         "unfinished_count": int(row["unfinished_count"] or 0),
         "finished_count": int(row["finished_count"] or 0),
+        "opened_count": int(row["opened_count"] or 0),
     }
 
 
@@ -466,7 +468,7 @@ def get_laterhub_source_stats() -> list[dict[str, Any]]:
             SELECT source,
                    COUNT(*) AS total_count,
                    SUM(CASE WHEN is_finished = 1 THEN 1 ELSE 0 END) AS finished_count,
-                   SUM(CASE WHEN is_finished = 0 THEN 1 ELSE 0 END) AS unfinished_count
+                   SUM(CASE WHEN is_finished = 0 AND COALESCE(is_opened, 0) = 0 THEN 1 ELSE 0 END) AS unfinished_count
             FROM links
             GROUP BY source
             ORDER BY source COLLATE NOCASE
@@ -491,10 +493,39 @@ def mark_laterhub_finished(link_id: int, finished: bool) -> None:
         conn.execute(
             """
             UPDATE links
-            SET is_finished = ?, finished_at = ?, updated_at = ?
+            SET is_finished = ?, finished_at = ?, updated_at = ?,
+                is_opened = CASE WHEN ? = 1 THEN 1 ELSE is_opened END,
+                opened_at = CASE
+                    WHEN ? = 1 THEN COALESCE(opened_at, ?)
+                    ELSE opened_at
+                END
             WHERE id = ?
             """,
-            (1 if finished else 0, now_text if finished else None, now_text, link_id),
+            (1 if finished else 0, now_text if finished else None, now_text, 1 if finished else 0, 1 if finished else 0, now_text, link_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_laterhub_opened(link_id: int, opened: bool = True) -> None:
+    if not LATERHUB_DB_PATH.exists():
+        return
+    conn = _laterhub_conn()
+    try:
+        now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute(
+            """
+            UPDATE links
+            SET is_opened = ?,
+                opened_at = CASE
+                    WHEN ? = 1 THEN COALESCE(opened_at, ?)
+                    ELSE NULL
+                END,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (1 if opened else 0, 1 if opened else 0, now_text, now_text, link_id),
         )
         conn.commit()
     finally:
@@ -548,6 +579,7 @@ def _build_laterhub_rows() -> tuple[list[dict[str, Any]], str, dict[str, int]]:
             "created_at_dt": created_at,
             "batch_key": batch_key,
             "is_today": bool(local_created_date == today),
+            "is_opened": bool(item.get("is_opened")),
         }
         all_rows.append(row)
         scope_counts["all"] += 1
@@ -575,7 +607,11 @@ def _filter_laterhub_rows(query: dict[str, str]) -> tuple[list[dict[str, Any]], 
             continue
         if filter_finished == "1" and not item["is_finished"]:
             continue
+        if filter_finished == "opened" and not item["is_opened"]:
+            continue
         if filter_finished == "0" and item["is_finished"]:
+            continue
+        if filter_finished == "0" and item["is_opened"]:
             continue
         if selected_key and selected_key not in item["tag_keys"]:
             continue
@@ -666,6 +702,7 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
         "total": count_laterhub_items(),
         "filtered_total": len(rows),
         "bulk_finishable_count": len(actionable_ids),
+        "opened_count": sum(1 for item in all_rows if item["is_opened"]),
         "all_tags": all_tags,
         "selected_tags": [selected_tag] if selected_tag else [],
         "selected_tags_text": selected_tag,

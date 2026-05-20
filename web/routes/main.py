@@ -18,6 +18,7 @@ from web.services.views import (
     get_laterhub_summary,
     get_laterhub_view,
     get_settings_view,
+    mark_laterhub_opened,
     mark_laterhub_finished,
     mark_laterhub_finished_bulk,
     normalize_sources,
@@ -185,6 +186,13 @@ async def laterhub_fetch_now_action(request: Request):
 @router.post("/actions/laterhub/{link_id}/toggle-finished", response_class=HTMLResponse)
 async def toggle_laterhub_action(request: Request, link_id: int, finished: int = Form(...)):
     mark_laterhub_finished(link_id, bool(finished))
+    params = query_dict(request)
+    return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params})
+
+
+@router.post("/actions/laterhub/{link_id}/mark-opened", response_class=HTMLResponse)
+async def mark_laterhub_opened_action(request: Request, link_id: int):
+    mark_laterhub_opened(link_id, True)
     params = query_dict(request)
     return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params})
 

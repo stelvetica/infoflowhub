@@ -251,6 +251,46 @@
     if (root) root.innerHTML = "";
   }
 
+  function setLaterhubOpenState(anchor, isOpened) {
+    anchor.classList.remove("cell-read", "cell-unread", "cell-strong");
+    if (isOpened) {
+      anchor.classList.add("cell-read");
+      return;
+    }
+    anchor.classList.add("cell-unread");
+  }
+
+  function getLaterhubQueryString() {
+    const panel = document.getElementById("laterhub-panel");
+    if (!panel) return window.location.search || "";
+    const form = panel.querySelector(".laterhub-form-stack");
+    if (!(form instanceof HTMLFormElement)) return window.location.search || "";
+    const params = new URLSearchParams(window.location.search || "");
+    const formData = new FormData(form);
+    formData.forEach((value, key) => {
+      params.delete(key);
+      const text = String(value || "");
+      if (text) params.set(key, text);
+    });
+    return params.toString() ? `?${params.toString()}` : "";
+  }
+
+  function setupLaterhubOpenedTracking() {
+    document.querySelectorAll(".laterhub-read-track").forEach((anchor) => {
+      const href = anchor.getAttribute("href") || "";
+      const linkId = anchor.dataset.linkId || "";
+      if (!href || !linkId) return;
+      setLaterhubOpenState(anchor, anchor.classList.contains("cell-read"));
+      anchor.onclick = () => {
+        setLaterhubOpenState(anchor, true);
+        fetch(`/actions/laterhub/${linkId}/mark-opened${getLaterhubQueryString()}`, {
+          method: "POST",
+          credentials: "same-origin",
+        }).catch(() => {});
+      };
+    });
+  }
+
   function closeModal(event) {
     if (event.target.classList.contains("modal-backdrop")) clearModal();
   }
@@ -444,6 +484,7 @@
     applyReadState();
     setupUnreadToggle();
     setupLaterhubResizer();
+    setupLaterhubOpenedTracking();
     setupWechatLogin();
   }
 

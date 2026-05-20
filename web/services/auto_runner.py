@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import datetime, time
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -18,7 +18,6 @@ RUNTIME_PATH = BASE_DIR / "runtime" / "health" / "automation_runtime.json"
 class ScheduleSlot:
     key: str
     scheduled_at: time
-    delay_minutes: int
     label: str
     runner: Callable[[], Awaitable[dict[str, Any]]]
 
@@ -32,8 +31,7 @@ class AutoRunner:
             ScheduleSlot(
                 key="daily_0600",
                 scheduled_at=time(hour=6, minute=0),
-                delay_minutes=10,
-                label="每日 06:00 订阅+稍后读（延迟自动运行）",
+                label="每日 06:00 订阅+稍后读",
                 runner=self._run_morning,
             ),
         )
@@ -70,7 +68,7 @@ class AutoRunner:
         last_run_date = str(slot_state.get("last_run_date") or "")
         if last_run_date == today:
             return False
-        return now >= self._run_after(slot, now)
+        return now >= self._scheduled_for(slot, now)
 
     async def _run_slot(self, slot: ScheduleSlot, now: datetime) -> None:
         async with self._lock:
@@ -130,9 +128,8 @@ class AutoRunner:
         write_json(RUNTIME_PATH, state)
 
     @staticmethod
-    def _run_after(slot: ScheduleSlot, now: datetime) -> datetime:
-        scheduled = datetime.combine(now.date(), slot.scheduled_at)
-        return scheduled + timedelta(minutes=slot.delay_minutes)
+    def _scheduled_for(slot: ScheduleSlot, now: datetime) -> datetime:
+        return datetime.combine(now.date(), slot.scheduled_at)
 
     @staticmethod
     def _format_dt(value: datetime) -> str:

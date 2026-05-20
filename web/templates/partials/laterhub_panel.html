@@ -15,7 +15,6 @@
         <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
         <input type="hidden" name="laterhub_filter_finished" value="{{ laterhub.filter_finished }}">
         <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
-        <input type="hidden" name="laterhub_filter_scope" value="{{ laterhub.filter_scope }}">
         <input type="hidden" name="laterhub_page" value="1">
         <input class="input laterhub-search-input" name="laterhub_q" value="{{ laterhub.q }}" placeholder="搜索标题或标签">
         <button class="btn" type="submit">搜索</button>
@@ -41,13 +40,14 @@
       <div class="laterhub-footer-row laterhub-footer-row-bottom">
         <div class="laterhub-summary-inline laterhub-summary-tight laterhub-summary-small laterhub-summary-merged">
           <div class="inline-metric"><span class="label">筛选后条目</span><strong>{{ laterhub.filtered_total }}</strong></div>
-          <div class="inline-metric"><span class="label">已选标签</span><strong>{{ laterhub.selected_tags|length }}</strong></div>
+          <div class="inline-metric"><span class="label">已打开</span><strong>{{ laterhub.opened_count }}</strong></div>
         </div>
         <div class="laterhub-filter-row">
           <span class="laterhub-filter-label">状态</span>
           <select class="select laterhub-status-select laterhub-status-select-small" name="laterhub_filter_finished" onchange="this.form.requestSubmit()">
             <option value="" {% if laterhub.filter_finished == '' %}selected{% endif %}>全部</option>
             <option value="1" {% if laterhub.filter_finished == '1' %}selected{% endif %}>已完成</option>
+            <option value="opened" {% if laterhub.filter_finished == 'opened' %}selected{% endif %}>已打开</option>
             <option value="0" {% if laterhub.filter_finished == '0' %}selected{% endif %}>未处理</option>
           </select>
         </div>
@@ -76,7 +76,13 @@
               <td class="cell-time cell-time-small">{{ item.display_time }}</td>
               <td class="laterhub-link-cell">
                 <div class="cell-ellipsis" title="{{ item.title }}">
-                  <a class="cell-link cell-strong" href="{{ item.url }}" target="_blank" rel="noreferrer">{{ item.title }}</a>
+                  <a
+                    class="cell-link laterhub-read-track {% if item.is_opened %}cell-read{% else %}cell-unread{% endif %}"
+                    href="{{ item.url }}"
+                    target="_blank"
+                    rel="noreferrer"
+                    data-link-id="{{ item.id }}"
+                  >{{ item.title }}</a>
                 </div>
                 <div class="subtle cell-ellipsis" title="{{ item.tags_text or '-' }}">{{ item.tags_text or '-' }}</div>
               </td>
