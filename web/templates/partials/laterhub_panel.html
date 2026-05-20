@@ -32,11 +32,6 @@
       <input type="hidden" name="laterhub_page" value="1">
       <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
       <div class="chips laterhub-chips">
-        <button class="chip {% if laterhub.filter_scope == '' %}active{% endif %}" type="submit" name="laterhub_filter_scope" value="">全部积压</button>
-        <button class="chip {% if laterhub.filter_scope == 'current_batch' %}active{% endif %}" type="submit" name="laterhub_filter_scope" value="{{ '' if laterhub.filter_scope == 'current_batch' else 'current_batch' }}">本轮新增 {{ laterhub.scope_counts.current_batch }}</button>
-        <button class="chip {% if laterhub.filter_scope == 'today' %}active{% endif %}" type="submit" name="laterhub_filter_scope" value="{{ '' if laterhub.filter_scope == 'today' else 'today' }}">今日新增 {{ laterhub.scope_counts.today }}</button>
-      </div>
-      <div class="chips laterhub-chips">
         <button class="chip {% if not laterhub.selected_tags %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="">全部标签</button>
         {% for tag in laterhub.all_tags %}
           {% set active = tag in laterhub.selected_tags %}
@@ -47,7 +42,6 @@
         <div class="laterhub-summary-inline laterhub-summary-tight laterhub-summary-small laterhub-summary-merged">
           <div class="inline-metric"><span class="label">筛选后条目</span><strong>{{ laterhub.filtered_total }}</strong></div>
           <div class="inline-metric"><span class="label">已选标签</span><strong>{{ laterhub.selected_tags|length }}</strong></div>
-          <div class="inline-metric"><span class="label">可批量完成</span><strong>{{ laterhub.bulk_finishable_count }}</strong></div>
         </div>
         <div class="laterhub-filter-row">
           <span class="laterhub-filter-label">状态</span>
@@ -60,14 +54,7 @@
       </div>
     </form>
   </section>
-
   <section class="card pane-card pane-card-right">
-    <div class="toolbar toolbar-inline laterhub-top-row laterhub-top-row-inline">
-      <div class="subtle">当前筛选上下文内未完成 {{ laterhub.bulk_finishable_count }} 条</div>
-      <form hx-post="/actions/laterhub/bulk-finish?{{ params|urlencode }}&laterhub_q={{ laterhub.q }}&laterhub_sort={{ laterhub.sort }}&laterhub_dir={{ laterhub.dir }}&laterhub_filter_finished={{ laterhub.filter_finished }}&laterhub_filter_tag={{ laterhub.selected_tags_text }}&laterhub_filter_scope={{ laterhub.filter_scope }}&laterhub_page={{ laterhub.page }}" hx-target="#laterhub-panel" hx-swap="innerHTML">
-        <button class="btn" type="submit" {% if laterhub.bulk_finishable_count <= 0 %}disabled{% endif %}>完成当前筛选结果</button>
-      </form>
-    </div>
     <div class="table-wrap">
       <table class="laterhub-table">
         <colgroup>
