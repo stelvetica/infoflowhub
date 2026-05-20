@@ -14,12 +14,15 @@ from apps.subscriptions.rss_db import (
     delete_source_state,
     get_connection,
     list_source_stats,
+    migrate_legacy_source_ids,
     rename_source,
     sanitize_db_text,
 )
+from apps.subscriptions.source_ids import canonicalize_source_id, legacy_source_ids, merge_source_health_rows
 from connectors._shared.common import parse_published_datetime, resolve_web_target
 from connectors.auth import list_auth_statuses
 from connectors.wechat.auth import get_wechat_auth_status
+from infra.text_normalizer import normalize_utf8_obj, normalize_utf8_text
 from infra.utf8_json import dump_json_utf8, load_json_utf8
 from web.services.utils import (
     build_source_id,
@@ -70,19 +73,8 @@ def read_log_tail(path: Path, max_lines: int = 80) -> str:
     return "\n".join(tail)
 
 
-def _repair_utf8_text(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    try:
-        repaired = text.encode("latin1", "ignore").decode("utf-8", "ignore").strip()
-    except Exception:
-        return text
-    return repaired or text
-
-
 def _is_login_state_error(message: str) -> bool:
-    text = _repair_utf8_text(message).lower()
+    text = normalize_utf8_text(message).lower()
     if not text:
         return False
     keywords = ("登录态", "登录", "过期", "扫码", "login", "expired", "cookie", "token")
@@ -125,7 +117,15 @@ def format_success_sources_text(status: dict[str, Any]) -> str:
 
 
 def load_health() -> dict[str, Any]:
-    return read_json(HEALTH_PATH, {"sources": {}})
+    health = normalize_utf8_obj(read_json(HEALTH_PATH, {"sources": {}}))
+    source_rows = health.get("sources", {})
+    if not isinstance(source_rows, dict):
+        return {"sources": {}}
+    merged_sources = merge_source_health_rows(source_rows.items())
+    normalized = {"sources": merged_sources}
+    if merged_sources != source_rows:
+        write_json(HEALTH_PATH, normalized)
+    return normalized
 
 
 def default_auth_key(channel: str, site_url: str, feed_url: str = "") -> str:
@@ -260,7 +260,7 @@ def normalize_sources() -> list[dict[str, Any]]:
 
 
 def source_runtime_health(source_id: str) -> dict[str, str]:
-    source_health = load_health().get("sources", {}).get(source_id, {})
+    source_health = load_health().get("sources", {}).get(canonicalize_source_id(source_id), {})
     return {
         "last_checked_at": str(source_health.get("last_checked_at") or ""),
         "last_success_at": str(source_health.get("last_success_at") or ""),
@@ -319,15 +319,18 @@ def toggle_source(source_id: str, enabled: bool) -> None:
 
 
 def delete_source(source_id: str) -> None:
-    clean_id = sanitize_db_text(source_id).strip()
+    clean_id = canonicalize_source_id(sanitize_db_text(source_id).strip())
     if not clean_id:
         return
-    save_sources([item for item in load_sources() if str(item.get("id") or "").strip() != clean_id])
+    all_target_ids = {clean_id, *legacy_source_ids(clean_id)}
+    save_sources([item for item in load_sources() if str(item.get("id") or "").strip() not in all_target_ids])
     delete_entries_by_source(clean_id)
     delete_source_state(clean_id)
     health = load_health()
-    if health.get("sources", {}).get(clean_id):
-        del health["sources"][clean_id]
+    for target_id in all_target_ids:
+        if health.get("sources", {}).get(target_id):
+            del health["sources"][target_id]
+    if health.get("sources") is not None:
         write_json(HEALTH_PATH, health)
 
 
@@ -493,15 +496,10 @@ def mark_laterhub_finished(link_id: int, finished: bool) -> None:
         conn.execute(
             """
             UPDATE links
-            SET is_finished = ?, finished_at = ?, updated_at = ?,
-                is_opened = CASE WHEN ? = 1 THEN 1 ELSE is_opened END,
-                opened_at = CASE
-                    WHEN ? = 1 THEN COALESCE(opened_at, ?)
-                    ELSE opened_at
-                END
+            SET is_finished = ?, finished_at = ?, updated_at = ?
             WHERE id = ?
             """,
-            (1 if finished else 0, now_text if finished else None, now_text, 1 if finished else 0, 1 if finished else 0, now_text, link_id),
+            (1 if finished else 0, now_text if finished else None, now_text, link_id),
         )
         conn.commit()
     finally:
@@ -725,6 +723,7 @@ def get_laterhub_actionable_ids(query: dict[str, str]) -> list[int]:
 
 
 def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
+    migrate_legacy_source_ids()
     status = load_status()
     status["success_sources_text"] = format_success_sources_text(status)
     status["last_run_inserted_entries"] = int(status.get("last_inserted_entries") or 0)

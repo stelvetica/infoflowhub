@@ -1,0 +1,192 @@
+{
+  "sources": {
+    "HackerNews每日摘要": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-15 06:06:09",
+      "last_error": ""
+    },
+    "labuladong": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-17 10:01:29",
+      "last_error": ""
+    },
+    "code秘密花园": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-17 10:01:29",
+      "last_error": ""
+    },
+    "路口大爷聊宏观": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-17 10:01:29",
+      "last_error": ""
+    },
+    "硬核姬老板": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-17 10:01:29",
+      "last_error": ""
+    },
+    "巫师财经": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-17 10:01:29",
+      "last_error": ""
+    },
+    "MacroMargin": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-18 08:33:12",
+      "last_error": ""
+    },
+    "TeranceJiang": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-15 06:06:09",
+      "last_error": ""
+    },
+    "Mark__Huang": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-15 06:06:09",
+      "last_error": ""
+    },
+    "何佳心今天加薪了么": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-15 06:06:09",
+      "last_error": ""
+    },
+    "阮一峰周刊": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-15 06:06:09",
+      "last_error": ""
+    },
+    "技术爬爬虾": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-15 06:06:09",
+      "last_error": ""
+    },
+    "铁锤观察室": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-15 06:06:09",
+      "last_error": ""
+    },
+    "肖恩周刊": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-15 06:06:09",
+      "last_error": ""
+    },
+    "星话大白": {
+      "last_checked_at": "",
+      "last_success_at": "",
+      "last_failed_at": "",
+      "last_error": "",
+      "source_name": "信息 星话大白"
+    },
+    "土豆看财报": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-15 06:06:09",
+      "last_error": ""
+    },
+    "投研部杨摸鱼": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-15 06:06:09",
+      "last_error": ""
+    },
+    "wechat-zhenjiaolujun": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-17 10:01:29",
+      "last_error": ""
+    },
+    "wechat-finninvestrecord": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-17 10:01:29",
+      "last_error": ""
+    },
+    "wechat-canghaiyitugou": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-17 10:01:29",
+      "last_error": ""
+    },
+    "wechat-180k": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-17 10:01:29",
+      "last_error": ""
+    },
+    "wechat-jingxuanjun": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-18 11:38:25",
+      "last_error": ""
+    },
+    "wechat-bayes-beauty": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-17 10:01:29",
+      "last_error": ""
+    },
+    "wechat-bigmoneyfundsuncle": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-17 10:01:29",
+      "last_error": ""
+    },
+    "wechat-pangtegong": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-17 10:01:29",
+      "last_error": ""
+    },
+    "wechat-shuimujiyao": {
+      "last_checked_at": "2026-05-14 11:49:25",
+      "last_success_at": "2026-05-14 11:49:25",
+      "last_failed_at": "2026-05-14 11:49:25",
+      "last_error": "",
+      "source_name": "观点 水木纪要"
+    },
+    "wechat-nasdaq-new-high": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-17 10:01:29",
+      "last_error": ""
+    },
+    "laolihai_youtube": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-15 06:06:09",
+      "last_error": ""
+    },
+    "破壁狗": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-15 15:06:56",
+      "last_error": ""
+    },
+    "江平舟": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-15 14:51:28",
+      "last_error": ""
+    },
+    "黑猫星球": {
+      "last_checked_at": "2026-05-20 18:28:18",
+      "last_success_at": "2026-05-20 18:28:18",
+      "last_failed_at": "2026-05-15 15:06:56",
+      "last_error": ""
+    }
+  }
+}

@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from infra.text_normalizer import clean_text, normalize_utf8_text
 from infra.utf8_json import dump_json_utf8, load_json_utf8
 
 
@@ -19,18 +20,7 @@ WECHAT_AUTH_EXPIRE_WINDOW_MS = 24 * 3600 * 1000
 
 
 def _clean_text(value: object) -> str:
-    return str(value or "").strip()
-
-
-def _repair_utf8_text(value: object) -> str:
-    text = _clean_text(value)
-    if not text:
-        return ""
-    try:
-        repaired = text.encode("latin1", "ignore").decode("utf-8", "ignore").strip()
-    except Exception:
-        return text
-    return repaired or text
+    return clean_text(value)
 
 
 def _format_local_datetime(timestamp_ms: int) -> str:
@@ -70,7 +60,7 @@ def get_wechat_credentials() -> dict[str, object]:
         "token": _clean_text(os.getenv("WECHAT_TOKEN")),
         "cookie": _clean_text(os.getenv("WECHAT_COOKIE")),
         "fakeid": _clean_text(os.getenv("WECHAT_FAKEID")),
-        "nickname": _repair_utf8_text(os.getenv("WECHAT_NICKNAME")),
+        "nickname": normalize_utf8_text(os.getenv("WECHAT_NICKNAME")),
         "expire_time": _clean_text(os.getenv("WECHAT_EXPIRE_TIME")),
     }
     if env_credentials["token"] and env_credentials["cookie"]:
@@ -85,7 +75,7 @@ def get_wechat_credentials() -> dict[str, object]:
                 "token": _clean_text(payload.get("token")),
                 "cookie": _clean_text(payload.get("cookie")),
                 "fakeid": _clean_text(payload.get("fakeid")),
-                "nickname": _repair_utf8_text(payload.get("nickname")),
+                "nickname": normalize_utf8_text(payload.get("nickname")),
                 "expire_time": _clean_text(payload.get("expire_time")),
             }
     return env_credentials
@@ -93,7 +83,7 @@ def get_wechat_credentials() -> dict[str, object]:
 
 def save_wechat_credentials(credentials: dict[str, object]) -> None:
     payload = dict(credentials)
-    payload["nickname"] = _repair_utf8_text(payload.get("nickname"))
+    payload["nickname"] = normalize_utf8_text(payload.get("nickname"))
     AUTH_DIR.mkdir(parents=True, exist_ok=True)
     dump_json_utf8(WECHAT_AUTH_PATH, payload)
     dump_json_utf8(LEGACY_WECHAT_AUTH_PATH, payload)
@@ -189,7 +179,7 @@ def get_wechat_status() -> dict[str, Any]:
     status = validate_wechat_auth()
     return {
         "has_credentials": bool(_clean_text(credentials.get("token")) and _clean_text(credentials.get("cookie"))),
-        "nickname": _repair_utf8_text(credentials.get("nickname")),
+        "nickname": normalize_utf8_text(credentials.get("nickname")),
         "expire_time": int(_clean_text(credentials.get("expire_time"))) if _clean_text(credentials.get("expire_time")).isdigit() else 0,
         **status,
     }
