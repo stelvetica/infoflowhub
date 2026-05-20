@@ -109,6 +109,8 @@ class DBManager:
                             WHEN COALESCE(?, '') <> '' THEN NULL
                             ELSE tag_error_message
                         END,
+                        is_finished = 0,
+                        finished_at = NULL,
                         updated_at = ?,
                         error_message = ?
                     WHERE url = ?
@@ -172,6 +174,19 @@ class DBManager:
             ).fetchall()
         return list(rows)
 
+    def list_untagged_rows(self):
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM links
+                WHERE COALESCE(TRIM(tags), '') = ''
+                  AND tag_status <> 'done'
+                ORDER BY id ASC
+                """
+            ).fetchall()
+        return list(rows)
+
     def update_tags(self, url: str, tags: str, *, tag_status: str = "done", tag_error_message: str | None = None) -> None:
         now = self._now_iso()
         with self._connect() as conn:
@@ -189,6 +204,21 @@ class DBManager:
 
     def mark_tag_skipped(self, url: str, tags: str, reason: str) -> None:
         self.update_tags(url, tags, tag_status="skipped", tag_error_message=reason)
+
+    def mark_tag_pending_retry(self, url: str, reason: str) -> None:
+        now = self._now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE links
+                SET tags = NULL,
+                    tag_status = 'pending',
+                    tag_error_message = ?,
+                    updated_at = ?
+                WHERE url = ?
+                """,
+                (reason, now, url),
+            )
 
     def mark_pending_retry(self, url: str, error_message: str) -> None:
         now = self._now_iso()
