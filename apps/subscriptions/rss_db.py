@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Iterable
 
 from apps.subscriptions.models import FeedEntry
+from apps.subscriptions.source_ids import canonicalize_source_id, legacy_source_ids
 from connectors._shared.common import parse_published_datetime
 
 
@@ -106,7 +107,7 @@ def sanitize_db_text(value: str) -> str:
 
 
 def rename_source(source_id: str, source_name: str) -> int:
-    source_id = sanitize_db_text(source_id).strip()
+    source_id = canonicalize_source_id(sanitize_db_text(source_id).strip())
     source_name = sanitize_db_text(source_name).strip()
     if not source_id or not source_name:
         return 0
@@ -131,6 +132,7 @@ def save_entries(entries: Iterable[FeedEntry]) -> int:
     inserted = 0
     try:
         for item in entries:
+            source_id = canonicalize_source_id(item.source_id)
             normalized_published = normalize_published_text(item.published)
             cursor = conn.execute(
                 """
@@ -146,7 +148,7 @@ def save_entries(entries: Iterable[FeedEntry]) -> int:
                   summary=CASE WHEN excluded.summary != '' THEN excluded.summary ELSE rss_entries.summary END
                 """,
                 (
-                    item.source_id,
+                    source_id,
                     item.source_name,
                     item.title,
                     item.link,
@@ -167,6 +169,7 @@ def list_entries(limit: int = 200, source_id: str = "") -> list[dict]:
     conn.row_factory = sqlite3.Row
     try:
         if source_id:
+            source_id = canonicalize_source_id(source_id)
             rows = conn.execute(
                 """
                 SELECT source_id, source_name, title, link, published, published_at, summary, created_at
@@ -193,17 +196,19 @@ def list_entries(limit: int = 200, source_id: str = "") -> list[dict]:
 
 
 def delete_source_state(source_id: str) -> None:
-    source_id = sanitize_db_text(source_id).strip()
+    source_id = canonicalize_source_id(sanitize_db_text(source_id).strip())
     if not source_id:
         return
+    target_ids = [source_id, *legacy_source_ids(source_id)]
+    placeholders = ", ".join("?" for _ in target_ids)
     conn = get_connection()
     try:
         conn.execute(
-            """
+            f"""
             DELETE FROM rss_source_state
-            WHERE source_id = ?
+            WHERE source_id IN ({placeholders})
             """,
-            (source_id,),
+            target_ids,
         )
         conn.commit()
     finally:
@@ -225,23 +230,84 @@ def list_source_stats() -> list[dict]:
         ).fetchall()
     finally:
         conn.close()
-    return [dict(row) for row in rows]
+    merged: dict[str, dict] = {}
+    for row in rows:
+        item = dict(row)
+        source_id = canonicalize_source_id(item["source_id"])
+        current = merged.get(source_id)
+        if not current:
+            merged[source_id] = {
+                "source_id": source_id,
+                "source_name": item["source_name"],
+                "entry_count": int(item["entry_count"] or 0),
+                "last_seen": item["last_seen"],
+            }
+            continue
+        current["entry_count"] += int(item["entry_count"] or 0)
+        if str(item["last_seen"] or "") > str(current.get("last_seen") or ""):
+            current["last_seen"] = item["last_seen"]
+            current["source_name"] = item["source_name"]
+    return sorted(merged.values(), key=lambda item: str(item.get("source_name") or "").lower())
 
 
 def delete_entries_by_source(source_id: str) -> int:
-    source_id = sanitize_db_text(source_id).strip()
+    source_id = canonicalize_source_id(sanitize_db_text(source_id).strip())
     if not source_id:
         return 0
+    target_ids = [source_id, *legacy_source_ids(source_id)]
+    placeholders = ", ".join("?" for _ in target_ids)
     conn = get_connection()
     try:
         cursor = conn.execute(
-            """
+            f"""
             DELETE FROM rss_entries
-            WHERE source_id = ?
+            WHERE source_id IN ({placeholders})
             """,
-            (source_id,),
+            target_ids,
         )
         conn.commit()
         return int(cursor.rowcount or 0)
+    finally:
+        conn.close()
+
+
+def migrate_legacy_source_ids() -> int:
+    from apps.subscriptions.source_ids import SOURCE_ID_ALIASES
+
+    if not SOURCE_ID_ALIASES:
+        return 0
+    conn = get_connection()
+    migrated = 0
+    try:
+        for legacy_source_id, canonical_source_id in SOURCE_ID_ALIASES.items():
+            cursor = conn.execute(
+                """
+                UPDATE rss_entries
+                SET source_id = ?
+                WHERE source_id = ?
+                """,
+                (canonical_source_id, legacy_source_id),
+            )
+            migrated += int(cursor.rowcount or 0)
+            conn.execute(
+                """
+                UPDATE rss_source_state
+                SET source_id = ?
+                WHERE source_id = ?
+                """,
+                (canonical_source_id, legacy_source_id),
+            )
+            conn.execute(
+                """
+                DELETE FROM rss_source_state
+                WHERE rowid NOT IN (
+                    SELECT MIN(rowid)
+                    FROM rss_source_state
+                    GROUP BY source_id
+                )
+                """
+            )
+        conn.commit()
+        return migrated
     finally:
         conn.close()

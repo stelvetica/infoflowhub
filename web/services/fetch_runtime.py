@@ -3,6 +3,7 @@ from __future__ import annotations
 from apps.laterhub.pipeline import run_main_flow
 from apps.subscriptions.config import load_settings, load_sources
 from apps.subscriptions.rss_db import save_entries
+from apps.subscriptions.source_ids import canonicalize_source_id
 from connectors.rss.fetch import fetch_many
 from web.services.views import HEALTH_PATH, STATUS_PATH, load_health, load_status, write_json
 
@@ -29,7 +30,8 @@ def is_successful_run(success_sources: int, failure_count: int) -> bool:
 def update_source_health(result) -> None:
     health = load_health()
     source_health = health.setdefault("sources", {})
-    current = source_health.get(result.source_id, {})
+    source_id = canonicalize_source_id(result.source_id)
+    current = source_health.get(source_id, {})
     current["last_checked_at"] = now_text()
     if result.ok:
         current["last_success_at"] = current["last_checked_at"]
@@ -38,7 +40,7 @@ def update_source_health(result) -> None:
     else:
         current["last_error"] = clean_health_error(result.error or str(result.status))
         current["last_failed_at"] = current["last_checked_at"]
-    source_health[result.source_id] = {
+    source_health[source_id] = {
         "last_checked_at": str(current.get("last_checked_at") or ""),
         "last_success_at": str(current.get("last_success_at") or ""),
         "last_failed_at": str(current.get("last_failed_at") or ""),

@@ -26,6 +26,7 @@ from connectors.douyin import fetch_douyin_favorites
 
 LOG_FILE_DISABLED = False
 ENABLE_FEISHU_PUSH = False
+TAG_RETRY_LIMIT = 2
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
@@ -49,7 +50,7 @@ def parse_tags_text(tags: str | None) -> list[str]:
         .replace(";", ",")
         .replace("|", ",")
     )
-    normalized = re.sub(r"[??]+", ",", normalized)
+    normalized = re.sub(r"[？、]+", ",", normalized)
     parts = [part.strip() for part in normalized.split(",") if part.strip()]
     deduped: list[str] = []
     for part in parts:
@@ -135,10 +136,13 @@ def _load_tagger() -> ContentTagger | None:
             backup_config = LLMConfig.from_env(ENV_PATH, backup=True)
         except Exception:
             backup_config = None
-        log_line("[标签] 已加载主/备 LLM 配置")
+        if backup_config:
+            log_line("[标签] 已加载主/备 LLM 配置")
+        else:
+            log_line("[标签] 已加载主 LLM，当前未配置备用 LLM")
         return ContentTagger(primary_config, backup_config=backup_config)
     except Exception as exc:  # noqa: BLE001
-        log_line(f"[标签] LLM 配置不可用，后续将走默认标签降级: {exc}")
+        log_line(f"[标签] LLM 配置不可用，本轮仅保留无标签待下次重试: {exc}")
         return None
 
 
@@ -172,49 +176,88 @@ def _fetch_source(*, enabled: bool, label: str, fetcher, db: DBManager) -> bool:
     return True
 
 
+def _tag_single_row(db: DBManager, row: Any, tagger: ContentTagger) -> str:
+    tags = tagger.tag(title=row["title"], source=row["source"])
+    db.update_tags(row["url"], tags)
+    return tags
+
+
+def _retry_temporary_tag_rows(db: DBManager, tagger: ContentTagger, rows: list[Any]) -> tuple[int, int]:
+    retried_success = 0
+    still_pending = 0
+    for row in rows:
+        success = False
+        last_reason = ""
+        for attempt in range(1, TAG_RETRY_LIMIT + 1):
+            try:
+                _tag_single_row(db, row, tagger)
+                retried_success += 1
+                log_line(f"[标签][补偿成功] {_brief_title(row)} | 第 {attempt} 次补偿成功")
+                success = True
+                break
+            except (TaggerTemporaryError, TaggerServiceUnavailable) as exc:
+                last_reason = str(exc)
+                log_line(_format_temporary_log("标签补偿", row, f"第 {attempt} 次补偿仍失败: {exc}"))
+            except TaggerPermanentError as exc:
+                last_reason = str(exc)
+                db.mark_tag_pending_retry(row["url"], f"标签真实失败，留空待后续人工/统一重试: {exc}")
+                log_line(_format_failure_log("标签补偿", row, f"停止补偿，留空待后续处理: {exc}"))
+                success = True
+                break
+            except Exception as exc:  # noqa: BLE001
+                last_reason = str(exc)
+                db.mark_tag_pending_retry(row["url"], f"标签未知失败，留空待后续统一重试: {exc}")
+                log_line(_format_failure_log("标签补偿", row, f"停止补偿，留空待后续处理: {exc}"))
+                success = True
+                break
+        if success:
+            continue
+        still_pending += 1
+        db.mark_tag_pending_retry(row["url"], f"LLM 临时波动，补偿 {TAG_RETRY_LIMIT} 次后仍失败，留空待下轮统一补标签: {last_reason}")
+        log_line(_format_temporary_log("标签补偿", row, f"补偿 {TAG_RETRY_LIMIT} 次仍失败，留空待下轮统一补标签"))
+    return retried_success, still_pending
+
+
 def _tag_pending_rows(db: DBManager, tagger: ContentTagger | None) -> None:
     log_line("[4/6] 开始准备标签")
-    rows_to_prepare = db.list_pending_tag_rows()
+    rows_to_prepare = db.list_untagged_rows()
     if not rows_to_prepare:
-        log_line("[4/6] 没有需要补标签的 pending 条目")
+        log_line("[4/6] 没有需要补标签的无标签条目")
         return
     if not tagger:
-        for row in rows_to_prepare:
-            db.mark_tag_skipped(row["url"], row["tags"] or DEFAULT_TAG, "LLM 不可用，已降级默认标签")
-        log_line(f"[4/6] LLM 不可用，{len(rows_to_prepare)} 条已降级默认标签并继续推进")
+        log_line(f"[4/6] 当前无可用 LLM，{len(rows_to_prepare)} 条继续留空，等待下轮统一补标签")
         return
 
     prepared_count = 0
-    skipped_count = 0
-    temporary_count = 0
+    permanent_empty_count = 0
+    temporary_rows: list[Any] = []
     for row in rows_to_prepare:
-        fallback_tags = row["tags"] or DEFAULT_TAG
         try:
-            tags = tagger.tag(title=row["title"], source=row["source"])
-            db.update_tags(row["url"], tags)
+            _tag_single_row(db, row, tagger)
             prepared_count += 1
-        except TaggerTemporaryError as exc:
-            db.mark_tag_skipped(row["url"], fallback_tags, f"LLM 临时波动，已降级默认标签: {exc}")
-            temporary_count += 1
-            skipped_count += 1
-            log_line(_format_temporary_log("标签", row, f"已降级默认标签，保留入库推进: {exc}"))
-        except TaggerServiceUnavailable as exc:
-            db.mark_tag_skipped(row["url"], fallback_tags, f"LLM 服务不可用，已降级默认标签: {exc}")
-            temporary_count += 1
-            skipped_count += 1
-            log_line(_format_temporary_log("标签", row, f"服务不可用，已降级默认标签: {exc}"))
+        except (TaggerTemporaryError, TaggerServiceUnavailable) as exc:
+            temporary_rows.append(row)
+            db.mark_tag_pending_retry(row["url"], f"LLM 临时波动，先跳过本轮首轮打标: {exc}")
+            log_line(_format_temporary_log("标签", row, f"先跳过，待本轮尾部统一补偿: {exc}"))
         except TaggerPermanentError as exc:
-            db.mark_tag_skipped(row["url"], fallback_tags, f"LLM 标签失败，已降级默认标签: {exc}")
-            skipped_count += 1
-            log_line(_format_failure_log("标签", row, f"标签解析失败，已降级默认标签: {exc}"))
+            permanent_empty_count += 1
+            db.mark_tag_pending_retry(row["url"], f"标签真实失败，留空待后续统一补标签: {exc}")
+            log_line(_format_failure_log("标签", row, f"留空，待后续统一补标签: {exc}"))
         except Exception as exc:  # noqa: BLE001
-            db.mark_tag_skipped(row["url"], fallback_tags, f"LLM 标签失败，已降级默认标签: {exc}")
-            skipped_count += 1
-            log_line(_format_failure_log("标签", row, f"未知错误，已降级默认标签: {exc}"))
+            permanent_empty_count += 1
+            db.mark_tag_pending_retry(row["url"], f"标签未知失败，留空待后续统一补标签: {exc}")
+            log_line(_format_failure_log("标签", row, f"留空，待后续统一补标签: {exc}"))
 
-    log_line(f"[4/6] 标签完成 {prepared_count} 条，降级 {skipped_count} 条")
-    if temporary_count:
-        log_line(f"[4/6] LLM 临时波动 {temporary_count} 条，均已降级默认标签并继续后续推送")
+    retried_success = 0
+    still_pending = 0
+    if temporary_rows:
+        log_line(f"[4/6] 首轮临时波动 {len(temporary_rows)} 条，开始尾部统一补偿 {TAG_RETRY_LIMIT} 次")
+        retried_success, still_pending = _retry_temporary_tag_rows(db, tagger, temporary_rows)
+
+    log_line(
+        f"[4/6] 标签完成，首轮成功 {prepared_count} 条，补偿成功 {retried_success} 条，"
+        f"留空待下轮 {still_pending + permanent_empty_count} 条"
+    )
 
 
 def prepare_pending_tags(db: DBManager | None = None, tagger: ContentTagger | None = None) -> int:
