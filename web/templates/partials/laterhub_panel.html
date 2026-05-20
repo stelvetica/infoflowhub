@@ -24,12 +24,7 @@
         <button class="chip {% if not laterhub.selected_tags %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="">全部</button>
         {% for tag in laterhub.all_tags %}
           {% set active = tag in laterhub.selected_tags %}
-          {% if active %}
-            {% set next_tags = laterhub.selected_tags | reject('equalto', tag) | list %}
-          {% else %}
-            {% set next_tags = laterhub.selected_tags + [tag] %}
-          {% endif %}
-          <button class="chip {% if active %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="{{ next_tags | join(',') }}">{{ tag }}</button>
+          <button class="chip {% if active %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="{{ '' if active else tag }}">{{ tag }}</button>
         {% endfor %}
       </div>
       <div class="laterhub-footer-row laterhub-footer-row-bottom">

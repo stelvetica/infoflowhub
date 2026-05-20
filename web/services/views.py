@@ -543,7 +543,8 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
     keyword = normalize_text(query.get("laterhub_q", ""))
     filter_finished = query.get("laterhub_filter_finished", "0")
     selected_tags = split_tags(query.get("laterhub_filter_tag", ""))
-    selected_keys = {normalize_text(item) for item in selected_tags}
+    selected_tag = selected_tags[0] if selected_tags else ""
+    selected_key = normalize_text(selected_tag)
     page = max(int(query.get("laterhub_page", "1") or "1"), 1)
     all_rows: list[dict[str, Any]] = []
     for item in _load_laterhub_items():
@@ -569,7 +570,7 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
             continue
         if filter_finished == "0" and item["is_finished"]:
             continue
-        if not selected_keys.issubset(item["tag_keys"]):
+        if selected_key and selected_key not in item["tag_keys"]:
             continue
         rows.append(item)
     rows.sort(key=cmp_to_key(lambda a, b: compare_value(a.get(sort), b.get(sort), direction)))
@@ -588,8 +589,8 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
         "total": count_laterhub_items(),
         "filtered_total": len(rows),
         "all_tags": all_tags,
-        "selected_tags": selected_tags,
-        "selected_tags_text": join_tags(selected_tags),
+        "selected_tags": [selected_tag] if selected_tag else [],
+        "selected_tags_text": selected_tag,
         "sort": sort,
         "dir": direction,
         "q": query.get("laterhub_q", ""),
