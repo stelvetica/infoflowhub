@@ -13,11 +13,13 @@ from web.services.wechat_login import check_login_scan, complete_login, get_logi
 from web.services.views import (
     delete_source,
     format_success_sources_text,
+    get_laterhub_actionable_ids,
     get_entries_view,
     get_laterhub_summary,
     get_laterhub_view,
     get_settings_view,
     mark_laterhub_finished,
+    mark_laterhub_finished_bulk,
     normalize_sources,
     save_source,
     toggle_source,
@@ -184,6 +186,14 @@ async def laterhub_fetch_now_action(request: Request):
 async def toggle_laterhub_action(request: Request, link_id: int, finished: int = Form(...)):
     mark_laterhub_finished(link_id, bool(finished))
     params = query_dict(request)
+    return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params})
+
+
+@router.post("/actions/laterhub/bulk-finish", response_class=HTMLResponse)
+async def bulk_finish_laterhub_action(request: Request):
+    params = query_dict(request)
+    actionable_ids = get_laterhub_actionable_ids(params)
+    mark_laterhub_finished_bulk(actionable_ids, True)
     return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params})
 
 

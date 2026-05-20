@@ -394,6 +394,26 @@ def _load_laterhub_items(limit: int | None = None) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def _parse_laterhub_created_at(value: str) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        parsed = parse_published_datetime(text)
+        if parsed:
+            return parsed
+    return None
+
+
+def _laterhub_batch_key(value: str) -> str:
+    created_at = _parse_laterhub_created_at(value)
+    if created_at:
+        return created_at.astimezone().strftime("%Y-%m-%d %H:%M")
+    return str(value or "").strip()[:16]
+
+
 def count_laterhub_items() -> int:
     if not LATERHUB_DB_PATH.exists():
         return 0
@@ -481,6 +501,92 @@ def mark_laterhub_finished(link_id: int, finished: bool) -> None:
         conn.close()
 
 
+def mark_laterhub_finished_bulk(link_ids: list[int], finished: bool) -> int:
+    if not LATERHUB_DB_PATH.exists() or not link_ids:
+        return 0
+    normalized_ids = sorted({int(link_id) for link_id in link_ids})
+    placeholders = ", ".join("?" for _ in normalized_ids)
+    now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = _laterhub_conn()
+    try:
+        cursor = conn.execute(
+            f"""
+            UPDATE links
+            SET is_finished = ?, finished_at = ?, updated_at = ?
+            WHERE id IN ({placeholders})
+            """,
+            (1 if finished else 0, now_text if finished else None, now_text, *normalized_ids),
+        )
+        conn.commit()
+        return int(cursor.rowcount or 0)
+    finally:
+        conn.close()
+
+
+def _build_laterhub_rows() -> tuple[list[dict[str, Any]], str, dict[str, int]]:
+    all_rows: list[dict[str, Any]] = []
+    latest_batch_key = ""
+    latest_created_at: datetime | None = None
+    today = datetime.now().date()
+    scope_counts = {"all": 0, "current_batch": 0, "today": 0}
+    for item in _load_laterhub_items():
+        raw_tags_text = str(item.get("tags") or "")
+        tag_list = split_tags(raw_tags_text)
+        tags_text = join_tags(tag_list)
+        created_at_text = str(item.get("created_at") or "")
+        created_at = _parse_laterhub_created_at(created_at_text)
+        batch_key = _laterhub_batch_key(created_at_text)
+        local_created_date = created_at.astimezone().date() if created_at and created_at.tzinfo else (created_at.date() if created_at else None)
+        row = {
+            **item,
+            "display_time": format_date(created_at_text),
+            "sort_time": to_sortable_time(created_at_text),
+            "raw_tags_text": raw_tags_text,
+            "tags_text": tags_text,
+            "tag_list": tag_list,
+            "tag_keys": {normalize_text(tag) for tag in tag_list},
+            "created_at_dt": created_at,
+            "batch_key": batch_key,
+            "is_today": bool(local_created_date == today),
+        }
+        all_rows.append(row)
+        scope_counts["all"] += 1
+        if row["is_today"]:
+            scope_counts["today"] += 1
+        if created_at and (latest_created_at is None or created_at > latest_created_at):
+            latest_created_at = created_at
+            latest_batch_key = batch_key
+    if latest_batch_key:
+        scope_counts["current_batch"] = sum(1 for item in all_rows if item["batch_key"] == latest_batch_key)
+    return all_rows, latest_batch_key, scope_counts
+
+
+def _filter_laterhub_rows(query: dict[str, str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str, dict[str, int], str]:
+    keyword = normalize_text(query.get("laterhub_q", ""))
+    filter_finished = query.get("laterhub_filter_finished", "0")
+    selected_tags = split_tags(query.get("laterhub_filter_tag", ""))
+    selected_tag = selected_tags[0] if selected_tags else ""
+    selected_key = normalize_text(selected_tag)
+    filter_scope = query.get("laterhub_filter_scope", "")
+    all_rows, latest_batch_key, scope_counts = _build_laterhub_rows()
+    rows: list[dict[str, Any]] = []
+    for item in all_rows:
+        if keyword and keyword not in normalize_text(item["title"]) and keyword not in normalize_text(item["tags_text"]):
+            continue
+        if filter_finished == "1" and not item["is_finished"]:
+            continue
+        if filter_finished == "0" and item["is_finished"]:
+            continue
+        if selected_key and selected_key not in item["tag_keys"]:
+            continue
+        if filter_scope == "current_batch" and item["batch_key"] != latest_batch_key:
+            continue
+        if filter_scope == "today" and not item["is_today"]:
+            continue
+        rows.append(item)
+    return rows, all_rows, selected_tag, scope_counts, filter_scope
+
+
 def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
     current_sources = normalize_sources()
     enabled_ids = {item["id"] for item in current_sources if item.get("enabled")}
@@ -540,39 +646,9 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
     status = load_status()
     sort = query.get("laterhub_sort") or "sort_time"
     direction = query.get("laterhub_dir") or "desc"
-    keyword = normalize_text(query.get("laterhub_q", ""))
-    filter_finished = query.get("laterhub_filter_finished", "0")
-    selected_tags = split_tags(query.get("laterhub_filter_tag", ""))
-    selected_tag = selected_tags[0] if selected_tags else ""
-    selected_key = normalize_text(selected_tag)
     page = max(int(query.get("laterhub_page", "1") or "1"), 1)
-    all_rows: list[dict[str, Any]] = []
-    for item in _load_laterhub_items():
-        raw_tags_text = str(item.get("tags") or "")
-        tag_list = split_tags(raw_tags_text)
-        tags_text = join_tags(tag_list)
-        all_rows.append(
-            {
-                **item,
-                "display_time": format_date(item.get("created_at", "")),
-                "sort_time": to_sortable_time(item.get("created_at", "")),
-                "raw_tags_text": raw_tags_text,
-                "tags_text": tags_text,
-                "tag_list": tag_list,
-                "tag_keys": {normalize_text(tag) for tag in tag_list},
-            }
-        )
-    rows = []
-    for item in all_rows:
-        if keyword and keyword not in normalize_text(item["title"]) and keyword not in normalize_text(item["tags_text"]):
-            continue
-        if filter_finished == "1" and not item["is_finished"]:
-            continue
-        if filter_finished == "0" and item["is_finished"]:
-            continue
-        if selected_key and selected_key not in item["tag_keys"]:
-            continue
-        rows.append(item)
+    rows, all_rows, selected_tag, scope_counts, filter_scope = _filter_laterhub_rows(query)
+    filter_finished = query.get("laterhub_filter_finished", "0")
     rows.sort(key=cmp_to_key(lambda a, b: compare_value(a.get(sort), b.get(sort), direction)))
     all_tags_map: dict[str, str] = {}
     for item in all_rows:
@@ -584,13 +660,17 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
     total_pages = max((len(rows) + LATERHUB_PAGE_SIZE - 1) // LATERHUB_PAGE_SIZE, 1)
     safe_page = min(page, total_pages)
     page_rows = rows[(safe_page - 1) * LATERHUB_PAGE_SIZE : safe_page * LATERHUB_PAGE_SIZE]
+    actionable_ids = [int(item["id"]) for item in rows if not item["is_finished"]]
     return {
         "rows": page_rows,
         "total": count_laterhub_items(),
         "filtered_total": len(rows),
+        "bulk_finishable_count": len(actionable_ids),
         "all_tags": all_tags,
         "selected_tags": [selected_tag] if selected_tag else [],
         "selected_tags_text": selected_tag,
+        "filter_scope": filter_scope,
+        "scope_counts": scope_counts,
         "sort": sort,
         "dir": direction,
         "q": query.get("laterhub_q", ""),
@@ -600,6 +680,11 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
         "page_size": LATERHUB_PAGE_SIZE,
         "total_pages": total_pages,
     }
+
+
+def get_laterhub_actionable_ids(query: dict[str, str]) -> list[int]:
+    rows, _, _, _, _ = _filter_laterhub_rows(query)
+    return [int(item["id"]) for item in rows if not item["is_finished"]]
 
 
 def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
