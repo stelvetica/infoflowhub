@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -17,7 +17,8 @@ RUNTIME_PATH = BASE_DIR / "runtime" / "health" / "automation_runtime.json"
 @dataclass(frozen=True)
 class ScheduleSlot:
     key: str
-    run_at: time
+    scheduled_at: time
+    delay_minutes: int
     label: str
     runner: Callable[[], Awaitable[dict[str, Any]]]
 
@@ -30,15 +31,10 @@ class AutoRunner:
         self._slots = (
             ScheduleSlot(
                 key="daily_0600",
-                run_at=time(hour=6, minute=0),
-                label="每日 06:00 订阅+稍后读",
+                scheduled_at=time(hour=6, minute=0),
+                delay_minutes=10,
+                label="每日 06:00 订阅+稍后读（延迟自动运行）",
                 runner=self._run_morning,
-            ),
-            ScheduleSlot(
-                key="daily_1700",
-                run_at=time(hour=17, minute=0),
-                label="每日 17:00 订阅",
-                runner=self._run_evening,
             ),
         )
 
@@ -74,7 +70,7 @@ class AutoRunner:
         last_run_date = str(slot_state.get("last_run_date") or "")
         if last_run_date == today:
             return False
-        return now.time() >= slot.run_at
+        return now >= self._run_after(slot, now)
 
     async def _run_slot(self, slot: ScheduleSlot, now: datetime) -> None:
         async with self._lock:
@@ -114,17 +110,30 @@ class AutoRunner:
         laterhub = await asyncio.to_thread(fetch_laterhub_now)
         return {"subscriptions": subscriptions, "laterhub": laterhub}
 
-    async def _run_evening(self) -> dict[str, Any]:
-        subscriptions = await asyncio.to_thread(fetch_now)
-        return {"subscriptions": subscriptions}
-
     def _load_state(self) -> dict[str, Any]:
-        return read_json(RUNTIME_PATH, {"slots": {}})
+        state = read_json(RUNTIME_PATH, {"slots": {}})
+        slots = state.setdefault("slots", {})
+        slot_map = {slot.key: slot for slot in self._slots}
+        valid_keys = set(slot_map)
+        stale_keys = [key for key in list(slots.keys()) if key not in valid_keys]
+        for key in stale_keys:
+            slots.pop(key, None)
+        for key, slot in slot_map.items():
+            slot_state = slots.get(key)
+            if isinstance(slot_state, dict):
+                slot_state["label"] = slot.label
+        if stale_keys:
+            self._save_state(state)
+        return state
 
     def _save_state(self, state: dict[str, Any]) -> None:
         write_json(RUNTIME_PATH, state)
 
     @staticmethod
+    def _run_after(slot: ScheduleSlot, now: datetime) -> datetime:
+        scheduled = datetime.combine(now.date(), slot.scheduled_at)
+        return scheduled + timedelta(minutes=slot.delay_minutes)
+
+    @staticmethod
     def _format_dt(value: datetime) -> str:
         return value.strftime("%Y-%m-%d %H:%M:%S")
-
