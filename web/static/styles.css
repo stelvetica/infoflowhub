@@ -56,6 +56,8 @@ button, input, select, textarea { font: inherit; }
 .entries-fetch-progress { gap: 6px; padding: 6px 10px; }
 .entries-fetch-progress .label,
 .entries-fetch-progress strong { font-size: 11px; }
+.wechat-renew-btn { padding: 7px 12px; font-size: 12px; white-space: nowrap; }
+.wechat-renew-btn-active { font-weight: 700; box-shadow: 0 0 0 1px rgba(154, 103, 0, 0.08), 0 6px 16px rgba(154, 103, 0, 0.12); }
 .pane-card { min-width: 0; }
 .pane-card-left { min-height: 100%; }
 .card { background: rgba(255, 255, 255, 0.94); border: 1px solid var(--line); border-radius: 16px; padding: 16px; box-shadow: var(--shadow); backdrop-filter: blur(8px); }

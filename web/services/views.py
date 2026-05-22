@@ -781,6 +781,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     direction = query.get("dir", "asc")
     wechat_auth = normalize_utf8_obj(get_wechat_auth_status())
     wechat_login_url = f"/wechat-login?next={quote('/?view=settings', safe='')}"
+    wechat_entries_login_url = f"/wechat-login?next={quote('/', safe='')}"
     wechat_renew_url = "/actions/wechat-login/renew?view=settings"
     auth_assets = []
     for descriptor in list_auth_statuses():
@@ -878,4 +879,5 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         "settings_raw": load_settings(),
         "wechat_auth": wechat_auth,
         "wechat_login_url": wechat_login_url,
+        "wechat_entries_login_url": wechat_entries_login_url,
     }

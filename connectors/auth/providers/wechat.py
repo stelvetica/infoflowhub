@@ -17,6 +17,7 @@ WECHAT_AUTH_PATH = AUTH_DIR / "wechat_mp_main.json"
 LEGACY_WECHAT_AUTH_PATH = RUNTIME_DIR / "wechat_auth.json"
 WEB_LOG_PATH = RUNTIME_DIR / "web.log"
 WECHAT_AUTH_EXPIRE_WINDOW_MS = 24 * 3600 * 1000
+WECHAT_AUTH_INITIAL_EXPIRE_KEY = "initial_expire_time"
 
 
 def _clean_text(value: object) -> str:
@@ -68,6 +69,7 @@ def _extract_credentials(payload: object) -> dict[str, object]:
         "fakeid": _clean_text(payload.get("fakeid")),
         "nickname": normalize_utf8_text(payload.get("nickname")),
         "expire_time": _clean_text(payload.get("expire_time")),
+        "initial_expire_time": _clean_text(payload.get(WECHAT_AUTH_INITIAL_EXPIRE_KEY)),
     }
 
 
@@ -106,8 +108,12 @@ def get_wechat_credentials() -> dict[str, object]:
 
 
 def save_wechat_credentials(credentials: dict[str, object]) -> None:
+    existing = _load_credentials_from_file(WECHAT_AUTH_PATH)
     payload = dict(credentials)
     payload["nickname"] = normalize_utf8_text(payload.get("nickname"))
+    initial_expire_time = _clean_text(payload.get(WECHAT_AUTH_INITIAL_EXPIRE_KEY))
+    if not initial_expire_time:
+        payload[WECHAT_AUTH_INITIAL_EXPIRE_KEY] = _clean_text(existing.get(WECHAT_AUTH_INITIAL_EXPIRE_KEY))
     _persist_canonical_credentials(payload)
 
 
@@ -199,9 +205,20 @@ def validate_wechat_auth() -> dict[str, object]:
 def get_wechat_status() -> dict[str, Any]:
     credentials = get_wechat_credentials()
     status = validate_wechat_auth()
+    expire_text = _clean_text(credentials.get("expire_time"))
+    initial_expire_text = _clean_text(credentials.get(WECHAT_AUTH_INITIAL_EXPIRE_KEY))
+    expire_time = int(expire_text) if expire_text.isdigit() else 0
+    initial_expire_time = int(initial_expire_text) if initial_expire_text.isdigit() else 0
+    now_ms = int(time.time() * 1000)
+    renew_highlight_threshold = initial_expire_time or expire_time
     return {
         "has_credentials": bool(_clean_text(credentials.get("token")) and _clean_text(credentials.get("cookie"))),
         "nickname": normalize_utf8_text(credentials.get("nickname")),
-        "expire_time": int(_clean_text(credentials.get("expire_time"))) if _clean_text(credentials.get("expire_time")).isdigit() else 0,
+        "expire_time": expire_time,
+        "initial_expire_time": initial_expire_time,
+        "initial_expire_time_text": _format_local_datetime(initial_expire_time),
+        "renew_highlight_threshold": renew_highlight_threshold,
+        "renew_highlight_threshold_text": _format_local_datetime(renew_highlight_threshold),
+        "should_highlight_renew": bool(status.get("is_expired")) or (renew_highlight_threshold > 0 and now_ms >= renew_highlight_threshold),
         **status,
     }

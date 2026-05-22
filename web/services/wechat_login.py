@@ -268,6 +268,7 @@ async def complete_login(cookie_header: str) -> tuple[dict, list[str]]:
         "fakeid": fakeid,
         "nickname": nickname,
         "expire_time": expire_time,
+        "initial_expire_time": expire_time,
     }
     save_wechat_credentials(credentials)
     log_wechat_auth_event(

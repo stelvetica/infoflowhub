@@ -101,6 +101,13 @@
                   <span class="label">抓取状态</span>
                   <strong>{{ settings.status['success_sources_text'] }}</strong>
                 </div>
+                <a
+                  class="btn ghost wechat-renew-btn {% if settings.wechat_auth['should_highlight_renew'] %}warn wechat-renew-btn-active{% endif %}"
+                  href="{{ settings.wechat_entries_login_url }}"
+                  title="{% if settings.wechat_auth['should_highlight_renew'] %}微信登录态已过期或已达到首次扫码截止时间{% elif settings.wechat_auth['renew_highlight_threshold_text'] %}首次扫码截止时间：{{ settings.wechat_auth['renew_highlight_threshold_text'] }}{% else %}打开微信扫码续期页{% endif %}"
+                >
+                  微信续期
+                </a>
               </div>
               <form class="toolbar toolbar-inline toolbar-inline-spread entries-header-form entries-header-form-right" hx-get="/fragments/entries" hx-target="#entries-panel" hx-swap="innerHTML">
                 <input type="hidden" name="entries_sort" value="{{ entries.sort }}">
