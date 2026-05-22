@@ -4,6 +4,7 @@ from apps.laterhub.pipeline import run_main_flow
 from apps.subscriptions.config import load_settings, load_sources
 from apps.subscriptions.rss_db import save_entries
 from apps.subscriptions.source_ids import canonicalize_source_id
+from infra.text_normalizer import normalize_utf8_text
 from connectors.rss.fetch import fetch_many
 from web.services.views import HEALTH_PATH, STATUS_PATH, load_health, load_status, write_json
 
@@ -15,7 +16,7 @@ def now_text() -> str:
 
 
 def clean_health_error(value: str) -> str:
-    return " ".join((value or "").strip().split())[:320]
+    return " ".join(normalize_utf8_text(value or "").strip().split())[:320]
 
 
 def is_expected_login_requirement_error(message: str) -> bool:
@@ -32,6 +33,7 @@ def update_source_health(result) -> None:
     source_health = health.setdefault("sources", {})
     source_id = canonicalize_source_id(result.source_id)
     current = source_health.get(source_id, {})
+    source_name = normalize_utf8_text(result.source_name)
     current["last_checked_at"] = now_text()
     if result.ok:
         current["last_success_at"] = current["last_checked_at"]
@@ -45,6 +47,7 @@ def update_source_health(result) -> None:
         "last_success_at": str(current.get("last_success_at") or ""),
         "last_failed_at": str(current.get("last_failed_at") or ""),
         "last_error": str(current.get("last_error") or ""),
+        "source_name": source_name,
     }
     write_json(HEALTH_PATH, health)
 
@@ -69,7 +72,7 @@ def fetch_now() -> dict:
         for result in results:
             update_source_health(result)
             if not result.ok:
-                issue_text = f"{result.source_name}: {result.error or result.status}"
+                issue_text = f"{normalize_utf8_text(result.source_name)}: {normalize_utf8_text(result.error or result.status)}"
                 if is_expected_login_requirement_error(result.error or ""):
                     warnings.append(issue_text)
                     continue

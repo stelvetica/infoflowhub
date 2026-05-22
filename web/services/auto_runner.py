@@ -7,6 +7,7 @@ from datetime import datetime, time
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+from infra.text_normalizer import normalize_utf8_text
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
 from web.services.views import read_json, write_json
 
@@ -91,7 +92,7 @@ class AutoRunner:
                 slot_state["label"] = slot.label
                 slot_state["last_status"] = "error"
                 slot_state["last_finished_at"] = self._format_dt(datetime.now())
-                slot_state["last_error"] = str(exc)
+                slot_state["last_error"] = normalize_utf8_text(str(exc))
                 self._save_state(state)
                 return
             state = self._load_state()

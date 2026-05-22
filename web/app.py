@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from apps.subscriptions.rss_db import normalize_existing_entries
+from scripts.normalize_runtime_utf8 import main as normalize_runtime_utf8
 from web.routes.main import router
 from web.services.auto_runner import AutoRunner
 
@@ -17,6 +19,8 @@ auto_runner = AutoRunner()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    normalize_runtime_utf8()
+    normalize_existing_entries()
     await auto_runner.start()
     try:
         yield

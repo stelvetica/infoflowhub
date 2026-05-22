@@ -9,6 +9,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from apps.subscriptions.config import load_sources
+from apps.subscriptions.rss_db import normalize_existing_entries
 from apps.subscriptions.source_ids import canonicalize_source_id
 from infra.text_normalizer import normalize_utf8_text
 from infra.utf8_json import dump_json_utf8, load_json_utf8
@@ -73,6 +74,8 @@ def main() -> None:
     normalize_wechat_auth_file(RUNTIME_DIR / "auth" / "wechat_mp_main.json")
     normalize_automation_runtime()
     normalize_source_health()
+    dump_json_utf8(BASE_DIR / "config" / "subscription_sources.json", {"sources": load_sources()})
+    normalize_existing_entries()
 
 
 if __name__ == "__main__":

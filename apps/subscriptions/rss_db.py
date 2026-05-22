@@ -8,6 +8,7 @@ from typing import Iterable
 from apps.subscriptions.models import FeedEntry
 from apps.subscriptions.source_ids import canonicalize_source_id, legacy_source_ids
 from connectors._shared.common import parse_published_datetime
+from infra.text_normalizer import normalize_utf8_text
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -103,7 +104,7 @@ def normalize_published_text(value: str) -> str:
 
 
 def sanitize_db_text(value: str) -> str:
-    return re.sub(r"[\ud800-\udfff]", "", value or "")
+    return re.sub(r"[\ud800-\udfff]", "", normalize_utf8_text(value or ""))
 
 
 def rename_source(source_id: str, source_name: str) -> int:
@@ -149,12 +150,12 @@ def save_entries(entries: Iterable[FeedEntry]) -> int:
                 """,
                 (
                     source_id,
-                    item.source_name,
-                    item.title,
+                    sanitize_db_text(item.source_name),
+                    sanitize_db_text(item.title),
                     item.link,
                     normalized_published,
                     normalized_published,
-                    item.summary,
+                    sanitize_db_text(item.summary),
                 ),
             )
             inserted += int(cursor.rowcount > 0)
@@ -192,7 +193,19 @@ def list_entries(limit: int = 200, source_id: str = "") -> list[dict]:
             ).fetchall()
     finally:
         conn.close()
-    return [dict(row) for row in rows]
+    return [
+        {
+            "source_id": canonicalize_source_id(str(row["source_id"] or "")),
+            "source_name": normalize_utf8_text(row["source_name"]),
+            "title": normalize_utf8_text(row["title"]),
+            "link": str(row["link"] or "").strip(),
+            "published": normalize_utf8_text(row["published"]),
+            "published_at": normalize_utf8_text(row["published_at"]),
+            "summary": normalize_utf8_text(row["summary"]),
+            "created_at": normalize_utf8_text(row["created_at"]),
+        }
+        for row in rows
+    ]
 
 
 def delete_source_state(source_id: str) -> None:
@@ -238,7 +251,7 @@ def list_source_stats() -> list[dict]:
         if not current:
             merged[source_id] = {
                 "source_id": source_id,
-                "source_name": item["source_name"],
+                "source_name": normalize_utf8_text(item["source_name"]),
                 "entry_count": int(item["entry_count"] or 0),
                 "last_seen": item["last_seen"],
             }
@@ -246,8 +259,65 @@ def list_source_stats() -> list[dict]:
         current["entry_count"] += int(item["entry_count"] or 0)
         if str(item["last_seen"] or "") > str(current.get("last_seen") or ""):
             current["last_seen"] = item["last_seen"]
-            current["source_name"] = item["source_name"]
+            current["source_name"] = normalize_utf8_text(item["source_name"])
     return sorted(merged.values(), key=lambda item: str(item.get("source_name") or "").lower())
+
+
+def normalize_existing_entries() -> int:
+    conn = get_connection()
+    updated = 0
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT id, source_id, source_name, title, published, published_at, summary, created_at
+            FROM rss_entries
+            """
+        ).fetchall()
+        for row in rows:
+            normalized = {
+                "source_id": canonicalize_source_id(str(row["source_id"] or "")),
+                "source_name": sanitize_db_text(str(row["source_name"] or "")),
+                "title": sanitize_db_text(str(row["title"] or "")),
+                "published": normalize_utf8_text(str(row["published"] or "")),
+                "published_at": normalize_utf8_text(str(row["published_at"] or "")),
+                "summary": sanitize_db_text(str(row["summary"] or "")),
+                "created_at": normalize_utf8_text(str(row["created_at"] or "")),
+            }
+            current = {
+                "source_id": str(row["source_id"] or ""),
+                "source_name": str(row["source_name"] or ""),
+                "title": str(row["title"] or ""),
+                "published": str(row["published"] or ""),
+                "published_at": str(row["published_at"] or ""),
+                "summary": str(row["summary"] or ""),
+                "created_at": str(row["created_at"] or ""),
+            }
+            if current == normalized:
+                continue
+            conn.execute(
+                """
+                UPDATE rss_entries
+                SET source_id = ?, source_name = ?, title = ?, published = ?, published_at = ?, summary = ?, created_at = ?
+                WHERE id = ?
+                """,
+                (
+                    normalized["source_id"],
+                    normalized["source_name"],
+                    normalized["title"],
+                    normalized["published"],
+                    normalized["published_at"],
+                    normalized["summary"],
+                    normalized["created_at"],
+                    int(row["id"]),
+                ),
+            )
+            updated += 1
+        if updated:
+            conn.commit()
+    finally:
+        conn.close()
+    return updated
 
 
 def delete_entries_by_source(source_id: str) -> int:
