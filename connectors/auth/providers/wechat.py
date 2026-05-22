@@ -55,6 +55,34 @@ def log_wechat_auth_event(message: str) -> None:
         return
 
 
+def _extract_credentials(payload: object) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        return {}
+    token = _clean_text(payload.get("token"))
+    cookie = _clean_text(payload.get("cookie"))
+    if not token or not cookie:
+        return {}
+    return {
+        "token": token,
+        "cookie": cookie,
+        "fakeid": _clean_text(payload.get("fakeid")),
+        "nickname": normalize_utf8_text(payload.get("nickname")),
+        "expire_time": _clean_text(payload.get("expire_time")),
+    }
+
+
+def _load_credentials_from_file(path: Path) -> dict[str, object]:
+    try:
+        return _extract_credentials(load_json_utf8(path))
+    except Exception:
+        return {}
+
+
+def _persist_canonical_credentials(credentials: dict[str, object]) -> None:
+    AUTH_DIR.mkdir(parents=True, exist_ok=True)
+    dump_json_utf8(WECHAT_AUTH_PATH, credentials)
+
+
 def get_wechat_credentials() -> dict[str, object]:
     env_credentials = {
         "token": _clean_text(os.getenv("WECHAT_TOKEN")),
@@ -65,28 +93,22 @@ def get_wechat_credentials() -> dict[str, object]:
     }
     if env_credentials["token"] and env_credentials["cookie"]:
         return env_credentials
-    for path in (WECHAT_AUTH_PATH, LEGACY_WECHAT_AUTH_PATH):
-        try:
-            payload = load_json_utf8(path)
-        except Exception:
-            continue
-        if isinstance(payload, dict):
-            return {
-                "token": _clean_text(payload.get("token")),
-                "cookie": _clean_text(payload.get("cookie")),
-                "fakeid": _clean_text(payload.get("fakeid")),
-                "nickname": normalize_utf8_text(payload.get("nickname")),
-                "expire_time": _clean_text(payload.get("expire_time")),
-            }
+    canonical_credentials = _load_credentials_from_file(WECHAT_AUTH_PATH)
+    if canonical_credentials:
+        return canonical_credentials
+
+    legacy_credentials = _load_credentials_from_file(LEGACY_WECHAT_AUTH_PATH)
+    if legacy_credentials:
+        _persist_canonical_credentials(legacy_credentials)
+        log_wechat_auth_event(f"检测到 legacy 微信认证文件，已迁移到 canonical 存储：{WECHAT_AUTH_PATH}")
+        return legacy_credentials
     return env_credentials
 
 
 def save_wechat_credentials(credentials: dict[str, object]) -> None:
     payload = dict(credentials)
     payload["nickname"] = normalize_utf8_text(payload.get("nickname"))
-    AUTH_DIR.mkdir(parents=True, exist_ok=True)
-    dump_json_utf8(WECHAT_AUTH_PATH, payload)
-    dump_json_utf8(LEGACY_WECHAT_AUTH_PATH, payload)
+    _persist_canonical_credentials(payload)
 
 
 def validate_wechat_auth() -> dict[str, object]:
