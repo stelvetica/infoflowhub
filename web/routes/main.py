@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
 from web.services.wechat_login import check_login_scan, complete_login, get_login_qrcode, renew_login_with_existing_credentials, start_login
 from web.services.views import (
+    build_laterhub_state_params,
     delete_source,
     format_success_sources_text,
     get_laterhub_actionable_ids,
@@ -55,6 +56,7 @@ def render_main(request: Request, params: dict[str, str]):
         entries_params.setdefault("entries_unread_only", "1")
     entries = get_entries_view(entries_params)
     laterhub = get_laterhub_view(params)
+    laterhub_params = build_laterhub_state_params(params)
     settings = get_settings_view(params)
     success_sources_text = settings["status"]["success_sources_text"]
     return templates.TemplateResponse(
@@ -64,6 +66,7 @@ def render_main(request: Request, params: dict[str, str]):
             "view": view,
             "entries": entries,
             "laterhub": laterhub,
+            "laterhub_params": laterhub_params,
             "settings": settings,
             "success_sources_text": success_sources_text,
             "params": entries_params if view != "settings" else params,
@@ -86,7 +89,7 @@ async def entries_fragment(request: Request):
 @router.get("/fragments/laterhub", response_class=HTMLResponse)
 async def laterhub_fragment(request: Request):
     params = query_dict(request)
-    return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params})
+    return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params, "laterhub_params": build_laterhub_state_params(params)})
 
 
 @router.get("/fragments/runtime-status", response_class=HTMLResponse)
@@ -180,21 +183,21 @@ async def fetch_now_action(request: Request):
 async def laterhub_fetch_now_action(request: Request):
     await run_in_threadpool(fetch_laterhub_now)
     params = query_dict(request)
-    return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params})
+    return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params, "laterhub_params": build_laterhub_state_params(params)})
 
 
 @router.post("/actions/laterhub/{link_id}/toggle-finished", response_class=HTMLResponse)
 async def toggle_laterhub_action(request: Request, link_id: int, finished: int = Form(...)):
     mark_laterhub_finished(link_id, bool(finished))
     params = query_dict(request)
-    return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params})
+    return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params, "laterhub_params": build_laterhub_state_params(params)})
 
 
 @router.post("/actions/laterhub/{link_id}/mark-opened", response_class=HTMLResponse)
 async def mark_laterhub_opened_action(request: Request, link_id: int):
     mark_laterhub_opened(link_id, True)
     params = query_dict(request)
-    return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params})
+    return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params, "laterhub_params": build_laterhub_state_params(params)})
 
 
 @router.post("/actions/laterhub/bulk-finish", response_class=HTMLResponse)
@@ -202,7 +205,7 @@ async def bulk_finish_laterhub_action(request: Request):
     params = query_dict(request)
     actionable_ids = get_laterhub_actionable_ids(params)
     mark_laterhub_finished_bulk(actionable_ids, True)
-    return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params})
+    return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params, "laterhub_params": build_laterhub_state_params(params)})
 
 
 @router.post("/actions/source/save")

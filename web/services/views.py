@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from datetime import datetime
 from functools import cmp_to_key
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlencode, urlparse
 
 from apps.subscriptions.config import load_settings, load_sources, save_sources
 from apps.subscriptions.rss_db import (
@@ -51,6 +52,15 @@ LATERHUB_PAGE_SIZE = 10
 ENTRIES_READ_CUTOFF = datetime(2026, 5, 1).timestamp()
 ABSOLUTE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 BILIBILI_DYNAMIC_PATH_RE = re.compile(r"^/(\d+)$")
+LATERHUB_QUERY_KEYS = (
+    "laterhub_q",
+    "laterhub_sort",
+    "laterhub_dir",
+    "laterhub_filter_finished",
+    "laterhub_filter_tag",
+    "laterhub_filter_scope",
+    "laterhub_page",
+)
 
 
 def read_json(path: Path, fallback: Any) -> Any:
@@ -621,6 +631,24 @@ def _filter_laterhub_rows(query: dict[str, str]) -> tuple[list[dict[str, Any]], 
     return rows, all_rows, selected_tag, scope_counts, filter_scope
 
 
+def build_laterhub_state_params(query: Mapping[str, Any], *, page: int | None = None) -> dict[str, str]:
+    safe_page = page if page is not None else max(int(str(query.get("laterhub_page", "1") or "1")), 1)
+    state = {
+        "laterhub_q": str(query.get("laterhub_q", "") or ""),
+        "laterhub_sort": str(query.get("laterhub_sort") or "sort_time"),
+        "laterhub_dir": str(query.get("laterhub_dir") or "desc"),
+        "laterhub_filter_finished": str(query.get("laterhub_filter_finished", "0") or "0"),
+        "laterhub_filter_tag": str(query.get("laterhub_filter_tag", "") or ""),
+        "laterhub_filter_scope": str(query.get("laterhub_filter_scope", "") or ""),
+        "laterhub_page": str(max(safe_page, 1)),
+    }
+    return state
+
+
+def build_laterhub_query_string(query: Mapping[str, Any], *, page: int | None = None) -> str:
+    return urlencode({key: value for key, value in build_laterhub_state_params(query, page=page).items() if value != ""})
+
+
 def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
     current_sources = normalize_sources()
     enabled_ids = {item["id"] for item in current_sources if item.get("enabled")}
@@ -695,6 +723,14 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
     safe_page = min(page, total_pages)
     page_rows = rows[(safe_page - 1) * LATERHUB_PAGE_SIZE : safe_page * LATERHUB_PAGE_SIZE]
     actionable_ids = [int(item["id"]) for item in rows if not item["is_finished"]]
+    state_params = build_laterhub_state_params(
+        {
+            **query,
+            "laterhub_filter_tag": selected_tag,
+            "laterhub_filter_scope": filter_scope,
+            "laterhub_page": str(safe_page),
+        }
+    )
     return {
         "rows": page_rows,
         "total": count_laterhub_items(),
@@ -714,6 +750,10 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
         "page": safe_page,
         "page_size": LATERHUB_PAGE_SIZE,
         "total_pages": total_pages,
+        "state_params": state_params,
+        "state_query": build_laterhub_query_string(state_params),
+        "prev_query": build_laterhub_query_string(state_params, page=(safe_page - 1 if safe_page > 1 else 1)),
+        "next_query": build_laterhub_query_string(state_params, page=(safe_page + 1 if safe_page < total_pages else total_pages)),
     }
 
 
