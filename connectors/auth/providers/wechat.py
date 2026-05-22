@@ -50,7 +50,7 @@ def log_wechat_auth_event(message: str) -> None:
     try:
         WEB_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with WEB_LOG_PATH.open("a", encoding="utf-8") as file:
-            file.write(f"[{timestamp}] [wechat_auth] {message}\n")
+            file.write(f"[{timestamp}] [wechat_auth] {normalize_utf8_text(message)}\n")
     except Exception:
         return
 

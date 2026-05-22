@@ -15,6 +15,7 @@ from connectors.auth.providers.wechat import (
     log_wechat_auth_event,
     save_wechat_credentials,
 )
+from infra.text_normalizer import normalize_utf8_text
 
 
 MP_BASE_URL = "https://mp.weixin.qq.com"
@@ -237,7 +238,7 @@ async def complete_login(cookie_header: str) -> tuple[dict, list[str]]:
     )
     payload = response.json()
     if payload.get("base_resp", {}).get("ret") != 0:
-        error = str(payload.get("base_resp", {}).get("err_msg") or "微信公众号扫码登录失败").strip()
+        error = normalize_utf8_text(payload.get("base_resp", {}).get("err_msg") or "微信公众号扫码登录失败").strip()
         log_wechat_auth_event(f"公众号扫码登录失败：{error}")
         raise RuntimeError(error)
 
@@ -292,7 +293,7 @@ async def fetch_account_identity(*, token: str, cookie_header: str) -> tuple[str
         html = info_response.text
         nick_match = re.search(r'nick_name\s*[:=]\s*["\']([^"\']+)["\']', html)
         if nick_match:
-            nickname = nick_match.group(1).strip() or nickname
+            nickname = normalize_utf8_text(nick_match.group(1)).strip() or nickname
 
         search_response = await client.get(
             WECHAT_SEARCH_BIZ_URL,
@@ -313,7 +314,7 @@ async def fetch_account_identity(*, token: str, cookie_header: str) -> tuple[str
         if search_payload.get("base_resp", {}).get("ret") == 0:
             accounts = search_payload.get("list", []) or []
             for account in accounts:
-                if str(account.get("nickname") or "").strip() == nickname:
+                if normalize_utf8_text(account.get("nickname")).strip() == nickname:
                     fakeid = str(account.get("fakeid") or "").strip()
                     break
             if not fakeid and accounts:
@@ -364,7 +365,7 @@ async def renew_login_with_existing_credentials() -> tuple[dict[str, object], li
         "token": token,
         "cookie": merged_cookie,
         "fakeid": fakeid or str(credentials.get("fakeid") or "").strip(),
-        "nickname": nickname or str(credentials.get("nickname") or "").strip(),
+        "nickname": nickname or normalize_utf8_text(credentials.get("nickname")).strip(),
         "expire_time": expire_time,
     }
     save_wechat_credentials(renewed)

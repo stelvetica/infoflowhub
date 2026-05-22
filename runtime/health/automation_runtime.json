@@ -2,48 +2,28 @@
   "slots": {
     "daily_0600": {
       "label": "每日 06:00 订阅+稍后读",
-      "last_started_at": "2026-05-20 06:00:12",
-      "last_run_date": "2026-05-20",
+      "last_started_at": "2026-05-22 06:00:11",
+      "last_run_date": "2026-05-22",
       "last_status": "success",
-      "last_finished_at": "2026-05-20 06:02:07",
+      "last_finished_at": "2026-05-22 06:02:04",
       "last_error": "",
       "last_result": {
         "subscriptions": {
-          "last_run_at": "2026-05-20 06:01:55",
-          "last_success_at": "2026-05-20 06:01:55",
-          "last_error": "",
-          "last_total_sources": 29,
-          "last_success_sources": 29,
-          "last_inserted_entries": 556,
-          "fetch_state": "success",
-          "current_run_started_at": "2026-05-20 06:00:12"
-        },
-        "laterhub": {
-          "fetched_sources": 2,
-          "pending_total": 60,
-          "push_enabled": 0
-        }
-      }
-    },
-    "daily_1700": {
-      "label": "每日 17:00 订阅",
-      "last_status": "success",
-      "last_finished_at": "2026-05-20 18:28:18",
-      "last_error": "",
-      "last_result": {
-        "subscriptions": {
-          "last_run_at": "2026-05-20 18:28:18",
-          "last_success_at": "2026-05-20 18:28:18",
+          "last_run_at": "2026-05-22 06:01:51",
+          "last_success_at": "2026-05-22 06:01:51",
           "last_error": "",
           "last_total_sources": 29,
           "last_success_sources": 29,
           "last_inserted_entries": 555,
           "fetch_state": "success",
-          "current_run_started_at": "2026-05-20 18:26:43"
+          "current_run_started_at": "2026-05-22 06:00:11"
+        },
+        "laterhub": {
+          "fetched_sources": 2,
+          "pending_total": 76,
+          "push_enabled": 0
         }
-      },
-      "last_started_at": "2026-05-20 18:26:43",
-      "last_run_date": "2026-05-20"
+      }
     }
   }
 }

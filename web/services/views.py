@@ -23,7 +23,7 @@ from apps.subscriptions.source_ids import canonicalize_source_id, legacy_source_
 from connectors._shared.common import parse_published_datetime, resolve_web_target
 from connectors.auth import list_auth_statuses
 from connectors.wechat.auth import get_wechat_auth_status
-from infra.text_normalizer import normalize_utf8_obj, normalize_utf8_text
+from infra.text_normalizer import normalize_text_lines, normalize_utf8_obj, normalize_utf8_text
 from infra.utf8_json import dump_json_utf8, load_json_utf8
 from web.services.utils import (
     build_source_id,
@@ -79,7 +79,7 @@ def read_log_tail(path: Path, max_lines: int = 80) -> str:
         lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
     except Exception:
         return ""
-    tail = [line for line in lines[-max_lines:] if line.strip()]
+    tail = [normalize_utf8_text(line) for line in lines[-max_lines:] if line.strip()]
     return "\n".join(tail)
 
 
@@ -168,8 +168,8 @@ def auth_requirement_meta(auth_key: str) -> dict[str, str] | None:
         }
         return {
             "requirement": requirement_map.get(auth_key, descriptor.display_name),
-            "hint": descriptor.hint,
-            "status_text": descriptor.status_text,
+            "hint": normalize_utf8_text(descriptor.hint),
+            "status_text": normalize_utf8_text(descriptor.status_text),
             "status_level": descriptor.status_level,
         }
     return None
@@ -204,7 +204,7 @@ def infer_channel(feed_url: str, site_url: str) -> str:
 
 def canonicalize_source(item: dict[str, Any]) -> dict[str, Any] | None:
     source_id = str(item.get("id") or "").strip()
-    name = str(item.get("name") or "").strip()
+    name = normalize_utf8_text(item.get("name"))
     feed_url = str(item.get("feed_url") or "").strip()
     site_url = str(item.get("site_url") or "").strip()
     provider = str(item.get("provider") or "").strip()
@@ -220,14 +220,14 @@ def canonicalize_source(item: dict[str, Any]) -> dict[str, Any] | None:
     return {
         "id": source_id,
         "name": name,
-        "group": str(item.get("group") or "").strip(),
+        "group": normalize_utf8_text(item.get("group")),
         "feed_url": feed_url,
         "site_url": site_url,
         "provider": provider,
         "fetch_via": fetch_via,
         "kind": kind,
         "enabled": bool(item.get("enabled", True)),
-        "note": str(item.get("note") or ""),
+        "note": normalize_utf8_text(item.get("note")),
         "channel": channel,
         "auth_key": auth_key,
         "fallback_mode": fallback_mode,
@@ -275,7 +275,7 @@ def source_runtime_health(source_id: str) -> dict[str, str]:
         "last_checked_at": str(source_health.get("last_checked_at") or ""),
         "last_success_at": str(source_health.get("last_success_at") or ""),
         "last_failed_at": str(source_health.get("last_failed_at") or ""),
-        "last_error": str(source_health.get("last_error") or ""),
+        "last_error": normalize_text_lines(source_health.get("last_error") or ""),
     }
 
 
@@ -287,7 +287,7 @@ def save_source(payload: dict[str, str]) -> None:
     previous_name = str(existing.get("name") or "").strip() if existing else ""
     clean_feed_url = sanitize_db_text(payload["feed_url"]).strip()
     clean_site_url = sanitize_db_text(payload.get("site_url", "")).strip()
-    clean_name = sanitize_db_text(payload["name"]).strip()
+    clean_name = normalize_utf8_text(sanitize_db_text(payload["name"]).strip())
     requested_source_id = sanitize_db_text(payload.get("source_id", "")).strip()
     provider, fetch_via, kind = infer_source_meta(clean_feed_url, clean_site_url)
     channel = infer_channel(clean_feed_url, clean_site_url)
@@ -387,7 +387,7 @@ def _load_laterhub_items(limit: int | None = None) -> list[dict[str, Any]]:
         if limit is None:
             rows = conn.execute(
                 """
-                SELECT id, url, title, tags, created_at, updated_at, is_finished, is_opened, opened_at
+                SELECT id, url, title, tags, created_at, updated_at, is_finished, is_opened, opened_at, source
                 FROM links
                 ORDER BY id DESC
                 """
@@ -395,7 +395,7 @@ def _load_laterhub_items(limit: int | None = None) -> list[dict[str, Any]]:
         else:
             rows = conn.execute(
                 """
-                SELECT id, url, title, tags, created_at, updated_at, is_finished, is_opened, opened_at
+                SELECT id, url, title, tags, created_at, updated_at, is_finished, is_opened, opened_at, source
                 FROM links
                 ORDER BY id DESC
                 LIMIT ?
@@ -569,7 +569,7 @@ def _build_laterhub_rows() -> tuple[list[dict[str, Any]], str, dict[str, int]]:
     today = datetime.now().date()
     scope_counts = {"all": 0, "current_batch": 0, "today": 0}
     for item in _load_laterhub_items():
-        raw_tags_text = str(item.get("tags") or "")
+        raw_tags_text = normalize_utf8_text(item.get("tags"))
         tag_list = split_tags(raw_tags_text)
         tags_text = join_tags(tag_list)
         created_at_text = str(item.get("created_at") or "")
@@ -578,6 +578,7 @@ def _build_laterhub_rows() -> tuple[list[dict[str, Any]], str, dict[str, int]]:
         local_created_date = created_at.astimezone().date() if created_at and created_at.tzinfo else (created_at.date() if created_at else None)
         row = {
             **item,
+            "title": normalize_utf8_text(item.get("title")),
             "display_time": format_date(created_at_text),
             "sort_time": to_sortable_time(created_at_text),
             "raw_tags_text": raw_tags_text,
@@ -667,7 +668,7 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
         if keyword and not any(keyword in normalize_text(str(item.get(field) or "")) for field in ("source_name", "title", "summary")):
             continue
         current_name = current_name_map.get(item["source_id"], "").strip()
-        display_source_name = current_name or item.get("source_name") or ""
+        display_source_name = current_name or normalize_utf8_text(item.get("source_name")) or ""
         display_time_raw = item.get("published_at") or item.get("published") or item.get("created_at") or ""
         sort_time = to_sortable_time(display_time_raw)
         source_site_url = current_site_map.get(item["source_id"], "").strip()
@@ -677,6 +678,8 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
         rows.append(
             {
                 **item,
+                "title": normalize_utf8_text(item.get("title")),
+                "summary": normalize_utf8_text(item.get("summary")),
                 "link": link,
                 "has_link": bool(link),
                 "source_name": display_source_name,
@@ -768,6 +771,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     status["success_sources_text"] = format_success_sources_text(status)
     status["last_run_inserted_entries"] = int(status.get("last_inserted_entries") or 0)
     status["run_log_text"] = read_log_tail(WEB_LOG_PATH)
+    status["last_error"] = normalize_text_lines(status.get("last_error"))
     summary = get_laterhub_summary()
     laterhub_sources = get_laterhub_source_stats()
     stats = {item["source_id"]: item for item in list_source_stats()}
@@ -775,14 +779,14 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     source_filter = query.get("source_filter", "")
     sort = query.get("sort", "name")
     direction = query.get("dir", "asc")
-    wechat_auth = get_wechat_auth_status()
+    wechat_auth = normalize_utf8_obj(get_wechat_auth_status())
     wechat_login_url = f"/wechat-login?next={quote('/?view=settings', safe='')}"
     wechat_renew_url = "/actions/wechat-login/renew?view=settings"
     auth_assets = []
     for descriptor in list_auth_statuses():
         expire_summary = ""
         expire_at_text = ""
-        hint = descriptor.hint
+        hint = normalize_utf8_text(descriptor.hint)
         action_url = wechat_login_url if descriptor.auth_key == "wechat_mp_main" else ""
         action_label = "续期/登录" if descriptor.auth_key == "wechat_mp_main" else "查看说明"
         renew_action_url = ""
@@ -802,13 +806,13 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
                 renew_action_label = "免扫码续期"
         row = {
             "auth_key": descriptor.auth_key,
-            "display_name": descriptor.display_name,
+            "display_name": normalize_utf8_text(descriptor.display_name),
             "platform": descriptor.platform,
             "auth_mode": descriptor.auth_mode,
             "storage_ref": descriptor.storage_ref,
             "renew_strategy": descriptor.renew_strategy,
-            "description": descriptor.description,
-            "status_text": descriptor.status_text,
+            "description": normalize_utf8_text(descriptor.description),
+            "status_text": normalize_utf8_text(descriptor.status_text),
             "status_level": descriptor.status_level,
             "hint": hint,
             "action_url": action_url,
@@ -819,7 +823,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             "expire_at_text": expire_at_text,
             "is_expired": bool(wechat_auth.get("is_expired")) if descriptor.auth_key == "wechat_mp_main" else False,
             "is_expiring_soon": bool(wechat_auth.get("is_expiring_soon")) if descriptor.auth_key == "wechat_mp_main" else False,
-            "nickname": str(wechat_auth.get("nickname") or "") if descriptor.auth_key == "wechat_mp_main" else "",
+            "nickname": normalize_utf8_text(wechat_auth.get("nickname")) if descriptor.auth_key == "wechat_mp_main" else "",
         }
         auth_assets.append(row)
 
@@ -829,7 +833,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         source_health = source_runtime_health(item["id"])
         failed_at = parse_published_datetime(source_health.get("last_failed_at", "") or "")
         success_at = parse_published_datetime(source_health.get("last_success_at", "") or "")
-        last_error = str(source_health.get("last_error") or "")
+        last_error = normalize_text_lines(source_health.get("last_error") or "")
         invalid_days = ""
         if failed_at and (not success_at or failed_at > success_at):
             invalid_days = str(max((datetime.now() - failed_at).days, 0))

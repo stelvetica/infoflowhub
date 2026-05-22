@@ -1,9 +1,9 @@
-<div class="pane-right-stack" data-laterhub-query="{{ laterhub.state_query }}">
+<div class="pane-right-stack">
   <section class="card pane-card pane-card-right">
     <div class="panel-title">
       <div class="panel-title-inline laterhub-title-row">
         <h3>稍后处理</h3>
-        <form hx-post="/actions/laterhub/fetch-now?{{ laterhub.state_query }}" hx-target="#laterhub-panel" hx-swap="innerHTML">
+        <form hx-post="/actions/laterhub/fetch-now?{{ params|urlencode }}" hx-target="#laterhub-panel" hx-swap="innerHTML">
           <button class="btn" type="submit">抓取</button>
         </form>
       </div>
@@ -11,13 +11,12 @@
         <input type="hidden" name="entries_q" value="{{ params.get('entries_q', '') }}">
         <input type="hidden" name="entries_sort" value="{{ params.get('entries_sort', '') }}">
         <input type="hidden" name="entries_dir" value="{{ params.get('entries_dir', '') }}">
-        <input type="hidden" name="laterhub_sort" value="{{ laterhub_params.laterhub_sort }}">
-        <input type="hidden" name="laterhub_dir" value="{{ laterhub_params.laterhub_dir }}">
-        <input type="hidden" name="laterhub_filter_finished" value="{{ laterhub_params.laterhub_filter_finished }}">
-        <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub_params.laterhub_filter_tag }}">
-        <input type="hidden" name="laterhub_filter_scope" value="{{ laterhub_params.laterhub_filter_scope }}">
+        <input type="hidden" name="laterhub_sort" value="{{ laterhub.sort }}">
+        <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
+        <input type="hidden" name="laterhub_filter_finished" value="{{ laterhub.filter_finished }}">
+        <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
         <input type="hidden" name="laterhub_page" value="1">
-        <input class="input laterhub-search-input" name="laterhub_q" value="{{ laterhub_params.laterhub_q }}" placeholder="搜索标题或标签">
+        <input class="input laterhub-search-input" name="laterhub_q" value="{{ laterhub.q }}" placeholder="搜索标题或标签">
         <button class="btn" type="submit">搜索</button>
         <a class="btn laterhub-clear-btn" href="/?entries_q={{ params.get('entries_q', '') }}&entries_sort={{ params.get('entries_sort', '') }}&entries_dir={{ params.get('entries_dir', '') }}">清空</a>
       </form>
@@ -26,12 +25,11 @@
       <input type="hidden" name="entries_q" value="{{ params.get('entries_q', '') }}">
       <input type="hidden" name="entries_sort" value="{{ params.get('entries_sort', '') }}">
       <input type="hidden" name="entries_dir" value="{{ params.get('entries_dir', '') }}">
-      <input type="hidden" name="laterhub_q" value="{{ laterhub_params.laterhub_q }}">
-      <input type="hidden" name="laterhub_sort" value="{{ laterhub_params.laterhub_sort }}">
-      <input type="hidden" name="laterhub_dir" value="{{ laterhub_params.laterhub_dir }}">
+      <input type="hidden" name="laterhub_q" value="{{ laterhub.q }}">
+      <input type="hidden" name="laterhub_sort" value="{{ laterhub.sort }}">
+      <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
       <input type="hidden" name="laterhub_page" value="1">
-      <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub_params.laterhub_filter_tag }}">
-      <input type="hidden" name="laterhub_filter_scope" value="{{ laterhub_params.laterhub_filter_scope }}">
+      <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
       <div class="chips laterhub-chips">
         <button class="chip {% if not laterhub.selected_tags %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="">全部标签</button>
         {% for tag in laterhub.all_tags %}
@@ -88,7 +86,7 @@
                 <div class="subtle cell-ellipsis" title="{{ item.tags_text or '-' }}">{{ item.tags_text or '-' }}</div>
               </td>
               <td class="laterhub-action-cell laterhub-action-cell-small">
-                <form hx-post="/actions/laterhub/{{ item.id }}/toggle-finished?{{ laterhub.state_query }}" hx-target="#laterhub-panel" hx-swap="innerHTML">
+                <form hx-post="/actions/laterhub/{{ item.id }}/toggle-finished?{{ params|urlencode }}&{{ laterhub.state_query }}" hx-target="#laterhub-panel" hx-swap="innerHTML">
                   <input type="hidden" name="finished" value="{{ 0 if item.is_finished else 1 }}">
                   <button class="btn {% if item.is_finished %}secondary{% endif %}" type="submit">{{ '未完成' if item.is_finished else '完成' }}</button>
                 </form>
@@ -104,8 +102,8 @@
     <div class="pagination pagination-tight pagination-aligned">
       <div class="subtle">第 {{ laterhub.page }} / {{ laterhub.total_pages }} 页，共 {{ laterhub.filtered_total }} 条</div>
       <div class="toolbar">
-        <button class="btn ghost {% if laterhub.page <= 1 %}disabled{% endif %}" type="button" {% if laterhub.page > 1 %}hx-get="/fragments/laterhub?{{ laterhub.prev_query }}" hx-target="#laterhub-panel" hx-swap="innerHTML"{% else %}disabled{% endif %}>上一页</button>
-        <button class="btn ghost {% if laterhub.page >= laterhub.total_pages %}disabled{% endif %}" type="button" {% if laterhub.page < laterhub.total_pages %}hx-get="/fragments/laterhub?{{ laterhub.next_query }}" hx-target="#laterhub-panel" hx-swap="innerHTML"{% else %}disabled{% endif %}>下一页</button>
+        <button class="btn ghost {% if laterhub.page <= 1 %}disabled{% endif %}" type="button" {% if laterhub.page > 1 %}hx-get="/fragments/laterhub?{{ params|urlencode }}&{{ laterhub.prev_query }}" hx-target="#laterhub-panel" hx-swap="innerHTML"{% else %}disabled{% endif %}>上一页</button>
+        <button class="btn ghost {% if laterhub.page >= laterhub.total_pages %}disabled{% endif %}" type="button" {% if laterhub.page < laterhub.total_pages %}hx-get="/fragments/laterhub?{{ params|urlencode }}&{{ laterhub.next_query }}" hx-target="#laterhub-panel" hx-swap="innerHTML"{% else %}disabled{% endif %}>下一页</button>
       </div>
     </div>
   </section>

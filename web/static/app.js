@@ -263,9 +263,16 @@
   function getLaterhubQueryString() {
     const panel = document.getElementById("laterhub-panel");
     if (!panel) return window.location.search || "";
-    const container = panel.firstElementChild;
-    const query = container?.dataset?.laterhubQuery || "";
-    return query ? `?${query}` : "";
+    const form = panel.querySelector(".laterhub-form-stack");
+    if (!(form instanceof HTMLFormElement)) return window.location.search || "";
+    const params = new URLSearchParams(window.location.search || "");
+    const formData = new FormData(form);
+    formData.forEach((value, key) => {
+      params.delete(key);
+      const text = String(value || "");
+      if (text) params.set(key, text);
+    });
+    return params.toString() ? `?${params.toString()}` : "";
   }
 
   function setupLaterhubOpenedTracking() {
