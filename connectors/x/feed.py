@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime
+from pathlib import Path
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
@@ -16,6 +18,19 @@ from connectors._shared.common import (
     resolve_web_target,
     result_error,
 )
+
+X_ANTI_DETECT_SCRIPT = """
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
+// Override permissions query to hide automation
+const originalQuery = window.navigator.permissions.query;
+window.navigator.permissions.query = (params) => (
+  params.name === 'notifications' ? Promise.resolve({ state: 'denied' }) : originalQuery(params)
+);
+"""
+
+DEBUG_DIR = Path(__file__).resolve().parent.parent.parent / "runtime" / "debug"
 
 
 def parse_x_posts(body_text: str, username: str, limit: int = 8) -> list[FeedEntry]:
@@ -241,20 +256,58 @@ def parse_x_article_text(raw_text: str) -> tuple[str, str]:
     return filtered[0], " ".join(filtered[:6]).strip()
 
 
+def _wait_for_tweets(page, timeout_ms: int = 30000) -> bool:
+    try:
+        page.wait_for_selector('[data-testid="tweetText"]', timeout=timeout_ms)
+        return True
+    except (PlaywrightTimeoutError, Exception):
+        return False
+
+
+def _save_debug_assets(page, source: dict, suffix: str = ""):
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    safe_name = (source.get("id") or "x_debug").replace("/", "_")
+    label = f"{safe_name}_{suffix}_{ts}" if suffix else f"{safe_name}_{ts}"
+    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        page.screenshot(path=str(DEBUG_DIR / f"{label}.png"), full_page=True)
+    except Exception:
+        pass
+    try:
+        text = page.locator("body").inner_text(timeout=5000)
+        (DEBUG_DIR / f"{label}.txt").write_text(text, encoding="utf-8")
+    except Exception:
+        pass
+    try:
+        html = page.content()
+        (DEBUG_DIR / f"{label}.html").write_text(html[0:50000], encoding="utf-8")
+    except Exception:
+        pass
+
+
 def fetch_x_with_page(page, source: dict, timeout_ms: int = 60000) -> FeedFetchResult:
     # X 不是普通 RSS 直连源。这里统一复用 x_profile2 这份共享真人登录态。
     target = resolve_web_target(source)
     if not target:
         return result_error(source, "暂不支持的 X 页面目标")
+
+    # 反自动化检测
+    page.add_init_script(X_ANTI_DETECT_SCRIPT)
+
     try:
         page.goto(target.page_url, wait_until="domcontentloaded", timeout=timeout_ms)
-        page.wait_for_timeout(7000)
+        page.wait_for_timeout(5000)
+        tweets_visible = _wait_for_tweets(page, timeout_ms=15000)
+        if not tweets_visible:
+            _save_debug_assets(page, source, "no_tweets")
+        page.wait_for_timeout(2000)
         body_text = page.locator("body").inner_text()
     except PlaywrightTimeoutError as exc:
         if is_macromargin_source(source):
             return result_error(source, f"MacroMargin 抓取超时。{X_LOGIN_HINT}")
         return result_error(source, f"X 网页直抓超时: {exc}")
     except Exception as exc:
+        _save_debug_assets(page, source, "error")
         if is_macromargin_source(source):
             return result_error(source, f"MacroMargin 抓取失败：{exc}。{X_LOGIN_HINT}")
         return result_error(source, f"X 网页直抓失败: {exc}")
@@ -308,6 +361,7 @@ def fetch_x_with_page(page, source: dict, timeout_ms: int = 60000) -> FeedFetchR
     )
     normalized_entries = normalized_entries[:12]
     if not normalized_entries and is_macromargin_source(source):
+        _save_debug_assets(page, source, "empty")
         return result_error(source, f"MacroMargin 页面已打开，但未解析到可入库内容。{X_LOGIN_HINT}")
 
     return FeedFetchResult(

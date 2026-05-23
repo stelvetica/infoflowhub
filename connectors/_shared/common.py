@@ -191,7 +191,7 @@ def normalize_english_date(text: str) -> str:
     line = (text or "").strip()
     if not line:
         return ""
-    for pattern in ("%b %d, %Y", "%b %d", "%I:%M %p 路 %b %d, %Y"):
+    for pattern in ("%b %d, %Y", "%b %d", "%I:%M %p · %b %d, %Y"):
         try:
             dt = datetime.strptime(line, pattern)
             if pattern == "%b %d":
@@ -259,8 +259,12 @@ def launch_x_context(playwright, headless: bool):
             kwargs = {
                 "user_data_dir": str(X_PROFILE_DIR),
                 "headless": headless,
-                "args": ["--window-size=1440,960"],
+                "args": [
+                    "--window-size=1440,960",
+                    "--disable-blink-features=AutomationControlled",
+                ],
                 "user_agent": USER_AGENT,
+                "ignore_default_args": ["--enable-automation"],
             }
             if channel:
                 kwargs["channel"] = channel
