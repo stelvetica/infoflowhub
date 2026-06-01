@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -14,9 +15,14 @@ from connectors.douyin.favorites import _resolve_default_browser_executable
 
 
 XIAOHEIHE_FAVOR_URL = "https://www.xiaoheihe.cn/app/user/favour/content"
-XIAOHEIHE_POST_PATTERN = re.compile(r"/app/bbs/(link|detail)/(\w+)")
+XIAOHEIHE_LOGIN_URL_PREFIX = "https://account.xiaoheihe.cn"
+MESSAGE_PREFIX = "[小黑盒]"
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 DEBUG_JSON_PATH = DEBUG_DIR / "tmp_pw_xiaoheihe_favorites.json"
+
+
+def _log(msg: str) -> None:
+    print(f"{MESSAGE_PREFIX} {msg}", flush=True)
 
 
 def normalize_xiaoheihe_item(item: dict[str, Any]) -> dict[str, Any] | None:
@@ -45,7 +51,7 @@ def normalize_xiaoheihe_item(item: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _extract_visible_items(page, *, scroll_times: int = 5, scroll_pause_ms: int = 2000) -> list[dict[str, Any]]:
+def _extract_visible_items(page, *, scroll_times: int = 8, scroll_pause_ms: int = 2000) -> list[dict[str, Any]]:
     for i in range(scroll_times):
         page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         page.wait_for_timeout(scroll_pause_ms)
@@ -100,8 +106,8 @@ def _extract_visible_items(page, *, scroll_times: int = 5, scroll_pause_ms: int 
     return page.evaluate(js)
 
 
-def _extract_items_via_api(page, *, timeout_ms: int = 10000) -> list[dict[str, Any]] | None:
-    """Try to intercept the favorites API response."""
+def _extract_items_via_api(page, *, timeout_ms: int = 60000) -> list[dict[str, Any]] | None:
+    """Try to intercept the favorites API response after page load."""
     api_responses: list[dict[str, Any]] = []
 
     def capture(response):
@@ -114,7 +120,12 @@ def _extract_items_via_api(page, *, timeout_ms: int = 10000) -> list[dict[str, A
                 pass
 
     page.on("response", capture)
-    page.goto(XIAOHEIHE_FAVOR_URL, wait_until="domcontentloaded", timeout=timeout_ms)
+
+    try:
+        page.goto(XIAOHEIHE_FAVOR_URL, wait_until="networkidle", timeout=timeout_ms)
+    except Exception:
+        _log("首次导航超时，可能跳转登录页，等待登录后自动跳转...")
+
     page.wait_for_timeout(3000)
 
     if not api_responses:
@@ -156,6 +167,23 @@ def _extract_items_via_api(page, *, timeout_ms: int = 10000) -> list[dict[str, A
     return items if items else None
 
 
+def _wait_until_favour_loaded(page, *, max_wait_ms: int = 180000, check_interval_ms: int = 3000) -> bool:
+    """Wait for the page to load favourites (after potential login redirect)."""
+    start = page.evaluate("Date.now()")
+    _log("等待收藏页加载…请在浏览器中完成登录")
+    while page.evaluate("Date.now()") - start < max_wait_ms:
+        current_url = page.url
+        if "favour/content" in current_url or "favour" in current_url:
+            page.wait_for_timeout(check_interval_ms)
+            # Verify page actually rendered content (not just a blank SPA frame)
+            link_count: int = page.evaluate("document.querySelectorAll('a[href*=\"/app/bbs/\"]').length")
+            if link_count > 0:
+                _log(f"收藏页已加载，检测到 {link_count} 个帖子链接")
+                return True
+        page.wait_for_timeout(check_interval_ms)
+    return False
+
+
 def fetch_xiaoheihe_favorites(env_path: str | Path | None = None) -> list[dict[str, Any]]:
     profile_dir = get_auth_context_path("xiaoheihe_shared")
     profile_dir.mkdir(parents=True, exist_ok=True)
@@ -171,17 +199,29 @@ def fetch_xiaoheihe_favorites(env_path: str | Path | None = None) -> list[dict[s
         )
         page = context.new_page()
 
-        # Try API interception first, fall back to DOM extraction
-        items = _extract_items_via_api(page)
-        if not items:
-            page.goto(XIAOHEIHE_FAVOR_URL, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(5000)
-            items = _extract_visible_items(page, scroll_times=5, scroll_pause_ms=2000)
+        items: list[dict[str, Any]] = []
+
+        # Step 1: Navigate with API interception
+        api_items = _extract_items_via_api(page)
+
+        if api_items:
+            items = api_items
+            _log(f"API 拦截抓取成功，获取 {len(items)} 条")
+        else:
+            # Step 2: Wait for favorites page to load (or user to log in)
+            loaded = _wait_until_favour_loaded(page)
+            if not loaded:
+                _log("等待超时，尝试当前页面提取…")
+
+            # Step 3: DOM extraction
+            items = _extract_visible_items(page, scroll_times=8, scroll_pause_ms=2000)
+            _log(f"DOM 提取完成，原始 {len(items)} 条")
 
         DEBUG_JSON_PATH.write_text(
             json.dumps({"ok": True, "count": len(items), "items": items}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        _log(f"调试数据已写入 {DEBUG_JSON_PATH}")
         context.close()
 
     result: list[dict[str, Any]] = []
