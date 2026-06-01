@@ -9,6 +9,7 @@ BROWSER_PROFILES_DIR = RUNTIME_DIR / "browser_profiles"
 DOUYIN_PROFILE_DIR = BROWSER_PROFILES_DIR / "douyin-shared"
 WEIBO_PROFILE_DIR = BROWSER_PROFILES_DIR / "weibo-shared"
 X_PROFILE_DIR = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data" / "Profile 2"
+XIAOHEIHE_PROFILE_DIR = BROWSER_PROFILES_DIR / "xiaoheihe-shared"
 
 
 def _existing_state_files(base_dir: Path) -> list[Path]:
@@ -71,11 +72,20 @@ def validate_weibo_auth() -> dict[str, object]:
     )
 
 
+def validate_xiaoheihe_auth() -> dict[str, object]:
+    return _validate_profile_dir(
+        XIAOHEIHE_PROFILE_DIR,
+        "小黑盒共享登录态目录存在",
+        "请先执行小黑盒登录脚本，完成一次真人登录。",
+    )
+
+
 def get_context_path(auth_key: str) -> Path:
     mapping = {
         "douyin_shared": DOUYIN_PROFILE_DIR,
         "x_profile2": X_PROFILE_DIR,
         "weibo_shared": WEIBO_PROFILE_DIR,
+        "xiaoheihe_shared": XIAOHEIHE_PROFILE_DIR,
     }
     if auth_key not in mapping:
         raise KeyError(f"未注册的 profile 登录态: {auth_key}")

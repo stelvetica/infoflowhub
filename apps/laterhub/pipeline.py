@@ -22,6 +22,7 @@ from apps.laterhub.tagger import (
 )
 from connectors.bilibili import fetch_bilibili_watchlater
 from connectors.douyin import fetch_douyin_favorites
+from connectors.xiaoheihe import fetch_xiaoheihe_favorites
 
 
 LOG_FILE_DISABLED = False
@@ -126,6 +127,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--retry-failed", action="store_true", help="将 failed 条目重置回 pending 后重跑")
     parser.add_argument("--fetch-bilibili", action="store_true", help="抓取 B 站稍后看")
     parser.add_argument("--fetch-douyin", action="store_true", help="抓取抖音收藏")
+    parser.add_argument("--fetch-xiaoheihe", action="store_true", help="抓取小黑盒收藏")
     return parser.parse_args(argv)
 
 
@@ -314,21 +316,23 @@ def run(args: argparse.Namespace) -> int:
     fetched_any = False
     fetched_any = _fetch_source(enabled=args.fetch_bilibili, label="B 站稍后看", fetcher=fetch_bilibili_watchlater, db=db) or fetched_any
     fetched_any = _fetch_source(enabled=args.fetch_douyin, label="抖音收藏", fetcher=fetch_douyin_favorites, db=db) or fetched_any
+    fetched_any = _fetch_source(enabled=args.fetch_xiaoheihe, label="小黑盒收藏", fetcher=fetch_xiaoheihe_favorites, db=db) or fetched_any
     if not fetched_any:
         log_line("[3/6] 本轮未启用任何抓取来源")
     _tag_pending_rows(db, tagger)
     return _push_pending_rows(db)
 
 
-def run_main_flow(*, fetch_bilibili: bool = True, fetch_douyin: bool = True, retry_failed: bool = False) -> LaterhubRunSummary:
+def run_main_flow(*, fetch_bilibili: bool = True, fetch_douyin: bool = True, fetch_xiaoheihe: bool = True, retry_failed: bool = False) -> LaterhubRunSummary:
     args = argparse.Namespace(
         retry_failed=retry_failed,
         fetch_bilibili=fetch_bilibili,
         fetch_douyin=fetch_douyin,
+        fetch_xiaoheihe=fetch_xiaoheihe,
     )
     run(args)
     db = DBManager(DB_PATH)
-    fetched_sources = int(bool(fetch_bilibili)) + int(bool(fetch_douyin))
+    fetched_sources = int(bool(fetch_bilibili)) + int(bool(fetch_douyin)) + int(bool(fetch_xiaoheihe))
     pending_total = len(db.list_by_status("pending"))
     return LaterhubRunSummary(
         fetched_sources=fetched_sources,

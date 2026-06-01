@@ -12,6 +12,7 @@ from connectors.auth.providers import (
     validate_douyin_auth,
     validate_weibo_auth,
     validate_x_auth,
+    validate_xiaoheihe_auth,
 )
 
 
@@ -61,6 +62,15 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         display_name="微博共享登录态",
         description="微博网页抓取统一复用这份浏览器登录态。",
     ),
+    "xiaoheihe_shared": AuthRegistration(
+        auth_key="xiaoheihe_shared",
+        platform="xiaoheihe",
+        auth_mode="browser_profile",
+        storage_ref=str(get_context_path("xiaoheihe_shared")),
+        renew_strategy="use_system_profile",
+        display_name="小黑盒共享登录态",
+        description="later 收藏夹抓取复用这份浏览器登录态。",
+    ),
 }
 
 
@@ -83,6 +93,8 @@ def validate_auth(auth_key: str) -> AuthDescriptor:
         status = validate_x_auth()
     elif auth_key == "weibo_shared":
         status = validate_weibo_auth()
+    elif auth_key == "xiaoheihe_shared":
+        status = validate_xiaoheihe_auth()
     else:
         status = {"is_available": False, "status_level": "warn", "status_text": "未知", "hint": ""}
     return AuthDescriptor(
