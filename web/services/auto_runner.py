@@ -30,9 +30,9 @@ class AutoRunner:
         self._stopped = asyncio.Event()
         self._slots = (
             ScheduleSlot(
-                key="daily_0600",
-                scheduled_at=time(hour=6, minute=0),
-                label="每日 06:00 订阅+稍后读",
+                key="daily_0800",
+                scheduled_at=time(hour=8, minute=0),
+                label="每日 08:00 订阅+稍后读",
                 runner=self._run_morning,
             ),
         )
