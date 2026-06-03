@@ -1,5 +1,6 @@
 # InfoFlowHub 一键启动：Web + Tunnel + Chrome 书签同步到手机
 $ErrorActionPreference = "Stop"
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $scriptDir
@@ -122,22 +123,38 @@ while ($retry -lt $maxRetries -and -not $tunnelUrl) {
     }
 
     Remove-Item $cfLog -ErrorAction SilentlyContinue
-    $cfProc = Start-Process -FilePath $cloudflaredExe -ArgumentList "tunnel","--url","http://127.0.0.1:${port}","--no-autoupdate","--protocol","auto" -WindowStyle Hidden -PassThru -RedirectStandardError $cfLog
+    $cfProc = Start-Process -FilePath $cloudflaredExe -ArgumentList "tunnel","--url","http://127.0.0.1:${port}","--no-autoupdate","--protocol","http2" -WindowStyle Hidden -PassThru -RedirectStandardError $cfLog
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    while ($sw.Elapsed.TotalSeconds -lt 30) {
+    $candidate = $null
+    while ($sw.Elapsed.TotalSeconds -lt 30 -and -not $tunnelUrl) {
         Start-Sleep -Milliseconds 500
         if (Test-Path $cfLog) {
             $content = Get-Content $cfLog -Raw -ErrorAction SilentlyContinue
             if ($content -match "https://(.+?)\.trycloudflare\.com") {
                 $candidate = $matches[0]
-                # Verify tunnel actually forwards traffic
-                try {
-                    $testResp = Invoke-WebRequest -Uri $candidate -UseBasicParsing -TimeoutSec 10
-                    if ($testResp.StatusCode -eq 200 -and $testResp.Content -match "InfoFlowHub") {
-                        $tunnelUrl = $candidate
-                        break
+                Write-Host "[Step] Tunnel URL found, verifying connectivity..." -ForegroundColor Cyan
+                # Retry verification up to 8 times (waiting for tunnel to become reachable)
+                for ($v = 0; $v -lt 8; $v++) {
+                    Start-Sleep -Seconds 2
+                    try {
+                        $wc = New-Object System.Net.WebClient
+                        $wc.Headers.Add("User-Agent", "Mozilla/5.0")
+                        $html = $wc.DownloadString($candidate)
+                        if ($html -match "InfoFlowHub") {
+                            $tunnelUrl = $candidate
+                            Write-Host "[OK] Tunnel verified" -ForegroundColor Green
+                            break
+                        }
+                    } catch {
+                        Write-Host "  verify attempt $($v+1)/8 failed" -ForegroundColor DarkGray
+                    } finally {
+                        if ($wc) { $wc.Dispose() }
                     }
-                } catch {}
+                }
+                if (-not $tunnelUrl) {
+                    Write-Host "[WARN] Tunnel unreachable, restarting cloudflared..." -ForegroundColor Yellow
+                }
+                break  # exit inner while loop regardless → outer loop retry or continue
             }
         }
         if ($cfProc.HasExited) { break }
