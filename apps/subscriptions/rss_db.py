@@ -70,6 +70,27 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
+        DELETE FROM rss_entries
+        WHERE id IN (
+            SELECT older.id
+            FROM rss_entries AS older
+            JOIN rss_entries AS newer
+              ON older.source_id = newer.source_id
+             AND LOWER(TRIM(older.title)) = LOWER(TRIM(newer.title))
+             AND (
+                  COALESCE(NULLIF(older.published_at, ''), NULLIF(older.published, ''), older.created_at)
+                    < COALESCE(NULLIF(newer.published_at, ''), NULLIF(newer.published, ''), newer.created_at)
+                  OR (
+                    COALESCE(NULLIF(older.published_at, ''), NULLIF(older.published, ''), older.created_at)
+                      = COALESCE(NULLIF(newer.published_at, ''), NULLIF(newer.published, ''), newer.created_at)
+                    AND older.id < newer.id
+                  )
+             )
+        )
+        """
+    )
+    conn.execute(
+        """
         UPDATE rss_entries
         SET published_at = ?
         WHERE published_at = ? AND 1 = 0
@@ -90,6 +111,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         ON rss_entries(link)
         """
     )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_rss_entries_source_title
+        ON rss_entries(source_id, title)
+        """
+    )
     conn.commit()
 
 
@@ -105,6 +132,10 @@ def normalize_published_text(value: str) -> str:
 
 def sanitize_db_text(value: str) -> str:
     return re.sub(r"[\ud800-\udfff]", "", normalize_utf8_text(value or ""))
+
+
+def normalize_title_key(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip()).lower()
 
 
 def rename_source(source_id: str, source_name: str) -> int:
@@ -134,7 +165,24 @@ def save_entries(entries: Iterable[FeedEntry]) -> int:
     try:
         for item in entries:
             source_id = canonicalize_source_id(item.source_id)
+            title = sanitize_db_text(item.title)
+            title_key = normalize_title_key(title)
+            link = item.link.strip()
             normalized_published = normalize_published_text(item.published)
+
+            existing = conn.execute(
+                "SELECT id, link FROM rss_entries WHERE source_id = ? AND LOWER(TRIM(title)) = ?",
+                (source_id, title_key),
+            ).fetchone()
+            if existing:
+                existing_id, existing_link = existing
+                if link and not existing_link:
+                    conn.execute(
+                        "UPDATE rss_entries SET link = ? WHERE id = ?",
+                        (link, existing_id),
+                    )
+                continue
+
             cursor = conn.execute(
                 """
                 INSERT INTO rss_entries
@@ -151,8 +199,8 @@ def save_entries(entries: Iterable[FeedEntry]) -> int:
                 (
                     source_id,
                     sanitize_db_text(item.source_name),
-                    sanitize_db_text(item.title),
-                    item.link,
+                    title,
+                    link,
                     normalized_published,
                     normalized_published,
                     sanitize_db_text(item.summary),

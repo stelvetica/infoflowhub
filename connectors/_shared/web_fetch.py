@@ -77,7 +77,7 @@ def _fetch_web_source_once(playwright, source: dict, *, limit: int = 12, timeout
     if target.site == "youtube":
         browser = playwright.chromium.launch(headless=True)
         try:
-            page = browser.new_page(user_agent=USER_AGENT)
+            page = browser.new_page(user_agent=USER_AGENT, locale="en-US", extra_http_headers={"Accept-Language": "en-US,en;q=0.9"})
             return fetch_youtube_with_page(page, source, timeout_ms=timeout_ms, limit=limit)
         finally:
             browser.close()

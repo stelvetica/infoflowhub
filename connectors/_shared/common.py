@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from apps.subscriptions.models import FeedFetchResult
 from connectors.auth import get_auth_context_path, validate_auth
@@ -115,6 +116,13 @@ def resolve_web_target(source: dict) -> WebSourceTarget | None:
         uid = match.group(1)
         return WebSourceTarget(site="youtube", uid=uid, page_url=f"https://www.youtube.com/{site_url.rstrip('/').split('youtube.com/', 1)[1]}/videos")
     return None
+
+
+def with_query_params(url: str, params: dict[str, str]) -> str:
+    parsed = urlparse(url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query.update({key: value for key, value in params.items() if value})
+    return urlunparse(parsed._replace(query=urlencode(query)))
 
 
 def clean_line(text: str) -> str:

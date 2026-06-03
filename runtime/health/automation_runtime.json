@@ -2,25 +2,25 @@
   "slots": {
     "daily_0600": {
       "label": "每日 06:00 订阅+稍后读",
-      "last_started_at": "2026-05-22 06:00:11",
-      "last_run_date": "2026-05-22",
+      "last_started_at": "2026-06-03 06:00:01",
+      "last_run_date": "2026-06-03",
       "last_status": "success",
-      "last_finished_at": "2026-05-22 06:02:04",
+      "last_finished_at": "2026-06-03 06:01:30",
       "last_error": "",
       "last_result": {
         "subscriptions": {
-          "last_run_at": "2026-05-22 06:01:51",
-          "last_success_at": "2026-05-22 06:01:51",
+          "last_run_at": "2026-06-03 06:01:18",
+          "last_success_at": "2026-06-03 06:01:18",
           "last_error": "",
-          "last_total_sources": 29,
-          "last_success_sources": 29,
-          "last_inserted_entries": 555,
+          "last_total_sources": 27,
+          "last_success_sources": 27,
+          "last_inserted_entries": 44,
           "fetch_state": "success",
-          "current_run_started_at": "2026-05-22 06:00:11"
+          "current_run_started_at": "2026-06-03 06:00:01"
         },
         "laterhub": {
           "fetched_sources": 2,
-          "pending_total": 76,
+          "pending_total": 169,
           "push_enabled": 0
         }
       }
