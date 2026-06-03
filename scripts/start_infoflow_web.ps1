@@ -13,7 +13,7 @@ $chromeExe = "C:\Program Files\Google\Chrome\Application\chrome.exe"
 $cloudflaredExe = Join-Path $scriptDir "cloudflared.exe"
 $logDir = Join-Path $root "runtime"
 $logPath = Join-Path $logDir "web.log"
-$pyExe = "$env:USERPROFILE\.workbuddy\binaries\python\versions\3.13.12\python.exe"
+$pyExe = "C:\Users\TB14Plus\.workbuddy\binaries\python\versions\3.13.12\python.exe"
 
 $python = $env:INFOFLOW_PYTHON
 if ([string]::IsNullOrWhiteSpace($python)) { $python = "python" }
@@ -92,7 +92,7 @@ Write-Host "[Step] Closing Chrome..." -ForegroundColor Cyan
 Get-Process -Name "chrome" -ErrorAction SilentlyContinue | Stop-Process -Force
 
 $chromeBookmarks = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Bookmarks"
-$deadline = (Get-Date).AddSeconds(20)
+$deadline = (Get-Date).AddSeconds(30)
 while ($true) {
     try {
         $fs = [System.IO.File]::Open($chromeBookmarks, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
@@ -100,10 +100,10 @@ while ($true) {
         break
     } catch {
         if ((Get-Date) -gt $deadline) {
-            Write-Host "[WARN] Chrome bookmarks still locked after 20s, proceeding anyway" -ForegroundColor Yellow
+            Write-Host "[WARN] Chrome bookmarks still locked after 30s, proceeding anyway" -ForegroundColor Yellow
             break
         }
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Seconds 3
     }
 }
 Write-Host "[OK] Chrome closed" -ForegroundColor Green
@@ -137,15 +137,45 @@ if (-not $tunnelUrl) {
 } else {
     Write-Host "[OK] Tunnel URL: $tunnelUrl" -ForegroundColor Green
 
-    # 3c. Update Chrome bookmark
+    # 3c. Update Chrome bookmark directly via PowerShell
     Write-Host "[Step] Updating Chrome bookmark..." -ForegroundColor Cyan
-    $cr = & $pyExe $chromeScript $tunnelUrl 2>&1
-    if ($cr -like "CREATED*" -or $cr -like "UPDATED*") {
-        Write-Host "[OK] Chrome bookmark written" -ForegroundColor Green
-    } elseif ($cr -like "UNCHANGED*") {
-        Write-Host "[OK] Chrome bookmark already up to date" -ForegroundColor Green
-    } else {
-        Write-Host "[WARN] Chrome: $cr" -ForegroundColor Yellow
+    $bmPath = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Bookmarks"
+    $tunnelUrlNormalized = $tunnelUrl.TrimEnd("/")
+    try {
+        $bmData = Get-Content $bmPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $bar = $bmData.roots.bookmark_bar
+        $existing = $bar.children | Where-Object { $_.name -eq "InfoFlowHub" }
+        if ($existing) {
+            if ($existing.url -eq $tunnelUrlNormalized) {
+                Write-Host "[OK] Chrome bookmark already up to date" -ForegroundColor Green
+            } else {
+                $existing.url = $tunnelUrlNormalized
+                Write-Host "[OK] Chrome bookmark updated" -ForegroundColor Green
+            }
+        } else {
+            $newBm = [PSCustomObject]@{
+                date_added = [string]([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() * 1000)
+                date_last_used = "0"
+                guid = "infoflowhub-auto-tunnel-001"
+                id = "9999"
+                meta_info = [PSCustomObject]@{ power_bookmark_meta = "" }
+                name = "InfoFlowHub"
+                type = "url"
+                url = $tunnelUrlNormalized
+            }
+            $bar.children = @($newBm) + $bar.children
+            Write-Host "[OK] Chrome bookmark created" -ForegroundColor Green
+        }
+        # Recalculate checksum
+        $bmData.PSObject.Properties.Remove("checksum")
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        $rawBytes = $utf8NoBom.GetBytes(($bmData | ConvertTo-Json -Depth 10 -Compress))
+        $md5 = [System.Security.Cryptography.MD5]::Create()
+        $hash = [BitConverter]::ToString($md5.ComputeHash($rawBytes)).Replace("-", "").ToLower()
+        $bmData | Add-Member -NotePropertyName "checksum" -NotePropertyValue $hash -Force
+        $bmData | ConvertTo-Json -Depth 10 | Set-Content $bmPath -Encoding UTF8
+    } catch {
+        Write-Host "[WARN] Chrome bookmark update failed: $_" -ForegroundColor Yellow
     }
 }
 
