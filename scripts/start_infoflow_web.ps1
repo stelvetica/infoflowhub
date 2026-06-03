@@ -109,28 +109,22 @@ while ($true) {
 Write-Host "[OK] Chrome closed" -ForegroundColor Green
 
 # 3b. Start cloudflared
-$pinfo = New-Object System.Diagnostics.ProcessStartInfo
-$pinfo.FileName = $cloudflaredExe
-$pinfo.Arguments = "tunnel --url http://localhost:${port}"
-$pinfo.RedirectStandardOutput = $true
-$pinfo.RedirectStandardError = $true
-$pinfo.UseShellExecute = $false
-$pinfo.CreateNoWindow = $true
-
-$cf = New-Object System.Diagnostics.Process
-$cf.StartInfo = $pinfo
-$cf.Start() | Out-Null
-
-$sw = [System.Diagnostics.Stopwatch]::StartNew()
 $tunnelUrl = $null
-while ($cf.HasExited -eq $false -and $sw.Elapsed.TotalSeconds -lt 30) {
-    $line = $cf.StandardError.ReadLine()
-    if ($line -match "https://(.+?)\.trycloudflare\.com") {
-        $tunnelUrl = $matches[0]
-        break
+$cfLog = Join-Path $logDir "cloudflared.log"
+
+$cfProc = Start-Process -FilePath $cloudflaredExe -ArgumentList "tunnel","--url","http://127.0.0.1:${port}","--no-autoupdate" -NoNewWindow -PassThru -RedirectStandardError $cfLog
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+while ($sw.Elapsed.TotalSeconds -lt 30) {
+    Start-Sleep -Milliseconds 500
+    if (Test-Path $cfLog) {
+        $content = Get-Content $cfLog -Raw -ErrorAction SilentlyContinue
+        if ($content -match "https://(.+?)\.trycloudflare\.com") {
+            $tunnelUrl = $matches[0]
+            break
+        }
     }
+    if ($cfProc.HasExited) { break }
 }
-$cf.Dispose()
 
 if (-not $tunnelUrl) {
     Write-Host "[WARN] Failed to get tunnel URL, skipping bookmark update" -ForegroundColor Yellow
