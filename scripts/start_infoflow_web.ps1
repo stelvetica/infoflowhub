@@ -112,7 +112,7 @@ Write-Host "[OK] Chrome closed" -ForegroundColor Green
 $tunnelUrl = $null
 $cfLog = Join-Path $logDir "cloudflared.log"
 
-$cfProc = Start-Process -FilePath $cloudflaredExe -ArgumentList "tunnel","--url","http://127.0.0.1:${port}","--no-autoupdate" -WindowStyle Hidden -PassThru -RedirectStandardError $cfLog
+$cfProc = Start-Process -FilePath $cloudflaredExe -ArgumentList "tunnel","--url","http://127.0.0.1:${port}","--no-autoupdate","--protocol","auto" -WindowStyle Hidden -PassThru -RedirectStandardError $cfLog
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 while ($sw.Elapsed.TotalSeconds -lt 30) {
     Start-Sleep -Milliseconds 500
