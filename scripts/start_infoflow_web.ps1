@@ -108,22 +108,41 @@ while ($true) {
 }
 Write-Host "[OK] Chrome closed" -ForegroundColor Green
 
-# 3b. Start cloudflared
+# 3b. Start cloudflared (with retry)
 $tunnelUrl = $null
 $cfLog = Join-Path $logDir "cloudflared.log"
+$maxRetries = 3
+$retry = 0
 
-$cfProc = Start-Process -FilePath $cloudflaredExe -ArgumentList "tunnel","--url","http://127.0.0.1:${port}","--no-autoupdate","--protocol","auto" -WindowStyle Hidden -PassThru -RedirectStandardError $cfLog
-$sw = [System.Diagnostics.Stopwatch]::StartNew()
-while ($sw.Elapsed.TotalSeconds -lt 30) {
-    Start-Sleep -Milliseconds 500
-    if (Test-Path $cfLog) {
-        $content = Get-Content $cfLog -Raw -ErrorAction SilentlyContinue
-        if ($content -match "https://(.+?)\.trycloudflare\.com") {
-            $tunnelUrl = $matches[0]
-            break
-        }
+while ($retry -lt $maxRetries -and -not $tunnelUrl) {
+    if ($retry -gt 0) {
+        Write-Host "[Retry $retry/$maxRetries] Restarting cloudflared..." -ForegroundColor Yellow
+        Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 3
     }
-    if ($cfProc.HasExited) { break }
+
+    Remove-Item $cfLog -ErrorAction SilentlyContinue
+    $cfProc = Start-Process -FilePath $cloudflaredExe -ArgumentList "tunnel","--url","http://127.0.0.1:${port}","--no-autoupdate","--protocol","auto" -WindowStyle Hidden -PassThru -RedirectStandardError $cfLog
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($sw.Elapsed.TotalSeconds -lt 30) {
+        Start-Sleep -Milliseconds 500
+        if (Test-Path $cfLog) {
+            $content = Get-Content $cfLog -Raw -ErrorAction SilentlyContinue
+            if ($content -match "https://(.+?)\.trycloudflare\.com") {
+                $candidate = $matches[0]
+                # Verify tunnel actually forwards traffic
+                try {
+                    $testResp = Invoke-WebRequest -Uri $candidate -UseBasicParsing -TimeoutSec 10
+                    if ($testResp.StatusCode -eq 200 -and $testResp.Content -match "InfoFlowHub") {
+                        $tunnelUrl = $candidate
+                        break
+                    }
+                } catch {}
+            }
+        }
+        if ($cfProc.HasExited) { break }
+    }
+    $retry++
 }
 
 if (-not $tunnelUrl) {
@@ -174,15 +193,16 @@ if (-not $tunnelUrl) {
 }
 
 # ============================================================
-# Phase 4: Open Chrome
+# Phase 4: Open browser
 # ============================================================
-Write-Host "=== Phase 4: Open Chrome ===" -ForegroundColor Cyan
+Write-Host "=== Phase 4: Open browser ===" -ForegroundColor Cyan
 
-if ($tunnelUrl -and (Test-Path $chromeExe)) {
-    Start-Process $chromeExe -ArgumentList $tunnelUrl | Out-Null
-    Write-Host "[OK] Chrome opened - sync will push bookmark to phone" -ForegroundColor Green
+if ($tunnelUrl) {
+    Start-Process $tunnelUrl | Out-Null
+    Write-Host "[OK] Default browser opened" -ForegroundColor Green
 } else {
     Start-Process $localUrl | Out-Null
+    Write-Host "[OK] Default browser opened (local URL)" -ForegroundColor Green
 }
 
 Write-Host "=== All done ===" -ForegroundColor Green
