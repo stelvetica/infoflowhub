@@ -9,12 +9,9 @@ Set-Location $root
 $port = 18421
 $bindHost = "127.0.0.1"
 $localUrl = "http://${bindHost}:${port}/"
-$chromeScript = Join-Path $scriptDir "update_chrome_bookmark.py"
-$chromeExe = "C:\Program Files\Google\Chrome\Application\chrome.exe"
 $cloudflaredExe = Join-Path $scriptDir "cloudflared.exe"
 $logDir = Join-Path $root "runtime"
 $logPath = Join-Path $logDir "web.log"
-$pyExe = "C:\Users\TB14Plus\.workbuddy\binaries\python\versions\3.13.12\python.exe"
 
 $python = $env:INFOFLOW_PYTHON
 if ([string]::IsNullOrWhiteSpace($python)) { $python = "C:\Users\TB14Plus\anaconda3\python.exe" }
@@ -109,7 +106,7 @@ while ($true) {
 }
 Write-Host "[OK] Chrome closed" -ForegroundColor Green
 
-# 3b. Start cloudflared (with retry)
+# 3b. Start cloudflared
 $tunnelUrl = $null
 $cfLog = Join-Path $logDir "cloudflared.log"
 $maxRetries = 3
@@ -123,43 +120,26 @@ while ($retry -lt $maxRetries -and -not $tunnelUrl) {
     }
 
     Remove-Item $cfLog -ErrorAction SilentlyContinue
-    $cfProc = Start-Process -FilePath $cloudflaredExe -ArgumentList "tunnel","--url","http://127.0.0.1:${port}","--no-autoupdate","--protocol","http2" -WindowStyle Hidden -PassThru -RedirectStandardError $cfLog
+    $cfProc = Start-Process -FilePath $cloudflaredExe -ArgumentList "tunnel","--url","http://127.0.0.1:${port}","--no-autoupdate","--protocol","http2","--edge-ip-version","4" -WindowStyle Hidden -PassThru -RedirectStandardError $cfLog
+    Write-Host "[Step] Starting cloudflared tunnel..." -ForegroundColor Cyan
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $candidate = $null
-    while ($sw.Elapsed.TotalSeconds -lt 30 -and -not $tunnelUrl) {
+    while ($sw.Elapsed.TotalSeconds -lt 30) {
         Start-Sleep -Milliseconds 500
         if (Test-Path $cfLog) {
             $content = Get-Content $cfLog -Raw -ErrorAction SilentlyContinue
             if ($content -match "https://(.+?)\.trycloudflare\.com") {
-                $candidate = $matches[0]
-                Write-Host "[Step] Tunnel URL found, verifying connectivity..." -ForegroundColor Cyan
-                # Retry verification up to 8 times (waiting for tunnel to become reachable)
-                for ($v = 0; $v -lt 8; $v++) {
-                    Start-Sleep -Seconds 2
-                    try {
-                        $wc = New-Object System.Net.WebClient
-                        $wc.Headers.Add("User-Agent", "Mozilla/5.0")
-                        $html = $wc.DownloadString($candidate)
-                        if ($html -match "InfoFlowHub") {
-                            $tunnelUrl = $candidate
-                            Write-Host "[OK] Tunnel verified" -ForegroundColor Green
-                            break
-                        }
-                    } catch {
-                        Write-Host "  verify attempt $($v+1)/8 failed" -ForegroundColor DarkGray
-                    } finally {
-                        if ($wc) { $wc.Dispose() }
-                    }
-                }
-                if (-not $tunnelUrl) {
-                    Write-Host "[WARN] Tunnel unreachable, restarting cloudflared..." -ForegroundColor Yellow
-                }
-                break  # exit inner while loop regardless → outer loop retry or continue
+                $tunnelUrl = $matches[0]
+                break
             }
         }
         if ($cfProc.HasExited) { break }
     }
     $retry++
+}
+
+if ($tunnelUrl) {
+    # Give tunnel 3s to settle before using it
+    Start-Sleep -Seconds 3
 }
 
 if (-not $tunnelUrl) {
