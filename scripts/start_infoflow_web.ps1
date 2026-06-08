@@ -154,28 +154,21 @@ if (-not $tunnelUrl) {
     try {
         $bmData = Get-Content $bmPath -Raw -Encoding UTF8 | ConvertFrom-Json
         $bar = $bmData.roots.bookmark_bar
-        $existing = $bar.children | Where-Object { $_.name -eq "InfoFlowHub" }
-        if ($existing) {
-            if ($existing.url -eq $tunnelUrlNormalized) {
-                Write-Host "[OK] Chrome bookmark already up to date" -ForegroundColor Green
-            } else {
-                $existing.url = $tunnelUrlNormalized
-                Write-Host "[OK] Chrome bookmark updated" -ForegroundColor Green
-            }
-        } else {
-            $newBm = [PSCustomObject]@{
-                date_added = [string]([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() * 1000)
-                date_last_used = "0"
-                guid = "infoflowhub-auto-tunnel-001"
-                id = "9999"
-                meta_info = [PSCustomObject]@{ power_bookmark_meta = "" }
-                name = "InfoFlowHub"
-                type = "url"
-                url = $tunnelUrlNormalized
-            }
-            $bar.children = @($newBm) + $bar.children
-            Write-Host "[OK] Chrome bookmark created" -ForegroundColor Green
+        # Remove any existing InfoFlowHub bookmark first, then add fresh one
+        $bar.children = @($bar.children | Where-Object { $_.name -ne "InfoFlowHub" })
+        Write-Host "[Step] Removed old InfoFlowHub bookmark (if any)" -ForegroundColor DarkGray
+        $newBm = [PSCustomObject]@{
+            date_added = [string]([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() * 1000)
+            date_last_used = "0"
+            guid = "infoflowhub-auto-tunnel-001"
+            id = "9999"
+            meta_info = [PSCustomObject]@{ power_bookmark_meta = "" }
+            name = "InfoFlowHub"
+            type = "url"
+            url = $tunnelUrlNormalized
         }
+        $bar.children = @($newBm) + $bar.children
+        Write-Host "[OK] Chrome bookmark created" -ForegroundColor Green
         # Recalculate checksum
         $bmData.PSObject.Properties.Remove("checksum")
         $utf8NoBom = New-Object System.Text.UTF8Encoding $false
