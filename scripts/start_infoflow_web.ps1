@@ -153,10 +153,41 @@ if (-not $tunnelUrl) {
     $tunnelUrlNormalized = $tunnelUrl.TrimEnd("/")
     try {
         $bmData = Get-Content $bmPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        function Remove-InfoFlowHubBookmarks {
+            param($node)
+            if ($null -eq $node -or -not $node.children) { return 0 }
+
+            $removedHere = @($node.children | Where-Object {
+                $_.type -eq "url" -and (
+                    $_.name -eq "InfoFlowHub" -or
+                    ($_.url -is [string] -and $_.url -match "^https://[^/]+\.trycloudflare\.com/?$")
+                )
+            }).Count
+
+            $node.children = @($node.children | Where-Object {
+                -not (
+                    $_.type -eq "url" -and (
+                        $_.name -eq "InfoFlowHub" -or
+                        ($_.url -is [string] -and $_.url -match "^https://[^/]+\.trycloudflare\.com/?$")
+                    )
+                )
+            })
+
+            $removedNested = 0
+            foreach ($child in $node.children) {
+                $removedNested += Remove-InfoFlowHubBookmarks $child
+            }
+
+            return ($removedHere + $removedNested)
+        }
+
+        $removedCount = 0
+        $removedCount += Remove-InfoFlowHubBookmarks $bmData.roots.bookmark_bar
+        $removedCount += Remove-InfoFlowHubBookmarks $bmData.roots.other
+        $removedCount += Remove-InfoFlowHubBookmarks $bmData.roots.synced
+        Write-Host "[Step] Removed $removedCount old InfoFlowHub / trycloudflare bookmark(s)" -ForegroundColor DarkGray
+
         $bar = $bmData.roots.bookmark_bar
-        # Remove any existing InfoFlowHub bookmark first, then add fresh one
-        $bar.children = @($bar.children | Where-Object { $_.name -ne "InfoFlowHub" })
-        Write-Host "[Step] Removed old InfoFlowHub bookmark (if any)" -ForegroundColor DarkGray
         $newBm = [PSCustomObject]@{
             date_added = [string]([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() * 1000)
             date_last_used = "0"
