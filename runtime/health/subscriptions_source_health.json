@@ -197,10 +197,10 @@
       "source_name": "史诗级韭菜"
     },
     "alphapai": {
-      "last_checked_at": "2026-06-12 14:43:31",
-      "last_success_at": "2026-06-12 14:11:48",
-      "last_failed_at": "2026-06-12 14:43:31",
-      "last_error": "缃戦〉鐩存姄澶辫触: BrowserType.launch_persistent_context: Target page, context or browser has been closed Browser logs: <launching> C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --",
+      "last_checked_at": "2026-06-12 15:28:48",
+      "last_success_at": "2026-06-12 15:28:48",
+      "last_failed_at": "2026-06-12 15:27:31",
+      "last_error": "",
       "source_name": "新闻 Alpha派蓝宝书"
     }
   }

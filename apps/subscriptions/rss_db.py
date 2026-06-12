@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS rss_entries (
   published TEXT NOT NULL DEFAULT '',
   published_at TEXT NOT NULL DEFAULT '',
   summary TEXT NOT NULL DEFAULT '',
+  markdown_path TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 """
@@ -39,13 +40,52 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+def _table_sql(conn: sqlite3.Connection, table_name: str) -> str:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table_name,),
+    ).fetchone()
+    return str(row[0] or "") if row else ""
+
+
+def _rebuild_rss_entries_without_legacy_unique(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS rss_entries__new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          source_id TEXT NOT NULL,
+          source_name TEXT NOT NULL,
+          title TEXT NOT NULL,
+          link TEXT NOT NULL,
+          published TEXT NOT NULL DEFAULT '',
+          published_at TEXT NOT NULL DEFAULT '',
+          summary TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO rss_entries__new (id, source_id, source_name, title, link, published, published_at, summary, created_at)
+        SELECT id, source_id, source_name, title, link, published, published_at, summary, created_at
+        FROM rss_entries;
+        DROP TABLE rss_entries;
+        ALTER TABLE rss_entries__new RENAME TO rss_entries;
+        """
+    )
+    conn.commit()
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
+    table_sql = _table_sql(conn, "rss_entries")
+    if "UNIQUE(source_id, link)" in table_sql:
+        _rebuild_rss_entries_without_legacy_unique(conn)
     columns = {row[1] for row in conn.execute("PRAGMA table_info(rss_entries)").fetchall()}
     if "published_at" not in columns:
         conn.execute("ALTER TABLE rss_entries ADD COLUMN published_at TEXT NOT NULL DEFAULT ''")
         conn.commit()
         columns.add("published_at")
-    required_columns = {"source_id", "source_name", "title", "link", "published", "published_at", "summary", "created_at"}
+    if "markdown_path" not in columns:
+        conn.execute("ALTER TABLE rss_entries ADD COLUMN markdown_path TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        columns.add("markdown_path")
+    required_columns = {"source_id", "source_name", "title", "link", "published", "published_at", "summary", "markdown_path", "created_at"}
     if not required_columns.issubset(columns):
         return
     conn.execute(
@@ -56,6 +96,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             FROM rss_entries AS older
             JOIN rss_entries AS newer
               ON older.link = newer.link
+             AND older.source_id != 'alphapai'
+             AND newer.source_id != 'alphapai'
              AND (
                   COALESCE(NULLIF(older.published_at, ''), NULLIF(older.published, ''), older.created_at)
                     < COALESCE(NULLIF(newer.published_at, ''), NULLIF(newer.published, ''), newer.created_at)
@@ -105,10 +147,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     )
     conn.execute("DROP INDEX IF EXISTS idx_rss_entries_source_link_unique")
     conn.execute("DROP INDEX IF EXISTS idx_rss_entries_link_unique")
+    conn.execute("DROP INDEX IF EXISTS idx_rss_entries_link_unique_non_alphapai")
     conn.execute(
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_rss_entries_link_unique
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_rss_entries_link_unique_non_alphapai
         ON rss_entries(link)
+        WHERE source_id != 'alphapai'
         """
     )
     conn.execute(
@@ -136,6 +180,21 @@ def sanitize_db_text(value: str) -> str:
 
 def normalize_title_key(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip()).lower()
+
+
+def derive_alphapai_title_from_summary(summary: str, fallback_title: str) -> str:
+    lines = [sanitize_db_text(line).strip() for line in str(summary or "").splitlines()]
+    for line in lines[:8]:
+        if not line:
+            continue
+        if line.startswith("分享") or line.startswith("播放") or line.startswith("时长"):
+            continue
+        if "免责声明" in line or "投资建议" in line:
+            continue
+        if len(line) < 6:
+            continue
+        return line[:180]
+    return sanitize_db_text(fallback_title)
 
 
 def rename_source(source_id: str, source_name: str) -> int:
@@ -183,18 +242,40 @@ def save_entries(entries: Iterable[FeedEntry]) -> int:
                     )
                 continue
 
+            if source_id == "alphapai":
+                cursor = conn.execute(
+                    """
+                    INSERT INTO rss_entries
+                    (source_id, source_name, title, link, published, published_at, summary, markdown_path)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        source_id,
+                        sanitize_db_text(item.source_name),
+                        title,
+                        link,
+                        normalized_published,
+                        normalized_published,
+                        sanitize_db_text(item.summary),
+                        sanitize_db_text(getattr(item, "markdown_path", "")),
+                    ),
+                )
+                inserted += int(cursor.rowcount > 0)
+                continue
+
             cursor = conn.execute(
                 """
                 INSERT INTO rss_entries
-                (source_id, source_name, title, link, published, published_at, summary)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (source_id, source_name, title, link, published, published_at, summary, markdown_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(link) DO UPDATE SET
                   source_id=excluded.source_id,
                   source_name=excluded.source_name,
                   title=CASE WHEN excluded.title != '' THEN excluded.title ELSE rss_entries.title END,
                   published=CASE WHEN excluded.published != '' THEN excluded.published ELSE rss_entries.published END,
                   published_at=CASE WHEN excluded.published_at != '' THEN excluded.published_at ELSE rss_entries.published_at END,
-                  summary=CASE WHEN excluded.summary != '' THEN excluded.summary ELSE rss_entries.summary END
+                  summary=CASE WHEN excluded.summary != '' THEN excluded.summary ELSE rss_entries.summary END,
+                  markdown_path=CASE WHEN excluded.markdown_path != '' THEN excluded.markdown_path ELSE rss_entries.markdown_path END
                 """,
                 (
                     source_id,
@@ -204,6 +285,7 @@ def save_entries(entries: Iterable[FeedEntry]) -> int:
                     normalized_published,
                     normalized_published,
                     sanitize_db_text(item.summary),
+                    sanitize_db_text(getattr(item, "markdown_path", "")),
                 ),
             )
             inserted += int(cursor.rowcount > 0)
@@ -250,6 +332,7 @@ def list_entries(limit: int = 200, source_id: str = "") -> list[dict]:
             "published": normalize_utf8_text(row["published"]),
             "published_at": normalize_utf8_text(row["published_at"]),
             "summary": normalize_utf8_text(row["summary"]),
+            "markdown_path": str(row["markdown_path"] or "").strip() if "markdown_path" in row.keys() else "",
             "created_at": normalize_utf8_text(row["created_at"]),
         }
         for row in rows
@@ -429,3 +512,35 @@ def migrate_legacy_source_ids() -> int:
         return migrated
     finally:
         conn.close()
+
+
+def normalize_alphapai_entries() -> int:
+    conn = get_connection()
+    updated = 0
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, title, summary, link
+            FROM rss_entries
+            WHERE source_id = 'alphapai'
+            """
+        ).fetchall()
+        for row in rows:
+            row_id, old_title, summary, old_link = row
+            new_title = derive_alphapai_title_from_summary(summary, old_title)
+            new_link = "https://alphapai-web.rabyte.cn/reading/home/market-report/detail"
+            if str(old_title or "") == new_title and str(old_link or "") == new_link:
+                continue
+            conn.execute(
+                """
+                UPDATE rss_entries
+                SET title = ?, link = ?
+                WHERE id = ?
+                """,
+                (new_title, new_link, int(row_id)),
+            )
+            updated += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return updated

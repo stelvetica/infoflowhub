@@ -14,6 +14,7 @@ class FeedEntry:
     link: str
     published: str
     summary: str
+    markdown_path: str = ""
 
     def __post_init__(self) -> None:
         self.source_id = normalize_utf8_text(self.source_id)
@@ -22,6 +23,7 @@ class FeedEntry:
         self.link = str(self.link or "").strip()
         self.published = normalize_utf8_text(self.published)
         self.summary = normalize_utf8_text(self.summary)
+        self.markdown_path = str(self.markdown_path or "").strip()
 
 
 @dataclass

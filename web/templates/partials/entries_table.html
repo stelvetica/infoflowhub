@@ -31,7 +31,7 @@
             <td class="cell-ellipsis cell-muted" title="{{ item.source_name }}">{{ item.source_name }}</td>
             <td>
               {% if item.has_link %}
-              <a class="cell-ellipsis cell-link cell-unread read-track" href="{{ item.link }}" target="_blank" rel="noreferrer" title="{{ item.title }}">{{ item.title }}</a>
+              <a class="cell-ellipsis cell-link cell-unread read-track" href="{{ item.link }}" data-read-key="{{ item.read_key }}" target="_blank" rel="noreferrer" title="{{ item.title }}">{{ item.title }}</a>
               {% else %}
               <span class="cell-ellipsis cell-link cell-link-disabled" title="该条目暂时没有可用跳转链接">{{ item.title }}</span>
               {% endif %}

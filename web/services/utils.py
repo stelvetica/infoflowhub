@@ -23,6 +23,15 @@ def read_link_key(value: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
 
+def read_entry_key(source_id: str, link: str, title: str = "") -> str:
+    normalized_source = strip_invalid_unicode(source_id or "").strip().lower()
+    normalized_link = strip_invalid_unicode(link or "").strip()
+    normalized_title = strip_invalid_unicode(title or "").strip()
+    if normalized_source == "alphapai" and normalized_title:
+        return read_link_key(f"{normalized_source}|{normalized_title}")
+    return read_link_key(normalized_link)
+
+
 def split_tags(value: str | None) -> list[str]:
     text = strip_invalid_unicode(value or "").strip()
     if not text:

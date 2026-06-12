@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 
@@ -29,6 +29,8 @@ from web.services.views import (
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
+BASE_DIR = Path(__file__).resolve().parents[2]
+ALPHAPAI_MARKDOWN_DIR = BASE_DIR / "data" / "alphapai_markdown"
 
 
 def query_dict(request: Request) -> dict[str, str]:
@@ -84,6 +86,14 @@ async def home(request: Request):
 async def entries_fragment(request: Request):
     params = query_dict(request)
     return templates.TemplateResponse(request, "partials/entries_table.html", {"entries": get_entries_view(params), "params": params})
+
+
+@router.get("/alphapai/markdown/{markdown_path:path}", response_class=PlainTextResponse)
+async def alphapai_markdown(markdown_path: str):
+    target = (ALPHAPAI_MARKDOWN_DIR / Path(markdown_path).name).resolve()
+    if target.parent != ALPHAPAI_MARKDOWN_DIR.resolve() or not target.exists():
+        return PlainTextResponse("Markdown not found", status_code=404)
+    return PlainTextResponse(target.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
 
 
 @router.get("/fragments/laterhub", response_class=HTMLResponse)

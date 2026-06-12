@@ -93,7 +93,10 @@
     const readLinks = loadReadLinks();
     return Object.keys(readLinks)
       .filter((href) => readLinks[href])
-      .map((href) => readLinkKey(href))
+      .map((href) => {
+        if (href.startsWith("key:")) return href.slice(4);
+        return readLinkKey(href);
+      })
       .filter(Boolean);
   }
 
@@ -171,20 +174,22 @@
     let changed = false;
     document.querySelectorAll(".read-track").forEach((anchor) => {
       const href = anchor.getAttribute("href") || "";
+      const explicitReadKey = anchor.dataset.readKey || "";
+      const storageKey = explicitReadKey ? `key:${explicitReadKey}` : href;
       if (!href || !/^https?:\/\//i.test(href)) {
         setEntryReadState(anchor, true);
         return;
       }
       const row = anchor.closest("tr");
       const timeText = row?.querySelector(".cell-time")?.textContent?.trim() || "";
-      if (timeText && timeText < "2026/05/01" && !readLinks[href]) {
-        readLinks[href] = true;
+      if (timeText && timeText < "2026/05/01" && !readLinks[storageKey]) {
+        readLinks[storageKey] = true;
         changed = true;
       }
-      setEntryReadState(anchor, Boolean(readLinks[href]));
+      setEntryReadState(anchor, Boolean(readLinks[storageKey]));
       anchor.onclick = () => {
         const next = loadReadLinks();
-        next[href] = true;
+        next[storageKey] = true;
         saveReadLinks(next);
         setEntryReadState(anchor, true);
         syncEntriesUnreadFields();

@@ -33,6 +33,7 @@ from web.services.utils import (
     join_tags,
     normalize_text,
     provider_label,
+    read_entry_key,
     read_link_key,
     source_channel_label,
     split_tags,
@@ -350,7 +351,7 @@ def _load_entries(limit: int = 500) -> list[dict[str, Any]]:
     try:
         rows = conn.execute(
             """
-            SELECT source_id, source_name, title, link, published, published_at, summary, created_at
+            SELECT source_id, source_name, title, link, published, published_at, summary, markdown_path, created_at
             FROM rss_entries
             ORDER BY COALESCE(NULLIF(published_at, ''), NULLIF(published, ''), created_at) DESC, id DESC
             LIMIT ?
@@ -673,7 +674,11 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
         sort_time = to_sortable_time(display_time_raw)
         source_site_url = current_site_map.get(item["source_id"], "").strip()
         link = normalize_entry_link(item.get("link") or "", source_site_url)
-        if unread_only and (sort_time < ENTRIES_READ_CUTOFF or read_link_key(link) in read_keys):
+        markdown_path = str(item.get("markdown_path") or "").strip()
+        if item["source_id"] == "alphapai" and markdown_path:
+            link = f"/alphapai/markdown/{quote(markdown_path, safe='')}"
+        entry_read_key = read_entry_key(item["source_id"], link, str(item.get("title") or ""))
+        if unread_only and (sort_time < ENTRIES_READ_CUTOFF or entry_read_key in read_keys):
             continue
         rows.append(
             {
@@ -681,6 +686,8 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
                 "title": normalize_utf8_text(item.get("title")),
                 "summary": normalize_utf8_text(item.get("summary")),
                 "link": link,
+                "markdown_path": markdown_path,
+                "read_key": entry_read_key,
                 "has_link": bool(link),
                 "source_name": display_source_name,
                 "display_time": format_datetime(display_time_raw),

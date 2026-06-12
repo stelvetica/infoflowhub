@@ -12,6 +12,7 @@ import feedparser
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
 from connectors._shared.common import parse_published_datetime, resolve_web_target
 from connectors._shared.web_fetch import fetch_web_many, fetch_web_source
+from connectors.alphapai import fetch_alphapai_source
 
 
 USER_AGENT = "infoflowhub-subscriptions/0.1"
@@ -19,6 +20,7 @@ MIN_SOURCE_ENTRIES = 10
 MIN_SOURCE_DAYS = 3
 FETCH_SOURCE_LIMIT = 60
 RSS_RETRY_DELAYS = (0.0, 1.5, 4.0)
+
 
 def _build_request(url: str) -> urllib.request.Request:
     return urllib.request.Request(
@@ -124,10 +126,13 @@ def should_fallback_to_web(source: dict, result: FeedFetchResult) -> bool:
 
 def fetch_many(sources: Iterable[dict], timeout: int = 20, settings: dict | None = None) -> List[FeedFetchResult]:
     source_list = list(sources)
-    web_sources = [source for source in source_list if source.get("provider") == "web"]
-    web_results = {result.source_id: result for result in fetch_web_many(web_sources, limit=FETCH_SOURCE_LIMIT)} if web_sources else {}
+    generic_web_sources = [source for source in source_list if source.get("provider") == "web" and source.get("id") != "alphapai"]
+    web_results = {result.source_id: result for result in fetch_web_many(generic_web_sources, limit=FETCH_SOURCE_LIMIT)} if generic_web_sources else {}
     results: List[FeedFetchResult] = []
     for source in source_list:
+        if source.get("id") == "alphapai":
+            results.append(fetch_alphapai_source(source, limit=FETCH_SOURCE_LIMIT))
+            continue
         if source.get("provider") == "web":
             results.append(web_results.get(source["id"]) or fetch_web_source(source))
             continue
