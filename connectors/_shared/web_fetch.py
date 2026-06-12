@@ -7,7 +7,10 @@ from playwright.sync_api import sync_playwright
 from apps.subscriptions.models import FeedFetchResult
 from connectors._shared.common import (
     USER_AGENT,
+    is_chrome_running,
     is_transient_fetch_error,
+    kill_chrome_gracefully,
+    launch_alphapai_context,
     launch_weibo_context,
     launch_x_context,
     resolve_web_target,
@@ -16,6 +19,7 @@ from connectors._shared.common import (
     validate_x_login_prerequisite,
 )
 from connectors.auth import get_auth_context_path
+from connectors.alphapai import fetch_alphapai_with_page
 from connectors.bilibili import fetch_bilibili_dynamic_feed
 from connectors.douyin import fetch_douyin_subscription_with_page
 from connectors.douyin.favorites import _resolve_default_browser_executable
@@ -90,6 +94,17 @@ def _fetch_web_source_once(playwright, source: dict, *, limit: int = 12, timeout
         try:
             page = browser.new_page()
             return fetch_douyin_subscription_with_page(page, source, timeout_ms=timeout_ms, limit=limit)
+        finally:
+            browser.close()
+
+    if target.site == "alphapai":
+        if is_chrome_running():
+            if not kill_chrome_gracefully():
+                return result_error(source, "Chrome 正在运行且无法关闭，请手动关闭后重试。")
+        browser = launch_alphapai_context(playwright, headless=True)
+        try:
+            page = browser.new_page()
+            return fetch_alphapai_with_page(page, source, timeout_ms=timeout_ms, limit=limit)
         finally:
             browser.close()
 

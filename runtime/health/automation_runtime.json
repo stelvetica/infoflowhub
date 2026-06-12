@@ -26,25 +26,25 @@
       }
     }
   },
-  "last_run_date": "2026-06-09",
-  "last_started_at": "2026-06-09 07:09:15",
+  "last_run_date": "2026-06-12",
+  "last_started_at": "2026-06-12 07:50:24",
   "last_status": "success",
-  "last_finished_at": "2026-06-09 07:11:14",
+  "last_finished_at": "2026-06-12 07:52:37",
   "last_error": "",
   "last_result": {
     "subscriptions": {
-      "last_run_at": "2026-06-09 07:10:33",
-      "last_success_at": "2026-06-08 08:49:51",
-      "last_error": "观点 胖特工: 微信公众号抓取失败: 微信公众号 source 缺少 fakeid，且未能从文章链接自动解析。 | 观点 水木纪要: 微信公众号抓取失败: 微信公众号 source 缺少 fakeid，且未能从文章链接自动解析。 | 观点 今天纳指新高了吗: 微信公众号抓取失败: 微信公众号 source 缺少 fakeid，且未能从文章链接自动解析。 | 观点 finn的投研记录: 微信公众号登录态已失效，请更新 WECHAT_TOKEN / WECHAT_COOKIE 后重试。 | 观点 沧海一土狗: 微信公众号登录态已失效，请更新 WECHAT_TOKEN / WECHAT_COOKIE 后重试。 | 观点 180K: 微信公众号登录态已失效，请更新 WECHAT_TOKEN / WECHAT_COOKIE 后重试。 | 观点 贝叶斯之美: 微信公众号登录态已失效，请更新 WECHAT_TOKEN / WECHAT_COOKIE 后重试。 | 观点 表舅是养基大户: 微信公众号登录态已失效，请更新 WECHAT_TOKEN / WECHAT_COOKIE 后重试。 | 生活 精选君: 微信公众号登录态已失效，请更新 WECHAT_TOKEN / WECHAT_COOKIE 后重试。",
+      "last_run_at": "2026-06-12 07:51:49",
+      "last_success_at": "2026-06-12 07:51:49",
+      "last_error": "",
       "last_total_sources": 28,
-      "last_success_sources": 19,
-      "last_inserted_entries": 50,
-      "fetch_state": "error",
-      "current_run_started_at": "2026-06-09 07:09:15"
+      "last_success_sources": 28,
+      "last_inserted_entries": 58,
+      "fetch_state": "success",
+      "current_run_started_at": "2026-06-12 07:50:24"
     },
     "laterhub": {
       "fetched_sources": 3,
-      "pending_total": 196,
+      "pending_total": 207,
       "push_enabled": 0
     }
   }

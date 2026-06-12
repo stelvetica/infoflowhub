@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import re
+import os
+import subprocess
+import time as _time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from apps.subscriptions.models import FeedFetchResult
@@ -14,6 +18,7 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 WEIBO_PROFILE_DIR = get_auth_context_path("weibo_shared")
 X_PROFILE_DIR = get_auth_context_path("x_profile2")
 DOUYIN_PROFILE_DIR = get_auth_context_path("douyin_shared")
+ALPHAPAI_PROFILE_DIR = get_auth_context_path("alphapai_main")
 X_LOGIN_HINT = "请先在本机 Chrome 的 Profile 2 中登录 x.com，并确认 MacroMargin 时间线可正常加载。"
 DOUYIN_LOGIN_HINT = "请先执行现有抖音登录流程，当前抖音订阅与抖音收藏共用同一份登录态。"
 
@@ -115,6 +120,13 @@ def resolve_web_target(source: dict) -> WebSourceTarget | None:
     if match:
         uid = match.group(1)
         return WebSourceTarget(site="youtube", uid=uid, page_url=f"https://www.youtube.com/{site_url.rstrip('/').split('youtube.com/', 1)[1]}/videos")
+    match = re.search(r"alphapai-web\.rabyte\.cn", site_url)
+    if match:
+        return WebSourceTarget(
+            site="alphapai",
+            uid="market-report",
+            page_url="https://alphapai-web.rabyte.cn/reading/home/market-report/detail",
+        )
     return None
 
 
@@ -280,3 +292,55 @@ def launch_x_context(playwright, headless: bool):
         except Exception as exc:
             last_error = exc
     raise last_error or RuntimeError("X 浏览器上下文启动失败")
+
+
+CHROME_USER_DATA = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data"
+
+
+def is_chrome_running() -> bool:
+    """检测 Chrome 是否正在运行（通过 SingletonLock 文件）"""
+    lock_file = CHROME_USER_DATA / "SingletonLock"
+    return lock_file.exists()
+
+
+def kill_chrome_gracefully() -> bool:
+    """先软后硬关闭 Chrome"""
+    try:
+        # 第一轮：优雅关闭（不带 /f）
+        subprocess.run(
+            ["taskkill", "/im", "chrome.exe", "/t"],
+            capture_output=True, timeout=10,
+        )
+        for _ in range(8):
+            _time.sleep(1)
+            if not is_chrome_running():
+                return True
+
+        # 第二轮：强制关闭（带 /f），处理顽固子进程
+        subprocess.run(
+            ["taskkill", "/f", "/im", "chrome.exe", "/t"],
+            capture_output=True, timeout=10,
+        )
+        for _ in range(10):
+            _time.sleep(1)
+            if not is_chrome_running():
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def launch_alphapai_context(playwright, headless: bool = True):
+    """启动 Playwright Chromium 接入 Default Profile"""
+    return playwright.chromium.launch_persistent_context(
+        user_data_dir=str(ALPHAPAI_PROFILE_DIR),
+        headless=headless,
+        args=[
+            "--window-size=1440,960",
+            "--disable-extensions",
+            "--disable-blink-features=AutomationControlled",
+        ],
+        ignore_default_args=["--enable-automation"],
+        user_agent=USER_AGENT,
+        locale="zh-CN",
+    )

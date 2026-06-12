@@ -8,6 +8,7 @@ from connectors.auth.providers import (
     get_bilibili_headers,
     get_context_path,
     get_wechat_status,
+    validate_alphapai_auth,
     validate_bilibili_auth,
     validate_douyin_auth,
     validate_weibo_auth,
@@ -71,6 +72,15 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         display_name="小黑盒共享登录态",
         description="later 收藏夹抓取复用这份浏览器登录态。",
     ),
+    "alphapai_main": AuthRegistration(
+        auth_key="alphapai_main",
+        platform="alphapai",
+        auth_mode="chrome_profile",
+        storage_ref=str(get_context_path("alphapai_main")),
+        renew_strategy="use_system_profile",
+        display_name="Alpha派蓝宝书",
+        description="复用系统 Chrome Default Profile 登录态。抓取前需关闭 Chrome。",
+    ),
 }
 
 
@@ -95,6 +105,8 @@ def validate_auth(auth_key: str) -> AuthDescriptor:
         status = validate_weibo_auth()
     elif auth_key == "xiaoheihe_shared":
         status = validate_xiaoheihe_auth()
+    elif auth_key == "alphapai_main":
+        status = validate_alphapai_auth()
     else:
         status = {"is_available": False, "status_level": "warn", "status_text": "未知", "hint": ""}
     return AuthDescriptor(

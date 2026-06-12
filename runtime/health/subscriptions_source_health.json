@@ -1,200 +1,207 @@
 {
   "sources": {
     "HackerNews每日摘要": {
-      "last_checked_at": "2026-06-09 09:00:49",
-      "last_success_at": "2026-06-09 09:00:49",
+      "last_checked_at": "2026-06-12 14:11:44",
+      "last_success_at": "2026-06-12 14:11:44",
       "last_failed_at": "2026-06-08 07:38:34",
       "last_error": "",
       "source_name": "技术 HackerNews 每日摘要"
     },
     "labuladong": {
-      "last_checked_at": "2026-06-09 09:00:50",
-      "last_success_at": "2026-06-09 09:00:50",
+      "last_checked_at": "2026-06-12 14:11:44",
+      "last_success_at": "2026-06-12 14:11:44",
       "last_failed_at": "2026-06-08 07:38:34",
       "last_error": "",
       "source_name": "技术 算法 labuladong"
     },
     "code秘密花园": {
-      "last_checked_at": "2026-06-09 09:00:50",
-      "last_success_at": "2026-06-09 09:00:50",
+      "last_checked_at": "2026-06-12 14:11:44",
+      "last_success_at": "2026-06-12 14:11:44",
       "last_failed_at": "2026-06-08 07:38:34",
       "last_error": "",
       "source_name": "技术 code秘密花园"
     },
     "路口大爷聊宏观": {
-      "last_checked_at": "2026-06-09 09:00:50",
-      "last_success_at": "2026-06-09 09:00:50",
+      "last_checked_at": "2026-06-12 14:11:44",
+      "last_success_at": "2026-06-12 14:11:44",
       "last_failed_at": "2026-06-08 07:38:34",
       "last_error": "",
       "source_name": "观点 路口大爷聊宏观"
     },
     "硬核姬老板": {
-      "last_checked_at": "2026-06-09 09:00:50",
-      "last_success_at": "2026-06-09 09:00:50",
+      "last_checked_at": "2026-06-12 14:11:44",
+      "last_success_at": "2026-06-12 14:11:44",
       "last_failed_at": "2026-06-08 07:38:34",
       "last_error": "",
       "source_name": "观点 基金 硬核姬老板"
     },
     "巫师财经": {
-      "last_checked_at": "2026-06-09 09:00:50",
-      "last_success_at": "2026-06-09 09:00:50",
+      "last_checked_at": "2026-06-12 14:11:44",
+      "last_success_at": "2026-06-12 14:11:44",
       "last_failed_at": "2026-06-08 07:38:34",
       "last_error": "",
       "source_name": "观点 产业 巫师财经"
     },
     "MacroMargin": {
-      "last_checked_at": "2026-06-09 09:00:50",
-      "last_success_at": "2026-06-09 09:00:50",
+      "last_checked_at": "2026-06-12 14:11:44",
+      "last_success_at": "2026-06-12 14:11:44",
       "last_failed_at": "2026-06-08 07:38:34",
       "last_error": "",
       "source_name": "观点 宏观 MacroMargin"
     },
     "TeranceJiang": {
-      "last_checked_at": "2026-06-09 09:00:50",
-      "last_success_at": "2026-06-09 09:00:50",
+      "last_checked_at": "2026-06-12 14:11:44",
+      "last_success_at": "2026-06-12 14:11:44",
       "last_failed_at": "2026-06-08 07:38:34",
       "last_error": "",
       "source_name": "观点 Skills TeranceJiang"
     },
     "Mark__Huang": {
-      "last_checked_at": "2026-06-09 09:00:50",
-      "last_success_at": "2026-06-09 09:00:50",
+      "last_checked_at": "2026-06-12 14:11:45",
+      "last_success_at": "2026-06-12 14:11:45",
       "last_failed_at": "2026-06-08 07:38:34",
       "last_error": "",
       "source_name": "观点 成长股 Mark__Huang"
     },
     "何佳心今天加薪了么": {
-      "last_checked_at": "2026-06-09 09:00:50",
-      "last_success_at": "2026-06-09 09:00:50",
+      "last_checked_at": "2026-06-12 14:11:45",
+      "last_success_at": "2026-06-12 14:11:45",
       "last_failed_at": "2026-06-08 07:38:34",
       "last_error": "",
       "source_name": "观点 价值解释 何佳心今天加薪了么"
     },
     "阮一峰周刊": {
-      "last_checked_at": "2026-06-09 09:00:50",
-      "last_success_at": "2026-06-09 09:00:50",
+      "last_checked_at": "2026-06-12 14:11:45",
+      "last_success_at": "2026-06-12 14:11:45",
       "last_failed_at": "2026-06-08 07:38:35",
       "last_error": "",
       "source_name": "技术 阮一峰周刊"
     },
     "技术爬爬虾": {
-      "last_checked_at": "2026-06-09 09:00:50",
-      "last_success_at": "2026-06-09 09:00:50",
+      "last_checked_at": "2026-06-12 14:11:45",
+      "last_success_at": "2026-06-12 14:11:45",
       "last_failed_at": "2026-06-08 07:38:35",
       "last_error": "",
       "source_name": "技术 技术爬爬虾"
     },
     "铁锤观察室": {
-      "last_checked_at": "2026-06-09 09:00:51",
-      "last_success_at": "2026-06-09 09:00:51",
+      "last_checked_at": "2026-06-12 14:11:45",
+      "last_success_at": "2026-06-12 14:11:45",
       "last_failed_at": "2026-06-08 07:38:35",
       "last_error": "",
       "source_name": "观点 房产 铁锤观察室"
     },
     "肖恩周刊": {
-      "last_checked_at": "2026-06-09 09:00:51",
-      "last_success_at": "2026-06-09 09:00:51",
+      "last_checked_at": "2026-06-12 14:11:45",
+      "last_success_at": "2026-06-12 14:11:45",
       "last_failed_at": "2026-06-08 07:38:35",
       "last_error": "",
       "source_name": "技术 肖恩周刊"
     },
     "土豆看财报": {
-      "last_checked_at": "2026-06-09 09:00:51",
-      "last_success_at": "2026-06-09 09:00:51",
+      "last_checked_at": "2026-06-12 14:11:46",
+      "last_success_at": "2026-06-12 14:11:46",
       "last_failed_at": "2026-06-08 07:38:35",
       "last_error": "",
       "source_name": "观点 公司 土豆看财报"
     },
     "投研部杨摸鱼": {
-      "last_checked_at": "2026-06-09 09:00:51",
-      "last_success_at": "2026-06-09 09:00:51",
+      "last_checked_at": "2026-06-12 14:11:46",
+      "last_success_at": "2026-06-12 14:11:46",
       "last_failed_at": "2026-06-08 07:38:35",
       "last_error": "",
       "source_name": "观点 公司 投研部杨摸鱼"
     },
     "wechat-finninvestrecord": {
-      "last_checked_at": "2026-06-09 09:00:51",
-      "last_success_at": "2026-06-09 09:00:51",
-      "last_failed_at": "2026-06-09 07:10:32",
+      "last_checked_at": "2026-06-12 14:11:46",
+      "last_success_at": "2026-06-12 14:11:46",
+      "last_failed_at": "2026-06-12 14:05:36",
       "last_error": "",
       "source_name": "观点 finn的投研记录"
     },
     "wechat-canghaiyitugou": {
-      "last_checked_at": "2026-06-09 09:00:51",
-      "last_success_at": "2026-06-09 09:00:51",
-      "last_failed_at": "2026-06-09 07:10:32",
+      "last_checked_at": "2026-06-12 14:11:46",
+      "last_success_at": "2026-06-12 14:11:46",
+      "last_failed_at": "2026-06-12 14:05:36",
       "last_error": "",
       "source_name": "观点 沧海一土狗"
     },
     "wechat-180k": {
-      "last_checked_at": "2026-06-09 09:00:51",
-      "last_success_at": "2026-06-09 09:00:51",
-      "last_failed_at": "2026-06-09 07:10:32",
+      "last_checked_at": "2026-06-12 14:11:46",
+      "last_success_at": "2026-06-12 14:11:46",
+      "last_failed_at": "2026-06-12 14:05:36",
       "last_error": "",
       "source_name": "观点 180K"
     },
     "wechat-jingxuanjun": {
-      "last_checked_at": "2026-06-09 09:00:51",
-      "last_success_at": "2026-06-09 09:00:51",
-      "last_failed_at": "2026-06-09 07:10:32",
+      "last_checked_at": "2026-06-12 14:11:47",
+      "last_success_at": "2026-06-12 14:11:47",
+      "last_failed_at": "2026-06-12 14:05:36",
       "last_error": "",
       "source_name": "生活 精选君"
     },
     "wechat-bayes-beauty": {
-      "last_checked_at": "2026-06-09 09:00:51",
-      "last_success_at": "2026-06-09 09:00:51",
-      "last_failed_at": "2026-06-09 07:10:32",
+      "last_checked_at": "2026-06-12 14:11:46",
+      "last_success_at": "2026-06-12 14:11:46",
+      "last_failed_at": "2026-06-12 14:05:36",
       "last_error": "",
       "source_name": "观点 贝叶斯之美"
     },
     "wechat-bigmoneyfundsuncle": {
-      "last_checked_at": "2026-06-09 09:00:51",
-      "last_success_at": "2026-06-09 09:00:51",
-      "last_failed_at": "2026-06-09 07:10:32",
+      "last_checked_at": "2026-06-12 14:11:47",
+      "last_success_at": "2026-06-12 14:11:47",
+      "last_failed_at": "2026-06-12 14:05:36",
       "last_error": "",
       "source_name": "观点 表舅是养基大户"
     },
     "wechat-pangtegong": {
-      "last_checked_at": "2026-06-09 09:00:51",
-      "last_success_at": "2026-06-09 09:00:51",
-      "last_failed_at": "2026-06-09 07:10:32",
+      "last_checked_at": "2026-06-12 14:11:47",
+      "last_success_at": "2026-06-12 14:11:47",
+      "last_failed_at": "2026-06-12 14:05:36",
       "last_error": "",
       "source_name": "观点 胖特工"
     },
     "wechat-shuimujiyao": {
-      "last_checked_at": "2026-06-09 09:00:51",
-      "last_success_at": "2026-06-09 09:00:51",
-      "last_failed_at": "2026-06-09 07:10:33",
+      "last_checked_at": "2026-06-12 14:11:47",
+      "last_success_at": "2026-06-12 14:11:47",
+      "last_failed_at": "2026-06-12 14:05:37",
       "last_error": "",
       "source_name": "观点 水木纪要"
     },
     "wechat-nasdaq-new-high": {
-      "last_checked_at": "2026-06-09 09:00:52",
-      "last_success_at": "2026-06-09 09:00:52",
-      "last_failed_at": "2026-06-09 07:10:33",
+      "last_checked_at": "2026-06-12 14:11:47",
+      "last_success_at": "2026-06-12 14:11:47",
+      "last_failed_at": "2026-06-12 14:05:37",
       "last_error": "",
       "source_name": "观点 今天纳指新高了吗"
     },
     "laolihai_youtube": {
-      "last_checked_at": "2026-06-09 09:00:50",
-      "last_success_at": "2026-06-09 09:00:50",
+      "last_checked_at": "2026-06-12 14:11:45",
+      "last_success_at": "2026-06-12 14:11:45",
       "last_failed_at": "2026-06-08 07:38:34",
       "last_error": "",
       "source_name": "观点 外资观点 老厉害"
     },
     "破壁狗": {
-      "last_checked_at": "2026-06-09 09:00:52",
-      "last_success_at": "2026-06-09 09:00:52",
+      "last_checked_at": "2026-06-12 14:11:47",
+      "last_success_at": "2026-06-12 14:11:47",
       "last_failed_at": "2026-06-08 07:38:35",
       "last_error": "",
       "source_name": "观点 破壁狗"
     },
     "史诗级韭菜": {
-      "last_checked_at": "2026-06-09 09:00:52",
-      "last_success_at": "2026-06-09 09:00:52",
+      "last_checked_at": "2026-06-12 14:11:47",
+      "last_success_at": "2026-06-12 14:11:47",
       "last_failed_at": "2026-06-08 07:38:35",
       "last_error": "",
       "source_name": "史诗级韭菜"
+    },
+    "alphapai": {
+      "last_checked_at": "2026-06-12 14:43:31",
+      "last_success_at": "2026-06-12 14:11:48",
+      "last_failed_at": "2026-06-12 14:43:31",
+      "last_error": "缃戦〉鐩存姄澶辫触: BrowserType.launch_persistent_context: Target page, context or browser has been closed Browser logs: <launching> C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --",
+      "source_name": "新闻 Alpha派蓝宝书"
     }
   }
 }
