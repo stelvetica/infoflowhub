@@ -7,8 +7,8 @@ from pathlib import Path
 from apps.subscriptions.importers import parse_opml
 from apps.subscriptions.rss_config import load_settings, load_sources, save_sources
 from apps.subscriptions.rss_db import save_entries
-from connectors.alphapai import fetch_and_save_alphapai
-from connectors.rss.fetch import fetch_many
+from connectors.alphapai import fetch_alphapai_source
+from connectors.rss.fetch import fetch_many, trim_fetch_result
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -50,10 +50,12 @@ def fetch_enabled(source_id: str = "") -> int:
         return 0
 
     if len(sources) == 1 and sources[0].get("id") == "alphapai":
-        result, inserted = fetch_and_save_alphapai(sources[0])
+        result = fetch_alphapai_source(sources[0])
+        result = trim_fetch_result(result)
         if not result.ok:
             _safe_print(f"FAIL {result.source_name}: {result.error or result.status}")
             return 1
+        inserted = save_entries(result.entries)
         _safe_print(f"OK {result.source_name}: 抓取 {len(result.entries)} 条, 新增 {inserted} 条")
         _safe_print(f"完成: 新增 {inserted} 条")
         return 0

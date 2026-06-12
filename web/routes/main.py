@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
 from web.services.wechat_login import check_login_scan, complete_login, get_login_qrcode, renew_login_with_existing_credentials, start_login
 from web.services.views import (
+    build_entries_state_params,
     build_laterhub_state_params,
     delete_source,
     format_success_sources_text,
@@ -19,6 +20,7 @@ from web.services.views import (
     get_laterhub_summary,
     get_laterhub_view,
     get_settings_view,
+    mark_entry_read_state,
     mark_laterhub_opened,
     mark_laterhub_finished,
     mark_laterhub_finished_bulk,
@@ -31,10 +33,35 @@ router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
 BASE_DIR = Path(__file__).resolve().parents[2]
 ALPHAPAI_MARKDOWN_DIR = BASE_DIR / "data" / "alphapai_markdown"
+ENTRIES_STATE_COOKIE = "ifh_entries_state_v1"
 
 
 def query_dict(request: Request) -> dict[str, str]:
     return {key: value for key, value in request.query_params.items()}
+
+
+def load_entries_state(request: Request) -> dict[str, str]:
+    params = query_dict(request)
+    cookie_value = request.cookies.get(ENTRIES_STATE_COOKIE, "")
+    cookie_params: dict[str, str] = {}
+    if cookie_value:
+        from urllib.parse import parse_qsl
+
+        cookie_params = {key: value for key, value in parse_qsl(cookie_value, keep_blank_values=True)}
+    merged = {**cookie_params, **params}
+    return build_entries_state_params(merged)
+
+
+def persist_entries_state(response: Response, state: dict[str, str]) -> None:
+    value = urlencode({key: value for key, value in state.items() if value != ""})
+    response.set_cookie(
+        ENTRIES_STATE_COOKIE,
+        value=value,
+        httponly=False,
+        samesite="lax",
+        max_age=180 * 24 * 60 * 60,
+        path="/",
+    )
 
 
 def merge_url(params: dict[str, str], **extra: str) -> str:
@@ -53,7 +80,7 @@ def source_url(params: dict[str, str], **extra: str) -> str:
 
 def render_main(request: Request, params: dict[str, str]):
     view = params.get("view", "entries")
-    entries_params = dict(params)
+    entries_params = load_entries_state(request)
     if view != "settings":
         entries_params.setdefault("entries_unread_only", "1")
     entries = get_entries_view(entries_params)
@@ -79,13 +106,22 @@ def render_main(request: Request, params: dict[str, str]):
 
 @router.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return render_main(request, query_dict(request))
+    response = render_main(request, query_dict(request))
+    persist_entries_state(response, load_entries_state(request))
+    return response
 
 
 @router.get("/fragments/entries", response_class=HTMLResponse)
 async def entries_fragment(request: Request):
-    params = query_dict(request)
-    return templates.TemplateResponse(request, "partials/entries_table.html", {"entries": get_entries_view(params), "params": params})
+    params = load_entries_state(request)
+    response = templates.TemplateResponse(request, "partials/entries_table.html", {"entries": get_entries_view(params), "params": params})
+    persist_entries_state(response, params)
+    return response
+
+
+@router.post("/actions/entries/mark-read")
+async def mark_entry_read_action(read_key: str = Form(...)):
+    return JSONResponse({"success": mark_entry_read_state(read_key)})
 
 
 @router.get("/alphapai/markdown/{markdown_path:path}", response_class=PlainTextResponse)

@@ -14,7 +14,9 @@ from apps.subscriptions.rss_db import (
     delete_entries_by_source,
     delete_source_state,
     get_connection,
+    list_read_entry_keys,
     list_source_stats,
+    mark_entry_read,
     migrate_legacy_source_ids,
     rename_source,
     sanitize_db_text,
@@ -651,6 +653,19 @@ def build_laterhub_query_string(query: Mapping[str, Any], *, page: int | None = 
     return urlencode({key: value for key, value in build_laterhub_state_params(query, page=page).items() if value != ""})
 
 
+def build_entries_state_params(query: Mapping[str, Any], *, page: int | None = None) -> dict[str, str]:
+    safe_page = page if page is not None else max(int(str(query.get("entries_page", "1") or "1")), 1)
+    unread_only = query.get("entries_unread_only")
+    return {
+        "entries_q": str(query.get("entries_q", "") or ""),
+        "entries_sort": str(query.get("entries_sort") or "sort_time"),
+        "entries_dir": str(query.get("entries_dir") or "desc"),
+        "entries_unread_only": "1" if unread_only is None else str(unread_only),
+        "entries_read_keys": str(query.get("entries_read_keys", "") or ""),
+        "entries_page": str(max(safe_page, 1)),
+    }
+
+
 def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
     current_sources = normalize_sources()
     enabled_ids = {item["id"] for item in current_sources if item.get("enabled")}
@@ -659,6 +674,8 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
     keyword = normalize_text(query.get("entries_q", ""))
     unread_only = query.get("entries_unread_only", "0") == "1"
     read_keys = {item for item in split_tags(query.get("entries_read_keys", "")) if item}
+    persisted_read_keys = list_read_entry_keys()
+    effective_read_keys = read_keys | persisted_read_keys
     sort = query.get("entries_sort") or "sort_time"
     direction = query.get("entries_dir") or "desc"
     page = max(int(query.get("entries_page", "1") or "1"), 1)
@@ -678,7 +695,7 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
         if item["source_id"] == "alphapai" and markdown_path:
             link = f"/alphapai/markdown/{quote(markdown_path, safe='')}"
         entry_read_key = read_entry_key(item["source_id"], link, str(item.get("title") or ""))
-        if unread_only and (sort_time < ENTRIES_READ_CUTOFF or entry_read_key in read_keys):
+        if unread_only and (sort_time < ENTRIES_READ_CUTOFF or entry_read_key in effective_read_keys):
             continue
         rows.append(
             {
@@ -710,8 +727,12 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
         "filtered_total": total,
         "total": _count_entries(),
         "unread_only": unread_only,
-        "read_keys_text": ",".join(sorted(read_keys)),
+        "read_keys_text": ",".join(sorted(effective_read_keys)),
     }
+
+
+def mark_entry_read_state(read_key: str) -> bool:
+    return mark_entry_read(read_key)
 
 
 def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:

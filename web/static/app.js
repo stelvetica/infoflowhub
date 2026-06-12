@@ -1,5 +1,6 @@
 (() => {
   const STORAGE_KEY = "infoflowhub:read-links:v3";
+  const ENTRIES_COOKIE_KEY = "ifh_entries_state_v1";
   const LATERHUB_WIDTH_KEY = "infoflowhub:laterhub-width";
   const unreadFilter = {
     unreadOnly: true,
@@ -20,6 +21,11 @@
 
   function saveReadLinks(value) {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+  }
+
+  function setCookie(name, value, days = 180) {
+    const expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString();
+    document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
   }
 
   function readLinkKey(value) {
@@ -125,6 +131,15 @@
       form.appendChild(readKeysInput);
     }
     readKeysInput.value = getReadKeys().join(",");
+    const cookieParams = new URLSearchParams();
+    const pageValue = getEntriesFragment()?.dataset.page || "1";
+    cookieParams.set("entries_unread_only", unreadInput.value || "");
+    cookieParams.set("entries_read_keys", readKeysInput.value || "");
+    cookieParams.set("entries_q", form.querySelector('input[name="entries_q"]')?.value || "");
+    cookieParams.set("entries_sort", form.querySelector('input[name="entries_sort"]')?.value || "sort_time");
+    cookieParams.set("entries_dir", form.querySelector('input[name="entries_dir"]')?.value || "desc");
+    cookieParams.set("entries_page", pageValue);
+    setCookie(ENTRIES_COOKIE_KEY, cookieParams.toString());
   }
 
   function refreshEntriesPanel(extraParams = {}) {
@@ -169,6 +184,21 @@
     anchor.classList.add("cell-unread");
   }
 
+  function syncReadStateToServer(readKey) {
+    const value = String(readKey || "").trim();
+    if (!value) return Promise.resolve(false);
+    const formData = new FormData();
+    formData.set("read_key", value);
+    return fetch("/actions/entries/mark-read", {
+      method: "POST",
+      body: formData,
+      credentials: "same-origin",
+    })
+      .then((res) => res.ok ? res.json() : { success: false })
+      .then((data) => Boolean(data?.success))
+      .catch(() => false);
+  }
+
   function applyReadState() {
     const readLinks = loadReadLinks();
     let changed = false;
@@ -193,8 +223,12 @@
         saveReadLinks(next);
         setEntryReadState(anchor, true);
         syncEntriesUnreadFields();
+        syncReadStateToServer(explicitReadKey || readLinkKey(href)).then(() => {
+          if (unreadFilter.unreadOnly) {
+            refreshEntriesPanel();
+          }
+        });
         if (unreadFilter.unreadOnly) {
-          window.setTimeout(() => refreshEntriesPanel(), 0);
           return;
         }
         renderUnreadToggle();

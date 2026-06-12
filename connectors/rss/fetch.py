@@ -131,7 +131,7 @@ def fetch_many(sources: Iterable[dict], timeout: int = 20, settings: dict | None
     results: List[FeedFetchResult] = []
     for source in source_list:
         if source.get("id") == "alphapai":
-            results.append(fetch_alphapai_source(source, limit=FETCH_SOURCE_LIMIT))
+            results.append(trim_fetch_result(fetch_alphapai_source(source, limit=FETCH_SOURCE_LIMIT)))
             continue
         if source.get("provider") == "web":
             results.append(web_results.get(source["id"]) or fetch_web_source(source))
@@ -177,3 +177,15 @@ def trim_entries(entries: List[FeedEntry]) -> List[FeedEntry]:
             break
 
     return selected if selected else sorted_entries
+
+
+def trim_fetch_result(result: FeedFetchResult) -> FeedFetchResult:
+    return FeedFetchResult(
+        source_id=result.source_id,
+        source_name=result.source_name,
+        feed_url=result.feed_url,
+        ok=result.ok,
+        status=result.status,
+        entries=trim_entries(result.entries),
+        error=result.error,
+    )

@@ -16,7 +16,8 @@ from connectors.douyin.favorites import _resolve_default_browser_executable
 ALPHAPAI_DEBUG_PORT = 9222
 ALPHAPAI_TARGET_URL = "https://alphapai-web.rabyte.cn/reading/home/market-report/detail"
 ALPHAPAI_PROFILE_NAME = "Default"
-ALPHAPAI_RUNNER_DIR = Path(__file__).resolve().parents[2] / "runtime" / "browser_profiles" / "alphapai-runner"
+ALPHAPAI_LEGACY_RUNNER_DIR = Path(__file__).resolve().parents[2] / "runtime" / "browser_profiles" / "alphapai-runner"
+ALPHAPAI_RUNNER_DIR = Path(__file__).resolve().parents[2] / "runtime" / "browser_profiles" / "alphapai-reader-automation"
 ALPHAPAI_RUNNER_PROFILE_DIR = ALPHAPAI_RUNNER_DIR / ALPHAPAI_PROFILE_NAME
 ALPHAPAI_RUNNER_META_PATH = ALPHAPAI_RUNNER_DIR / ".meta.json"
 ALPHAPAI_RUNNER_REBUILD_INTERVAL_SECONDS = 3 * 24 * 60 * 60
@@ -86,6 +87,15 @@ def _remove_runner_profile() -> None:
     try:
         if ALPHAPAI_RUNNER_DIR.exists():
             shutil.rmtree(ALPHAPAI_RUNNER_DIR, ignore_errors=True)
+    except OSError:
+        pass
+
+
+def _migrate_legacy_runner_dir() -> None:
+    if ALPHAPAI_RUNNER_DIR.exists() or not ALPHAPAI_LEGACY_RUNNER_DIR.exists():
+        return
+    try:
+        shutil.move(str(ALPHAPAI_LEGACY_RUNNER_DIR), str(ALPHAPAI_RUNNER_DIR))
     except OSError:
         pass
 
@@ -179,6 +189,7 @@ def should_rebuild_runner_profile() -> bool:
 
 
 def prepare_alphapai_runner_profile() -> None:
+    _migrate_legacy_runner_dir()
     if not should_rebuild_runner_profile():
         return
 

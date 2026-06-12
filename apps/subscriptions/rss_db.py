@@ -29,6 +29,11 @@ CREATE TABLE IF NOT EXISTS rss_entries (
   markdown_path TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS rss_entry_reads (
+  read_key TEXT PRIMARY KEY,
+  read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -544,3 +549,32 @@ def normalize_alphapai_entries() -> int:
     finally:
         conn.close()
     return updated
+
+
+def list_read_entry_keys() -> set[str]:
+    conn = get_connection()
+    try:
+        rows = conn.execute("SELECT read_key FROM rss_entry_reads").fetchall()
+    finally:
+        conn.close()
+    return {str(row[0] or "").strip() for row in rows if str(row[0] or "").strip()}
+
+
+def mark_entry_read(read_key: str) -> bool:
+    normalized = sanitize_db_text(read_key).strip()
+    if not normalized:
+        return False
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            """
+            INSERT INTO rss_entry_reads (read_key, read_at)
+            VALUES (?, CURRENT_TIMESTAMP)
+            ON CONFLICT(read_key) DO UPDATE SET read_at = excluded.read_at
+            """,
+            (normalized,),
+        )
+        conn.commit()
+        return bool(cursor.rowcount)
+    finally:
+        conn.close()
