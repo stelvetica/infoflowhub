@@ -168,4 +168,4 @@ def test_fetch_many_uses_alphapai_limit(monkeypatch):
         ]
     )
 
-    assert seen_limits == [10]
+    assert seen_limits == [60]

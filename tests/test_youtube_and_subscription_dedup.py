@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timedelta
 
 from apps.subscriptions import rss_db
 from apps.subscriptions.models import FeedEntry
+from connectors.rss.fetch import trim_entries
 from connectors._shared.common import with_query_params
 from connectors.youtube.feed import normalize_youtube_published
 
@@ -90,3 +92,22 @@ def test_save_entries_uses_partial_unique_link_index(monkeypatch, tmp_path):
     assert rows == [
         ("source-b", "Source B", "Title B", "https://example.com/shared", "2026/05/25 08:00"),
     ]
+
+
+def test_trim_entries_keeps_at_least_ten_when_three_days_not_reached():
+    now = datetime.now()
+    entries = [
+        FeedEntry(
+            source_id="demo",
+            source_name="Demo",
+            title=f"Item {idx}",
+            link=f"https://example.com/{idx}",
+            published=(now - timedelta(days=0 if idx < 8 else 4)).strftime("%Y/%m/%d %H:%M"),
+            summary="x",
+        )
+        for idx in range(12)
+    ]
+
+    trimmed = trim_entries(entries)
+
+    assert len(trimmed) == 10
