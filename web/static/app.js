@@ -199,27 +199,70 @@
       .catch(() => false);
   }
 
+  function getEntryStorageState(anchor, readLinks) {
+    const href = anchor.getAttribute("href") || "";
+    const explicitReadKey = anchor.dataset.readKey || "";
+    const explicitStorageKey = explicitReadKey ? `key:${explicitReadKey}` : "";
+    const legacyStorageKeys = [];
+    if (href) {
+      legacyStorageKeys.push(href);
+      legacyStorageKeys.push(`key:${readLinkKey(href)}`);
+    }
+    const isRead = Boolean(
+      (explicitStorageKey && readLinks[explicitStorageKey]) ||
+      legacyStorageKeys.some((key) => key && readLinks[key]),
+    );
+    return { href, explicitReadKey, explicitStorageKey, legacyStorageKeys, isRead };
+  }
+
   function applyReadState() {
     const readLinks = loadReadLinks();
     let changed = false;
     document.querySelectorAll(".read-track").forEach((anchor) => {
-      const href = anchor.getAttribute("href") || "";
-      const explicitReadKey = anchor.dataset.readKey || "";
-      const storageKey = explicitReadKey ? `key:${explicitReadKey}` : href;
-      if (!href || !/^https?:\/\//i.test(href)) {
+      const {
+        href,
+        explicitReadKey,
+        explicitStorageKey,
+        legacyStorageKeys,
+        isRead,
+      } = getEntryStorageState(anchor, readLinks);
+      if (!href) {
         setEntryReadState(anchor, true);
         return;
       }
       const row = anchor.closest("tr");
       const timeText = row?.querySelector(".cell-time")?.textContent?.trim() || "";
-      if (timeText && timeText < "2026/05/01" && !readLinks[storageKey]) {
-        readLinks[storageKey] = true;
+      if (timeText && timeText < "2026/05/01" && !isRead) {
+        if (explicitStorageKey) {
+          readLinks[explicitStorageKey] = true;
+        } else {
+          readLinks[href] = true;
+        }
         changed = true;
       }
-      setEntryReadState(anchor, Boolean(readLinks[storageKey]));
+      if (isRead && explicitStorageKey && !readLinks[explicitStorageKey]) {
+        readLinks[explicitStorageKey] = true;
+        changed = true;
+        syncReadStateToServer(explicitReadKey).catch(() => false);
+      }
+      legacyStorageKeys.forEach((key) => {
+        if (key && readLinks[key] && explicitStorageKey) {
+          delete readLinks[key];
+          changed = true;
+        }
+      });
+      const currentReadState = Boolean(explicitStorageKey ? readLinks[explicitStorageKey] : readLinks[href]);
+      setEntryReadState(anchor, currentReadState);
       anchor.onclick = () => {
         const next = loadReadLinks();
-        next[storageKey] = true;
+        if (explicitStorageKey) {
+          next[explicitStorageKey] = true;
+          legacyStorageKeys.forEach((key) => {
+            if (key) delete next[key];
+          });
+        } else {
+          next[href] = true;
+        }
         saveReadLinks(next);
         setEntryReadState(anchor, true);
         syncEntriesUnreadFields();

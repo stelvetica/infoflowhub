@@ -26,25 +26,25 @@
       }
     }
   },
-  "last_run_date": "2026-06-12",
-  "last_started_at": "2026-06-12 07:50:24",
+  "last_run_date": "2026-06-15",
+  "last_started_at": "2026-06-15 07:06:08",
   "last_status": "success",
-  "last_finished_at": "2026-06-12 07:52:37",
+  "last_finished_at": "2026-06-15 07:09:21",
   "last_error": "",
   "last_result": {
     "subscriptions": {
-      "last_run_at": "2026-06-12 07:51:49",
-      "last_success_at": "2026-06-12 07:51:49",
-      "last_error": "",
-      "last_total_sources": 28,
-      "last_success_sources": 28,
-      "last_inserted_entries": 58,
-      "fetch_state": "success",
-      "current_run_started_at": "2026-06-12 07:50:24"
+      "last_run_at": "2026-06-15 07:08:32",
+      "last_success_at": "2026-06-12 15:28:48",
+      "last_error": "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint",
+      "last_total_sources": 29,
+      "last_success_sources": 0,
+      "last_inserted_entries": 0,
+      "fetch_state": "error",
+      "current_run_started_at": "2026-06-15 07:06:08"
     },
     "laterhub": {
       "fetched_sources": 3,
-      "pending_total": 207,
+      "pending_total": 225,
       "push_enabled": 0
     }
   }
