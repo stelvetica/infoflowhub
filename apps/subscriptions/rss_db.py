@@ -273,7 +273,7 @@ def save_entries(entries: Iterable[FeedEntry]) -> int:
                 INSERT INTO rss_entries
                 (source_id, source_name, title, link, published, published_at, summary, markdown_path)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(link) DO UPDATE SET
+                ON CONFLICT DO UPDATE SET
                   source_id=excluded.source_id,
                   source_name=excluded.source_name,
                   title=CASE WHEN excluded.title != '' THEN excluded.title ELSE rss_entries.title END,

@@ -245,6 +245,15 @@ def try_rebuild_alphapai_runner_profile() -> bool:
         return False
 
 
+def try_prepare_alphapai_runner_profile() -> bool:
+    try:
+        _remove_runner_profile()
+        prepare_alphapai_runner_profile()
+        return _is_runner_profile_ready()
+    except Exception:
+        return False
+
+
 def ensure_alphapai_debug_browser() -> None:
     if is_alphapai_debug_browser_ready():
         if should_rebuild_runner_profile():
@@ -254,7 +263,9 @@ def ensure_alphapai_debug_browser() -> None:
         if is_alphapai_debug_browser_ready():
             return
     if should_rebuild_runner_profile():
-        if not try_rebuild_alphapai_runner_profile() and _is_runner_profile_ready():
+        if try_prepare_alphapai_runner_profile():
+            pass
+        elif not try_rebuild_alphapai_runner_profile() and _is_runner_profile_ready():
             pass
         elif not _is_runner_profile_ready():
             rebuild_alphapai_runner_profile()
