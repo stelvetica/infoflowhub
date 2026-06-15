@@ -8,6 +8,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 
 from connectors._shared.common import CHROME_USER_DATA, kill_chrome_gracefully
 from connectors.douyin.favorites import _resolve_default_browser_executable
@@ -77,6 +78,51 @@ def list_debug_tabs() -> list[dict]:
     return payload if isinstance(payload, list) else []
 
 
+def close_alphapai_debug_browser() -> None:
+    for tab in list_debug_tabs():
+        tab_id = str(tab.get("id") or "").strip()
+        if not tab_id:
+            continue
+        try:
+            urllib.request.urlopen(_debug_url(f"/json/close/{tab_id}"), timeout=2).close()
+        except (HTTPError, URLError, TimeoutError, OSError):
+            pass
+    runner_dir_text = str(ALPHAPAI_RUNNER_DIR).lower()
+    try:
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "Get-CimInstance Win32_Process -Filter \"name = 'chrome.exe'\" | "
+                "Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        payload = json.loads(result.stdout or "[]")
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        return
+    if isinstance(payload, dict):
+        processes = [payload]
+    elif isinstance(payload, list):
+        processes = payload
+    else:
+        processes = []
+    for item in processes:
+        command_line = str(item.get("CommandLine") or "").lower()
+        if runner_dir_text not in command_line:
+            continue
+        pid = str(item.get("ProcessId") or "").strip()
+        if not pid:
+            continue
+        try:
+            subprocess.run(["taskkill", "/pid", pid, "/t", "/f"], capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
 def _is_runner_profile_ready() -> bool:
     cookies = ALPHAPAI_RUNNER_PROFILE_DIR / "Network" / "Cookies"
     prefs = ALPHAPAI_RUNNER_PROFILE_DIR / "Preferences"
@@ -124,36 +170,52 @@ def _safe_unlink(path: Path) -> None:
         pass
 
 
-def _copy_path(src: Path, dst: Path) -> None:
+def _copy_path(src: Path, dst: Path) -> bool:
     if not src.exists():
-        return
-    if src.is_dir():
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-    else:
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
+        return False
+    try:
+        if src.is_dir():
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+        else:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+        return True
+    except OSError:
+        return False
 
 
-def _copy_sqlite_best_effort(src: Path, dst: Path) -> None:
+def _copy_sqlite_best_effort(src: Path, dst: Path) -> bool:
     if not src.exists():
-        return
+        return False
     dst.parent.mkdir(parents=True, exist_ok=True)
     try:
         shutil.copy2(src, dst)
-        return
+        return True
     except OSError:
         pass
 
     read_uri = f"file:{src.as_posix()}?mode=ro"
-    dest_conn = sqlite3.connect(str(dst))
     try:
-        src_conn = sqlite3.connect(read_uri, uri=True)
+        dest_conn = sqlite3.connect(str(dst))
         try:
-            src_conn.backup(dest_conn)
+            src_conn = sqlite3.connect(read_uri, uri=True)
+            try:
+                src_conn.backup(dest_conn)
+                return True
+            finally:
+                src_conn.close()
         finally:
-            src_conn.close()
-    finally:
-        dest_conn.close()
+            dest_conn.close()
+    except sqlite3.Error:
+        return False
+
+
+def _ensure_minimal_preferences() -> None:
+    prefs = ALPHAPAI_RUNNER_PROFILE_DIR / "Preferences"
+    if prefs.exists():
+        return
+    prefs.parent.mkdir(parents=True, exist_ok=True)
+    prefs.write_text("{}", encoding="utf-8")
 
 
 def _now_ts() -> int:
@@ -218,6 +280,7 @@ def prepare_alphapai_runner_profile() -> None:
             _copy_sqlite_best_effort(src / "Cookies", dst / "Cookies")
         else:
             _copy_path(src, dst)
+    _ensure_minimal_preferences()
 
     for lock_name in ("SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"):
         _safe_unlink(ALPHAPAI_RUNNER_DIR / lock_name)

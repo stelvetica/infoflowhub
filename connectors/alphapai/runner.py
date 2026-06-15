@@ -9,6 +9,7 @@ from apps.subscriptions.rss_db import save_entries
 from connectors._shared.common import result_error
 from connectors.alphapai.browser import (
     ALPHAPAI_TARGET_URL,
+    close_alphapai_debug_browser,
     connect_over_cdp_endpoint,
     ensure_alphapai_debug_browser,
     find_alphapai_tab_url,
@@ -51,6 +52,7 @@ def _run_fetch_once(source: dict, *, limit: int, timeout_ms: int) -> FeedFetchRe
             return result
         finally:
             browser.close()
+            close_alphapai_debug_browser()
 
 
 def _needs_profile_rebuild(result: FeedFetchResult) -> bool:

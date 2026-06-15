@@ -19,6 +19,7 @@ USER_AGENT = "infoflowhub-subscriptions/0.1"
 MIN_SOURCE_ENTRIES = 10
 MIN_SOURCE_DAYS = 3
 FETCH_SOURCE_LIMIT = 60
+ALPHAPAI_FETCH_LIMIT = 10
 RSS_RETRY_DELAYS = (0.0, 1.5, 4.0)
 
 
@@ -131,7 +132,7 @@ def fetch_many(sources: Iterable[dict], timeout: int = 20, settings: dict | None
     results: List[FeedFetchResult] = []
     for source in source_list:
         if source.get("id") == "alphapai":
-            results.append(trim_fetch_result(fetch_alphapai_source(source, limit=FETCH_SOURCE_LIMIT)))
+            results.append(trim_fetch_result(fetch_alphapai_source(source, limit=ALPHAPAI_FETCH_LIMIT)))
             continue
         if source.get("provider") == "web":
             results.append(web_results.get(source["id"]) or fetch_web_source(source))

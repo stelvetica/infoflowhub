@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
-from connectors._shared.common import clean_line
+from connectors._shared.common import clean_line, parse_published_datetime
 
 
 BLUEBOOK_URL = "https://alphapai-web.rabyte.cn/reading/home/market-report/detail"
@@ -19,6 +19,8 @@ TITLE_RE = re.compile(r"^(国内|全球)(\d{1,2})月(\d{1,2})日(晨会版|午�
 LOGIN_KEYWORDS = ("登录", "验证码", "手机号", "欢迎来到Alpha派", "立即登录")
 DISCLAIMER_KEYWORDS = ("免责声明", "免责", "投资建议")
 ALPHAPAI_MARKDOWN_DIR = Path(__file__).resolve().parents[2] / "data" / "alphapai_markdown"
+ALPHAPAI_MIN_DAYS = 3
+ALPHAPAI_MAX_ENTRIES = 10
 
 
 def _wait_ready(page, timeout_ms: int = 20000) -> bool:
@@ -162,6 +164,21 @@ def _extract_list_entries(page) -> List[dict]:
     return deduped
 
 
+def _trim_list_entries(entries: List[dict], *, max_entries: int = ALPHAPAI_MAX_ENTRIES, min_days: int = ALPHAPAI_MIN_DAYS) -> List[dict]:
+    if not entries:
+        return entries
+    threshold = datetime.now() - timedelta(days=min_days)
+    selected: List[dict] = []
+    for entry in entries:
+        selected.append(entry)
+        published_dt = parse_published_datetime(str(entry.get("published") or ""))
+        if len(selected) >= max_entries:
+            break
+        if published_dt and published_dt <= threshold:
+            break
+    return selected
+
+
 def _click_entry(page, raw_title: str) -> bool:
     candidates = [
         page.locator(".scroll-box").get_by_text(raw_title, exact=True).first,
@@ -278,9 +295,9 @@ def fetch_alphapai_with_page(page, source: dict, timeout_ms: int = 120000, *, li
         return FeedFetchResult(sid, sname, feed_url, False, 200, [], "页面可访问，但未解析到报告条目")
 
     existing_keys = _get_existing_keys(sid)
-    new_entries = [entry for entry in raw_entries if f"{entry['region']}_{entry['date']}_{entry['edition']}" not in existing_keys]
-    if limit and limit > 0:
-        new_entries = new_entries[:limit]
+    max_entries = min(limit, ALPHAPAI_MAX_ENTRIES) if limit and limit > 0 else ALPHAPAI_MAX_ENTRIES
+    candidate_entries = _trim_list_entries(raw_entries, max_entries=max_entries, min_days=ALPHAPAI_MIN_DAYS)
+    new_entries = [entry for entry in candidate_entries if f"{entry['region']}_{entry['date']}_{entry['edition']}" not in existing_keys]
 
     if not new_entries:
         return FeedFetchResult(sid, sname, feed_url, True, 200, [], "")
