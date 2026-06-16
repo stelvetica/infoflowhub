@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List
 
+from bs4 import BeautifulSoup, NavigableString, Tag
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
 from connectors._shared.common import clean_line
 
@@ -19,6 +20,38 @@ TITLE_RE = re.compile(r"^(国内|全球)(\d{1,2})月(\d{1,2})日(晨会版|午�
 LOGIN_KEYWORDS = ("登录", "验证码", "手机号", "欢迎来到Alpha派", "立即登录")
 DISCLAIMER_KEYWORDS = ("免责声明", "免责", "投资建议")
 ALPHAPAI_MARKDOWN_DIR = Path(__file__).resolve().parents[2] / "data" / "alphapai_markdown"
+DETAIL_SKIP_PREFIXES = ("分享", "播放", "时长")
+DETAIL_SKIP_LINES = {
+    "根据Alpha派机构投研用户实时研究动态聚合整理生成",
+}
+SECTION_HEADINGS = {
+    "隔夜美股复盘",
+    "市场热点",
+    "机会前瞻",
+}
+TIME_LABEL_RE = re.compile(r"^(今天|昨天|\d{2}-\d{2})?\s*\d{2}:\d{2}$")
+NUMBERED_HEADING_RE = re.compile(r"^(\d+)[.、]?\s*(.+)$")
+HTML_SKIP_TAGS = {"script", "style", "svg", "img", "video", "audio", "iframe"}
+HTML_BLOCK_TAGS = {
+    "div",
+    "p",
+    "section",
+    "article",
+    "header",
+    "footer",
+    "main",
+    "aside",
+    "blockquote",
+    "ul",
+    "ol",
+    "li",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+}
 
 
 def _wait_ready(page, timeout_ms: int = 20000) -> bool:
@@ -178,19 +211,23 @@ def _click_entry(page, raw_title: str) -> bool:
     return False
 
 
-def _wait_detail_loaded(page, entry: dict, timeout_ms: int = 15000) -> str:
+def _wait_detail_loaded(page, entry: dict, timeout_ms: int = 15000) -> dict[str, str]:
     deadline = _time.time() + timeout_ms / 1000
     title_hint = f"{entry['region']}蓝宝书 {entry['date']} {entry['edition']}"
     summary_hint = entry["summary"][:12]
     while _time.time() < deadline:
         try:
-            text = page.locator(DETAIL_SELECTOR).first.inner_text(timeout=2000)
+            locator = page.locator(DETAIL_SELECTOR).first
+            text = locator.inner_text(timeout=2000)
             if title_hint in text or summary_hint in text:
-                return text
+                return {
+                    "text": text,
+                    "html": locator.inner_html(timeout=2000),
+                }
         except Exception:
             pass
         _time.sleep(0.5)
-    return ""
+    return {"text": "", "html": ""}
 
 
 def _extract_content_title(detail_text: str, fallback_title: str) -> str:
@@ -234,16 +271,223 @@ def _sanitize_filename(value: str) -> str:
     return text[:120] or "alphapai"
 
 
-def _build_markdown_body(title: str, published: str, summary: str) -> str:
-    return f"# {title}\n\n- 发布时间: {published}\n- 来源: Alpha派 蓝宝书\n- 原始页: {BLUEBOOK_URL}\n\n---\n\n{summary.strip()}\n"
+def _extract_detail_lines(detail_text: str, detail_html: str) -> list[str]:
+    raw_text = detail_text
+    if detail_html.strip():
+        soup = BeautifulSoup(detail_html, "html.parser")
+        for tag in soup.select(", ".join(HTML_SKIP_TAGS)):
+            tag.decompose()
+
+        blocks: list[str] = []
+
+        def render_inline(node: Tag) -> str:
+            parts: list[str] = []
+
+            def visit(current) -> None:
+                if isinstance(current, NavigableString):
+                    text = clean_line(str(current))
+                    if text:
+                        parts.append(text)
+                    return
+                if not isinstance(current, Tag):
+                    return
+                name = current.name.lower()
+                if name in HTML_SKIP_TAGS:
+                    return
+                if name == "br":
+                    return
+                if name in {"strong", "b"}:
+                    text = render_inline(current)
+                    if text:
+                        parts.append(f"**{text}**")
+                    return
+                if name in {"em", "i"}:
+                    text = render_inline(current)
+                    if text:
+                        parts.append(f"*{text}*")
+                    return
+                if name == "a":
+                    text = render_inline(current)
+                    if text:
+                        parts.append(text)
+                    return
+                for child in current.children:
+                    visit(child)
+
+            visit(node)
+            return clean_line(" ".join(parts))
+
+        def collect(node: Tag) -> None:
+            for child in node.children:
+                if isinstance(child, NavigableString):
+                    text = clean_line(str(child))
+                    if text:
+                        blocks.append(text)
+                    continue
+                if not isinstance(child, Tag):
+                    continue
+                name = child.name.lower()
+                if name in HTML_SKIP_TAGS:
+                    continue
+                if name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+                    text = render_inline(child)
+                    if text:
+                        blocks.append(text)
+                    continue
+                if name == "li":
+                    text = render_inline(child)
+                    if text:
+                        blocks.append(f"- {text}")
+                    continue
+                if name in {"p", "blockquote"}:
+                    text = render_inline(child)
+                    if text:
+                        blocks.append(text)
+                    continue
+                if name in {"ul", "ol"}:
+                    collect(child)
+                    continue
+                if name in HTML_BLOCK_TAGS:
+                    has_block_children = any(
+                        isinstance(grandchild, Tag) and grandchild.name.lower() in HTML_BLOCK_TAGS
+                        for grandchild in child.children
+                    )
+                    if has_block_children:
+                        collect(child)
+                    else:
+                        text = render_inline(child)
+                        if text:
+                            blocks.append(text)
+                    continue
+                text = render_inline(child)
+                if text:
+                    blocks.append(text)
+
+        collect(soup)
+        raw_text = "\n".join(blocks) or detail_text
+
+    lines: list[str] = []
+    previous = ""
+    for raw_line in raw_text.splitlines():
+        line = clean_line(raw_line)
+        if not line:
+            continue
+        if line == previous and len(line) <= 32:
+            continue
+        lines.append(line)
+        previous = line
+    return lines
 
 
-def _write_markdown_file(title: str, published: str, summary: str) -> str:
+def _is_disclaimer_line(line: str) -> bool:
+    return any(keyword in line for keyword in DISCLAIMER_KEYWORDS)
+
+
+def _should_skip_detail_line(line: str) -> bool:
+    if line in DETAIL_SKIP_LINES:
+        return True
+    return any(line.startswith(prefix) for prefix in DETAIL_SKIP_PREFIXES)
+
+
+def _format_detail_markdown(content_title: str, detail_text: str, detail_html: str, time_label: str) -> str:
+    lines = _extract_detail_lines(detail_text, detail_html)
+    if not lines:
+        return detail_text.strip()
+
+    blocks: list[str] = []
+    index = 0
+    normalized_time_label = clean_line(time_label)
+    seen_title = False
+
+    while index < len(lines):
+        line = lines[index]
+
+        if not seen_title and clean_line(content_title) and line == clean_line(content_title):
+            seen_title = True
+            index += 1
+            continue
+        if normalized_time_label and line == normalized_time_label:
+            index += 1
+            continue
+        if TIME_LABEL_RE.fullmatch(line):
+            index += 1
+            continue
+        if _should_skip_detail_line(line):
+            index += 1
+            continue
+        if line in SECTION_HEADINGS:
+            blocks.append(f"## {line}")
+            index += 1
+            continue
+        if _is_disclaimer_line(line):
+            blocks.append(f"> {line}")
+            index += 1
+            continue
+        if re.fullmatch(r"\d{1,2}", line) and index + 1 < len(lines):
+            heading_title = lines[index + 1]
+            if not _should_skip_detail_line(heading_title):
+                blocks.append(f"### {line}. {heading_title}")
+                index += 2
+                continue
+        numbered_heading = NUMBERED_HEADING_RE.match(line)
+        if numbered_heading and len(numbered_heading.group(2)) <= 40:
+            blocks.append(f"### {numbered_heading.group(1)}. {numbered_heading.group(2)}")
+            index += 1
+            continue
+        if line.startswith("关注："):
+            blocks.append(f"**关注：** {line.removeprefix('关注：').strip()}")
+            index += 1
+            continue
+        blocks.append(line)
+        index += 1
+
+    return "\n\n".join(blocks).strip()
+
+
+def _build_markdown_body(
+    title: str,
+    published: str,
+    detail_text: str,
+    detail_html: str = "",
+    *,
+    time_label: str = "",
+    display_title: str = "",
+) -> str:
+    heading = clean_line(display_title) or clean_line(title)
+    body = _format_detail_markdown(heading, detail_text, detail_html, time_label)
+    return (
+        f"# {heading}\n\n"
+        f"- 发布时间: {published}\n"
+        f"- 来源: Alpha派 蓝宝书\n"
+        f"- 原始页: {BLUEBOOK_URL}\n\n"
+        f"{body.strip()}\n"
+    )
+
+
+def _write_markdown_file(
+    title: str,
+    published: str,
+    detail_text: str,
+    detail_html: str = "",
+    *,
+    time_label: str = "",
+    display_title: str = "",
+) -> str:
     ALPHAPAI_MARKDOWN_DIR.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha1(f"{published}|{title}".encode("utf-8")).hexdigest()[:12]
     filename = f"{published[:10].replace('/', '-')}_{_sanitize_filename(title)}_{digest}.md"
     path = ALPHAPAI_MARKDOWN_DIR / filename
-    path.write_text(_build_markdown_body(title, published, summary), encoding="utf-8")
+    path.write_text(
+        _build_markdown_body(
+            title,
+            published,
+            detail_text,
+            detail_html,
+            time_label=time_label,
+            display_title=display_title,
+        ),
+        encoding="utf-8",
+    )
     return str(path)
 
 
@@ -287,18 +531,29 @@ def fetch_alphapai_with_page(page, source: dict, timeout_ms: int = 120000, *, li
     results: List[FeedEntry] = []
     for entry in new_entries:
         detail_text = ""
+        detail_html = ""
         fallback_title = f"{entry['region']} {entry['date']} {entry['edition']}"
         try:
             if _click_entry(page, entry["raw_title"]):
-                detail_text = _wait_detail_loaded(page, entry, timeout_ms=10000)
+                detail_payload = _wait_detail_loaded(page, entry, timeout_ms=10000)
+                detail_text = detail_payload.get("text", "")
+                detail_html = detail_payload.get("html", "")
         except Exception as exc:
             detail_text = f"[详情提取失败: {exc}]"
 
         if not detail_text:
             detail_text = entry["summary"]
 
+        content_title = _extract_content_title(detail_text, fallback_title)
         title = _build_entry_title(detail_text, fallback_title)
-        markdown_path = _write_markdown_file(title, entry["published"], detail_text.strip())
+        markdown_path = _write_markdown_file(
+            title,
+            entry["published"],
+            detail_text.strip(),
+            detail_html,
+            time_label=entry["time_label"],
+            display_title=content_title,
+        )
 
         results.append(
             FeedEntry(
