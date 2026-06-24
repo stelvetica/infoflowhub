@@ -63,14 +63,10 @@ infoflowhub/
 ### 1. 安装 Python Web 依赖
 
 ```powershell
-python -m pip install -r requirements-web.txt
+uv sync --extra browser
 ```
 
-如果你的 Python 不是系统默认解释器，可设置：
-
-```powershell
-$env:INFOFLOW_PYTHON="你的 python 路径"
-```
+uv 会自动管理 Python 解释器与虚拟环境（`.venv`），无需手动指定。
 
 ### 2. 启动控制台
 
