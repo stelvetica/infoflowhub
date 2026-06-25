@@ -469,10 +469,12 @@ def ensure_debug_browser(
         )
 
     _, chrome_executable = _resolve_default_browser_executable()
+    # 显式用绝对路径，避免相对路径在 Windows 上导致 Chrome 无法创建数据目录
+    runner_dir_abs = str(Path(runner_dir).resolve())
     args = [
         chrome_executable,
         f"--remote-debugging-port={debug_port}",
-        f"--user-data-dir={runner_dir}",
+        f"--user-data-dir={runner_dir_abs}",
         f"--profile-directory={profile_name}",
         "--no-first-run",
         "--disable-popup-blocking",
