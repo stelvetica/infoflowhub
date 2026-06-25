@@ -44,7 +44,7 @@ def test_run_source_fetch_updates_status_and_health(monkeypatch, tmp_path):
         entries=[],
     )
 
-    monkeypatch.setattr(runtime_health, "fetch_many", lambda sources, settings=None, timeout=45: [result])
+    monkeypatch.setattr(runtime_health, "fetch_many", lambda sources, settings=None, timeout=45, session=None: [result])
     monkeypatch.setattr(runtime_health, "save_entries", lambda entries: 0)
 
     outcome = runtime_health.run_source_fetch([{"id": "alphapai", "enabled": True}], timeout=5)

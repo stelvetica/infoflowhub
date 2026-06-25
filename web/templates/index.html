@@ -75,7 +75,7 @@
                 <a
                   class="btn ghost wechat-renew-btn {% if settings.wechat_auth['should_highlight_renew'] %}warn wechat-renew-btn-active{% endif %}"
                   href="{{ settings.wechat_entries_login_url }}"
-                  title="{% if settings.wechat_auth['should_highlight_renew'] %}微信登录态已过期或已达到首次扫码截止时间{% elif settings.wechat_auth['renew_highlight_threshold_text'] %}首次扫码截止时间：{{ settings.wechat_auth['renew_highlight_threshold_text'] }}{% else %}打开微信扫码续期页{% endif %}"
+                  title="{% if settings.wechat_auth['should_highlight_renew'] %}微信登录态将在1天内过期，请扫码重登{% else %}打开微信扫码续期页{% endif %}"
                 >
                   微信续期
                 </a>

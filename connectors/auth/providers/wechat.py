@@ -210,7 +210,13 @@ def get_wechat_status() -> dict[str, Any]:
     expire_time = int(expire_text) if expire_text.isdigit() else 0
     initial_expire_time = int(initial_expire_text) if initial_expire_text.isdigit() else 0
     now_ms = int(time.time() * 1000)
-    renew_highlight_threshold = initial_expire_time or expire_time
+    # 提醒阈值：按当前实际过期时间提前 1 天
+    effective_expire_time = expire_time or initial_expire_time
+    one_day_ms = 24 * 60 * 60 * 1000
+    renew_highlight_threshold = effective_expire_time - one_day_ms if effective_expire_time > one_day_ms else 0
+    should_highlight_renew = bool(status.get("is_expired")) or (
+        effective_expire_time > 0 and now_ms >= effective_expire_time - one_day_ms
+    )
     return {
         "has_credentials": bool(_clean_text(credentials.get("token")) and _clean_text(credentials.get("cookie"))),
         "nickname": normalize_utf8_text(credentials.get("nickname")),
@@ -219,6 +225,6 @@ def get_wechat_status() -> dict[str, Any]:
         "initial_expire_time_text": _format_local_datetime(initial_expire_time),
         "renew_highlight_threshold": renew_highlight_threshold,
         "renew_highlight_threshold_text": _format_local_datetime(renew_highlight_threshold),
-        "should_highlight_renew": bool(status.get("is_expired")) or (renew_highlight_threshold > 0 and now_ms >= renew_highlight_threshold),
+        "should_highlight_renew": should_highlight_renew,
         **status,
     }

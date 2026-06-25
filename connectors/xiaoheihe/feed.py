@@ -16,8 +16,6 @@ from connectors.auth import get_auth_context_path
 
 XIAOHEIHE_FAVOR_URL = "https://www.xiaoheihe.cn/app/user/favour/content"
 XIAOHEIHE_LOGIN_URL_PREFIX = "https://account.xiaoheihe.cn"
-XIAOHEIHE_FAV_RUNNER_DIR = Path(__file__).resolve().parents[2] / "runtime" / "browser_profiles" / "xiaoheihe-fav-runner"
-XIAOHEIHE_FAV_DEBUG_PORT = 9288
 MESSAGE_PREFIX = "[小黑盒]"
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 DEBUG_JSON_PATH = DEBUG_DIR / "tmp_pw_xiaoheihe_favorites.json"
@@ -186,16 +184,20 @@ def _wait_until_favour_loaded(page, *, max_wait_ms: int = 20000, check_interval_
     return False
 
 
-def fetch_xiaoheihe_favorites(env_path: str | Path | None = None) -> list[dict[str, Any]]:
-    source_profile_dir = get_auth_context_path("xiaoheihe_shared")
-    items: list[dict[str, Any]] = []
+def fetch_xiaoheihe_favorites(
+    env_path: str | Path | None = None,
+    session: SharedRunnerSession | None = None,
+) -> list[dict[str, Any]]:
+    own_session = session is None
+    if own_session:
+        session = SharedRunnerSession(
+            source_profile_dir=get_auth_context_path("xiaoheihe_shared"),
+            extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh;q=0.9,en;q=0.8"],
+        )
+        session.start()
 
-    with SharedRunnerSession(
-        source_profile_dir=source_profile_dir,
-        runner_dir=XIAOHEIHE_FAV_RUNNER_DIR,
-        debug_port=XIAOHEIHE_FAV_DEBUG_PORT,
-        extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh"],
-    ) as session:
+    items: list[dict[str, Any]] = []
+    try:
         page = session.acquire_page()
 
         # Step 1: Navigate with API interception
@@ -223,6 +225,9 @@ def fetch_xiaoheihe_favorites(env_path: str | Path | None = None) -> list[dict[s
             page.close()
         except Exception:
             pass
+    finally:
+        if own_session:
+            session.shutdown()
 
     result: list[dict[str, Any]] = []
     seen: set[str] = set()

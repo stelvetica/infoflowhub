@@ -87,18 +87,17 @@ def _resolve_douyin_source_profile_dir() -> Path:
     return default_profile_dir
 
 
-DOUYIN_FAV_RUNNER_DIR = Path(__file__).resolve().parents[2] / "runtime" / "browser_profiles" / "douyin-fav-runner"
-DOUYIN_FAV_DEBUG_PORT = 9287
+def fetch_douyin_favorites(*args, session: SharedRunnerSession | None = None, **kwargs) -> list[dict[str, Any]]:
+    own_session = session is None
+    if own_session:
+        session = SharedRunnerSession(
+            source_profile_dir=_resolve_douyin_source_profile_dir(),
+            extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh;q=0.9,en;q=0.8"],
+        )
+        session.start()
 
-
-def fetch_douyin_favorites(*args, **kwargs) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    with SharedRunnerSession(
-        source_profile_dir=_resolve_douyin_source_profile_dir(),
-        runner_dir=DOUYIN_FAV_RUNNER_DIR,
-        debug_port=DOUYIN_FAV_DEBUG_PORT,
-        extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh"],
-    ) as session:
+    try:
         page = session.acquire_page()
         page.goto(DOUYIN_FAVORITE_URL, wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(5000)
@@ -111,6 +110,9 @@ def fetch_douyin_favorites(*args, **kwargs) -> list[dict[str, Any]]:
             json.dumps({"ok": True, "count": len(items), "items": items}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+    finally:
+        if own_session:
+            session.shutdown()
 
     result: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -124,5 +126,6 @@ def fetch_douyin_favorites(*args, **kwargs) -> list[dict[str, Any]]:
         seen.add(url)
         result.append(normalized)
     return result
+
 
 

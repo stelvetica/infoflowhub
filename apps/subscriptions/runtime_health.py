@@ -120,6 +120,7 @@ def run_source_fetch(
     *,
     settings: dict | None = None,
     timeout: int = 45,
+    session=None,
 ) -> FetchRunOutcome:
     status = load_status()
     status["fetch_state"] = "running"
@@ -129,7 +130,7 @@ def run_source_fetch(
     outcome = FetchRunOutcome()
     total_sources = len(sources)
     try:
-        results = fetch_many(sources, settings=settings, timeout=timeout)
+        results = fetch_many(sources, settings=settings, timeout=timeout, session=session)
         outcome.results = results
         for result in results:
             update_source_health(result)

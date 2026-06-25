@@ -124,17 +124,17 @@ def should_fallback_to_web(source: dict, result: FeedFetchResult) -> bool:
     return bool(target and target.site in {"youtube", "wechat"})
 
 
-def fetch_many(sources: Iterable[dict], timeout: int = 20, settings: dict | None = None) -> List[FeedFetchResult]:
+def fetch_many(sources: Iterable[dict], timeout: int = 20, settings: dict | None = None, session=None) -> List[FeedFetchResult]:
     source_list = list(sources)
     generic_web_sources = [source for source in source_list if source.get("provider") == "web" and source.get("id") != "alphapai"]
     web_results = {
         result.source_id: trim_fetch_result(result)
-        for result in fetch_web_many(generic_web_sources, limit=FETCH_SOURCE_LIMIT)
+        for result in fetch_web_many(generic_web_sources, limit=FETCH_SOURCE_LIMIT, session=session)
     } if generic_web_sources else {}
     results: List[FeedFetchResult] = []
     for source in source_list:
         if source.get("id") == "alphapai":
-            results.append(trim_fetch_result(fetch_alphapai_source(source, limit=FETCH_SOURCE_LIMIT)))
+            results.append(trim_fetch_result(fetch_alphapai_source(source, limit=FETCH_SOURCE_LIMIT, session=session)))
             continue
         if source.get("provider") == "web":
             results.append(web_results.get(source["id"]) or fetch_web_source(source))

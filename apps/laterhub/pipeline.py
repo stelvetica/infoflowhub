@@ -165,12 +165,12 @@ def _save_items(db: DBManager, items: list[dict[str, Any]]) -> None:
         db.upsert_link(LinkRecord(url=item["url"], title=item["title"], source=item["source"], tags=item.get("tags")))
 
 
-def _fetch_source(*, enabled: bool, label: str, fetcher, db: DBManager) -> bool:
+def _fetch_source(*, enabled: bool, label: str, fetcher, db: DBManager, session=None) -> bool:
     if not enabled:
         return False
     log_line(f"[3/6] 开始抓取{label}")
     try:
-        fetched = fetcher(ENV_PATH)
+        fetched = fetcher(ENV_PATH, session=session) if session is not None else fetcher(ENV_PATH)
         _save_items(db, fetched)
         log_line(f"[3/6] {label}抓取完成，新增/更新 {len(fetched)} 条")
     except Exception as exc:  # noqa: BLE001
@@ -304,7 +304,7 @@ def _push_pending_rows(db: DBManager) -> int:
     return 0
 
 
-def run(args: argparse.Namespace) -> int:
+def run(args: argparse.Namespace, session=None) -> int:
     load_project_env(ENV_PATH)
     log_line("[1/6] 初始化 laterhub")
     db = DBManager(DB_PATH)
@@ -314,23 +314,24 @@ def run(args: argparse.Namespace) -> int:
         log_line(f"[补偿] 已将 failed 重置回 pending {reset_count} 条")
     log_line("[2/6] 开始抓取稍后读来源")
     fetched_any = False
+    # B站稍后看走 API，不使用浏览器 session
     fetched_any = _fetch_source(enabled=args.fetch_bilibili, label="B 站稍后看", fetcher=fetch_bilibili_watchlater, db=db) or fetched_any
-    fetched_any = _fetch_source(enabled=args.fetch_douyin, label="抖音收藏", fetcher=fetch_douyin_favorites, db=db) or fetched_any
-    fetched_any = _fetch_source(enabled=args.fetch_xiaoheihe, label="小黑盒收藏", fetcher=fetch_xiaoheihe_favorites, db=db) or fetched_any
+    fetched_any = _fetch_source(enabled=args.fetch_douyin, label="抖音收藏", fetcher=fetch_douyin_favorites, db=db, session=session) or fetched_any
+    fetched_any = _fetch_source(enabled=args.fetch_xiaoheihe, label="小黑盒收藏", fetcher=fetch_xiaoheihe_favorites, db=db, session=session) or fetched_any
     if not fetched_any:
         log_line("[3/6] 本轮未启用任何抓取来源")
     _tag_pending_rows(db, tagger)
     return _push_pending_rows(db)
 
 
-def run_main_flow(*, fetch_bilibili: bool = True, fetch_douyin: bool = True, fetch_xiaoheihe: bool = True, retry_failed: bool = False) -> LaterhubRunSummary:
+def run_main_flow(*, fetch_bilibili: bool = True, fetch_douyin: bool = True, fetch_xiaoheihe: bool = True, retry_failed: bool = False, session=None) -> LaterhubRunSummary:
     args = argparse.Namespace(
         retry_failed=retry_failed,
         fetch_bilibili=fetch_bilibili,
         fetch_douyin=fetch_douyin,
         fetch_xiaoheihe=fetch_xiaoheihe,
     )
-    run(args)
+    run(args, session=session)
     db = DBManager(DB_PATH)
     fetched_sources = int(bool(fetch_bilibili)) + int(bool(fetch_douyin)) + int(bool(fetch_xiaoheihe))
     pending_total = len(db.list_by_status("pending"))

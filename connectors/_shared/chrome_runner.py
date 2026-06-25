@@ -643,6 +643,33 @@ class SharedRunnerSession:
         context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
         return context.new_page()
 
+    def acquire_page_by_url(self, url: str, *, wait_until: str = "domcontentloaded", timeout_ms: int = 30000):
+        """优先复用已打开匹配域名 tab，否则新开 tab 并导航到 url。
+
+        供蓝宝书等需要复用特定 tab 的站点使用。
+        """
+        if not self._started or self._browser is None:
+            raise RuntimeError("SharedRunnerSession 未启动，请先调用 start()")
+        context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
+        from urllib.parse import urlparse
+
+        host = urlparse(url).hostname or ""
+        for candidate in context.pages:
+            try:
+                candidate_host = urlparse(str(candidate.url or "")).hostname or ""
+            except Exception:
+                candidate_host = ""
+            if host and candidate_host == host:
+                return candidate
+        page = context.new_page()
+        page.goto(url, wait_until=wait_until, timeout=timeout_ms)
+        return page
+
+    def restart(self) -> None:
+        """登录态失效时重建：关掉再重启浏览器（profile 已就绪则复用）。"""
+        self.shutdown()
+        self.start()
+
     def shutdown(self) -> None:
         if self._browser is not None:
             try:
