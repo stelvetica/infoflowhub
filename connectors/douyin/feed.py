@@ -155,7 +155,10 @@ def _extract_douyin_cards(page, limit: int = 12) -> list[dict]:
     (limit) => {
       const results = [];
       const seen = new Set();
-      const anchors = Array.from(document.querySelectorAll('a[href*="/video/"]'));
+      const postList = document.querySelector('[data-e2e="user-post-list"]')
+        || document.querySelector('[data-e2e="user-detail"]');
+      const root = postList || document;
+      const anchors = Array.from(root.querySelectorAll('a[href*="/video/"]'));
       for (const a of anchors) {
         if (results.length >= limit * 4) break;
         const href = (a.href || '').split('?')[0];
@@ -259,18 +262,28 @@ def fetch_douyin_subscription_with_page(page, source: dict, timeout_ms: int = 60
     except Exception as exc:
         return result_error(source, f"抖音订阅抓取失败: {exc}")
 
-    if any(marker in body_text for marker in DOUYIN_LOGIN_WALL_MARKERS):
-        return result_error(source, f"抖音登录态失效或未登录。{DOUYIN_LOGIN_HINT}")
     if any(marker in body_text for marker in DOUYIN_RISK_MARKERS):
         return result_error(source, "抖音页面触发访问限制或风控，请稍后重试并确认当前登录态可正常访问该主页")
     if response_error and not publish_map and not title_map:
         return result_error(source, f"抖音订阅时间解析失败: {response_error}")
+    # 抖音用户主页底部固定有登录栏字样（扫码登录/登录后查看更多），登不登录都存在，
+    # 不能据此判登录失效。只有当作品列表为空时才视为登录态问题。
+    if not cards:
+        if any(marker in body_text for marker in DOUYIN_LOGIN_WALL_MARKERS):
+            return result_error(source, f"抖音登录态失效或未登录，未能加载作品列表。{DOUYIN_LOGIN_HINT}")
+        return result_error(source, "抖音主页可访问，但当前未解析到可入库视频内容")
 
     entries: list[FeedEntry] = []
     seen_links: set[str] = set()
+    # 当网络拦截到作者作品 payload 时，只保留 payload 确认属于该作者的作品，
+    # 过滤掉 DOM 中合集/推荐/占位等非作者视频。
+    payload_ids = set(publish_map.keys()) | set(title_map.keys())
     for card in cards:
         entry = _normalize_card_to_entry(source, card, publish_map, title_map, summary_map)
         if not entry or entry.link in seen_links:
+            continue
+        video_id = str(card.get("video_id") or "").strip()
+        if payload_ids and video_id and video_id not in payload_ids:
             continue
         seen_links.add(entry.link)
         entries.append(entry)

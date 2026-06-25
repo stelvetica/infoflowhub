@@ -87,10 +87,16 @@ def _resolve_douyin_source_profile_dir() -> Path:
     return default_profile_dir
 
 
+DOUYIN_FAV_RUNNER_DIR = Path(__file__).resolve().parents[2] / "runtime" / "browser_profiles" / "douyin-fav-runner"
+DOUYIN_FAV_DEBUG_PORT = 9287
+
+
 def fetch_douyin_favorites(*args, **kwargs) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     with SharedRunnerSession(
         source_profile_dir=_resolve_douyin_source_profile_dir(),
+        runner_dir=DOUYIN_FAV_RUNNER_DIR,
+        debug_port=DOUYIN_FAV_DEBUG_PORT,
         extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh"],
     ) as session:
         page = session.acquire_page()
