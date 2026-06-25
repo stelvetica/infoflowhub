@@ -14,7 +14,7 @@ $logDir = Join-Path $root "runtime"
 $logPath = Join-Path $logDir "web.log"
 
 $python = $env:INFOFLOW_PYTHON
-if ([string]::IsNullOrWhiteSpace($python)) { $python = "C:\Users\TB14Plus\anaconda3\python.exe" }
+if ([string]::IsNullOrWhiteSpace($python)) { $python = Join-Path $root ".venv\Scripts\python.exe" }
 
 if (!(Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
 

@@ -9,7 +9,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from apps.subscriptions.rss_config import load_sources
-from connectors.alphapai import fetch_and_save_alphapai
+from apps.subscriptions.runtime_health import run_source_fetch
 
 
 def main() -> int:
@@ -18,7 +18,17 @@ def main() -> int:
         print("未找到 alphapai 订阅源配置")
         return 1
 
-    result, inserted = fetch_and_save_alphapai(source)
+    outcome = run_source_fetch([source], timeout=120)
+    if outcome.fatal_error:
+        print(json.dumps({"ok": False, "error": outcome.fatal_error}, ensure_ascii=False, indent=2))
+        return 1
+
+    result = outcome.results[0] if outcome.results else None
+    inserted = int(outcome.inserted_by_source.get(source["id"], 0))
+    if result is None:
+        print(json.dumps({"ok": False, "error": "no result"}, ensure_ascii=False, indent=2))
+        return 1
+
     payload = {
         "ok": result.ok,
         "status": result.status,

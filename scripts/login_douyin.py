@@ -3,7 +3,8 @@ from __future__ import annotations
 from playwright.sync_api import sync_playwright
 
 from connectors.auth import get_auth_context_path
-from connectors.douyin.favorites import DOUYIN_FAVORITE_URL, _resolve_default_browser_executable
+from connectors._shared.chrome_runner import _resolve_default_browser_executable
+from connectors.douyin.favorites import DOUYIN_FAVORITE_URL
 
 
 DOUYIN_LOGIN_ENTRY_URL = "https://www.douyin.com/"

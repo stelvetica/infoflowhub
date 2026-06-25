@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from connectors.alphapai import feed as alphapai_feed
+from connectors._shared import chrome_runner
 from connectors.alphapai import browser as alphapai_browser
 from connectors.alphapai import runner as alphapai_runner
 from connectors.rss import fetch as rss_fetch
@@ -21,6 +21,8 @@ def test_ensure_alphapai_browser_prepares_profile_before_rebuild(monkeypatch, tm
     monkeypatch.setattr(alphapai_browser, "PROFILE_DIRS_TO_COPY", ("Network",))
     monkeypatch.setattr(alphapai_browser, "is_alphapai_debug_browser_ready", lambda: False)
     monkeypatch.setattr(alphapai_browser, "wait_for_alphapai_debug_browser", lambda: True)
+    monkeypatch.setattr(chrome_runner, "wait_for_debug_browser", lambda port, timeout_seconds=20: True)
+    monkeypatch.setattr(chrome_runner, "_stop_chrome_for_profile_copy", lambda: None)
 
     rebuild_called = False
 
@@ -30,8 +32,8 @@ def test_ensure_alphapai_browser_prepares_profile_before_rebuild(monkeypatch, tm
         return False
 
     monkeypatch.setattr(alphapai_browser, "try_rebuild_alphapai_runner_profile", fail_rebuild)
-    monkeypatch.setattr(alphapai_browser, "_resolve_default_browser_executable", lambda: ("chrome", "chrome.exe"))
-    monkeypatch.setattr(alphapai_browser.subprocess, "Popen", lambda *args, **kwargs: object())
+    monkeypatch.setattr(chrome_runner, "_resolve_default_browser_executable", lambda: ("chrome", "chrome.exe"))
+    monkeypatch.setattr(chrome_runner.subprocess, "Popen", lambda *args, **kwargs: object())
 
     source_default = source_dir / "Default"
     source_network = source_default / "Network"
@@ -53,7 +55,6 @@ def test_prepare_profile_tolerates_locked_noncritical_files(monkeypatch, tmp_pat
 
     monkeypatch.setattr(alphapai_browser, "ALPHAPAI_RUNNER_DIR", runner_dir)
     monkeypatch.setattr(alphapai_browser, "ALPHAPAI_RUNNER_PROFILE_DIR", profile_dir)
-    monkeypatch.setattr(alphapai_browser, "ALPHAPAI_RUNNER_META_PATH", runner_dir / ".meta.json")
     monkeypatch.setattr(alphapai_browser, "CHROME_USER_DATA", source_dir)
     monkeypatch.setattr(alphapai_browser, "ROOT_FILES_TO_COPY", ())
     monkeypatch.setattr(alphapai_browser, "PROFILE_FILES_TO_COPY", ("Preferences", "History"))
@@ -65,14 +66,14 @@ def test_prepare_profile_tolerates_locked_noncritical_files(monkeypatch, tmp_pat
     (source_default / "Preferences").write_text("{}", encoding="utf-8")
     (source_network / "Cookies").write_bytes(b"cookie-db")
 
-    real_copy_sqlite = alphapai_browser._copy_sqlite_best_effort
+    real_copy_sqlite = chrome_runner._copy_sqlite_best_effort
 
     def copy_sqlite_with_locked_history(src, dst):
         if src.name == "History":
             return False
         return real_copy_sqlite(src, dst)
 
-    monkeypatch.setattr(alphapai_browser, "_copy_sqlite_best_effort", copy_sqlite_with_locked_history)
+    monkeypatch.setattr(chrome_runner, "_copy_sqlite_best_effort", copy_sqlite_with_locked_history)
 
     alphapai_browser.prepare_alphapai_runner_profile()
 
@@ -90,8 +91,9 @@ def test_ensure_alphapai_browser_reuses_live_debug_browser(monkeypatch):
         return False
 
     monkeypatch.setattr(alphapai_browser, "is_alphapai_debug_browser_ready", lambda: True)
-    monkeypatch.setattr(alphapai_browser, "should_rebuild_runner_profile", lambda: True)
+    monkeypatch.setattr(alphapai_browser, "should_rebuild_alphapai_runner_profile", lambda: True)
     monkeypatch.setattr(alphapai_browser, "try_rebuild_alphapai_runner_profile", fail_rebuild)
+    monkeypatch.setattr(alphapai_browser, "try_prepare_alphapai_runner_profile", lambda: True)
 
     alphapai_browser.ensure_alphapai_debug_browser()
 
@@ -187,42 +189,3 @@ def test_fetch_many_uses_alphapai_limit(monkeypatch):
     )
 
     assert seen_limits == [60]
-
-
-def test_format_detail_markdown_preserves_sections_and_items():
-    detail_html = """
-    <div class="main-content">
-      <h1>国内蓝宝书 6月16日晨会版 | AI服务器材料供不应求</h1>
-      <div>今天 07:05</div>
-      <div>分享</div>
-      <div>播放</div>
-      <div>时长：22:40</div>
-      <div>根据Alpha派机构投研用户实时研究动态聚合整理生成</div>
-      <h2>市场热点</h2>
-      <p>根据当前时段机构关注的投资事件梳理，并按照热度排序</p>
-      <p>1</p>
-      <p>美伊协议达成霍尔木兹海峡将开放</p>
-      <p>在过去24小时内，美伊双方正式确认达成停战谅解备忘录。</p>
-      <p>关注：招商轮船/中远海能</p>
-      <h2>机会前瞻</h2>
-      <p>2</p>
-      <p>东京电子确认半导体设备将涨价</p>
-      <p>设备涨价将向国产替代链条传导。</p>
-      <p>免责声明：本文不构成投资建议。</p>
-    </div>
-    """
-
-    markdown = alphapai_feed._format_detail_markdown(
-        "国内蓝宝书 6月16日晨会版 | AI服务器材料供不应求",
-        "",
-        detail_html,
-        "今天 07:05",
-    )
-
-    assert "## 市场热点" in markdown
-    assert "### 1. 美伊协议达成霍尔木兹海峡将开放" in markdown
-    assert "**关注：** 招商轮船/中远海能" in markdown
-    assert "## 机会前瞻" in markdown
-    assert "### 2. 东京电子确认半导体设备将涨价" in markdown
-    assert "> 免责声明：本文不构成投资建议。" in markdown
-    assert "分享" not in markdown

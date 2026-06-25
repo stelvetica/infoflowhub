@@ -285,7 +285,7 @@ def _save_debug_assets(page, source: dict, suffix: str = ""):
         pass
 
 
-def fetch_x_with_page(page, source: dict, timeout_ms: int = 60000) -> FeedFetchResult:
+def fetch_x_with_page(page, source: dict, timeout_ms: int = 60000, limit: int = 12) -> FeedFetchResult:
     # X 不是普通 RSS 直连源。这里统一复用 x_profile2 这份共享真人登录态。
     target = resolve_web_target(source)
     if not target:

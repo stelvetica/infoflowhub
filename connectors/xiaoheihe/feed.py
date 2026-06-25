@@ -9,9 +9,9 @@ from typing import Any
 from playwright.sync_api import sync_playwright
 
 from apps.laterhub.config import DEBUG_DIR
+from connectors._shared.chrome_runner import SharedRunnerSession
 from connectors._shared.common import USER_AGENT
 from connectors.auth import get_auth_context_path
-from connectors.douyin.favorites import _resolve_default_browser_executable
 
 
 XIAOHEIHE_FAVOR_URL = "https://www.xiaoheihe.cn/app/user/favour/content"
@@ -167,10 +167,10 @@ def _extract_items_via_api(page, *, timeout_ms: int = 60000) -> list[dict[str, A
     return items if items else None
 
 
-def _wait_until_favour_loaded(page, *, max_wait_ms: int = 180000, check_interval_ms: int = 3000) -> bool:
-    """Wait for the page to load favourites (after potential login redirect)."""
+def _wait_until_favour_loaded(page, *, max_wait_ms: int = 20000, check_interval_ms: int = 2000) -> bool:
+    """Wait for the favourites page to load (rely on copied login state)."""
     start = page.evaluate("Date.now()")
-    _log("等待收藏页加载…请在浏览器中完成登录")
+    _log("等待收藏页加载…")
     while page.evaluate("Date.now()") - start < max_wait_ms:
         current_url = page.url
         if "favour/content" in current_url or "favour" in current_url:
@@ -185,21 +185,14 @@ def _wait_until_favour_loaded(page, *, max_wait_ms: int = 180000, check_interval
 
 
 def fetch_xiaoheihe_favorites(env_path: str | Path | None = None) -> list[dict[str, Any]]:
-    profile_dir = get_auth_context_path("xiaoheihe_shared")
-    profile_dir.mkdir(parents=True, exist_ok=True)
+    source_profile_dir = get_auth_context_path("xiaoheihe_shared")
+    items: list[dict[str, Any]] = []
 
-    with sync_playwright() as p:
-        _, browser_executable = _resolve_default_browser_executable()
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=str(profile_dir),
-            executable_path=browser_executable,
-            headless=False,
-            args=["--new-window", "--window-size=1440,960"],
-            user_agent=USER_AGENT,
-        )
-        page = context.new_page()
-
-        items: list[dict[str, Any]] = []
+    with SharedRunnerSession(
+        source_profile_dir=source_profile_dir,
+        extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh"],
+    ) as session:
+        page = session.acquire_page()
 
         # Step 1: Navigate with API interception
         api_items = _extract_items_via_api(page)
@@ -208,8 +201,8 @@ def fetch_xiaoheihe_favorites(env_path: str | Path | None = None) -> list[dict[s
             items = api_items
             _log(f"API 拦截抓取成功，获取 {len(items)} 条")
         else:
-            # Step 2: Wait for favorites page to load (or user to log in)
-            loaded = _wait_until_favour_loaded(page)
+            # Step 2: Wait for favorites page to load (rely on copied login state)
+            loaded = _wait_until_favour_loaded(page, max_wait_ms=20000)
             if not loaded:
                 _log("等待超时，尝试当前页面提取…")
 
@@ -222,7 +215,10 @@ def fetch_xiaoheihe_favorites(env_path: str | Path | None = None) -> list[dict[s
             encoding="utf-8",
         )
         _log(f"调试数据已写入 {DEBUG_JSON_PATH}")
-        context.close()
+        try:
+            page.close()
+        except Exception:
+            pass
 
     result: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -236,3 +232,5 @@ def fetch_xiaoheihe_favorites(env_path: str | Path | None = None) -> list[dict[s
         seen.add(url)
         result.append(normalized)
     return result
+
+

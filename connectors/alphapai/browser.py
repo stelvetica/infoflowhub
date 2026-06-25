@@ -1,17 +1,28 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import shutil
-import subprocess
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
-from urllib.error import HTTPError, URLError
 
-from connectors._shared.common import CHROME_USER_DATA, kill_chrome_gracefully
-from connectors.douyin.favorites import _resolve_default_browser_executable
+from connectors._shared.chrome_runner import (
+    close_debug_browser,
+    connect_over_cdp,
+    ensure_debug_browser,
+    find_tab_url,
+    force_rebuild_debug_browser,
+    is_debug_browser_ready,
+    is_runner_profile_ready,
+    list_debug_tabs,
+    prepare_runner_profile,
+    rebuild_runner_profile,
+    should_rebuild_runner_profile,
+    try_prepare_runner_profile,
+    try_rebuild_runner_profile,
+    wait_for_debug_browser,
+    _write_runner_meta,
+)
+from connectors._shared.common import CHROME_USER_DATA
 
 
 ALPHAPAI_DEBUG_PORT = 9222
@@ -21,8 +32,13 @@ ALPHAPAI_LEGACY_RUNNER_DIR = Path(__file__).resolve().parents[2] / "runtime" / "
 ALPHAPAI_RUNNER_DIR = Path(__file__).resolve().parents[2] / "runtime" / "browser_profiles" / "alphapai-reader-automation"
 ALPHAPAI_RUNNER_PROFILE_DIR = ALPHAPAI_RUNNER_DIR / ALPHAPAI_PROFILE_NAME
 ALPHAPAI_RUNNER_META_PATH = ALPHAPAI_RUNNER_DIR / ".meta.json"
-ALPHAPAI_RUNNER_REBUILD_INTERVAL_SECONDS = 3 * 24 * 60 * 60
-ROOT_FILES_TO_COPY = ("Local State", "First Run", "Last Version", "Last Browser")
+ALPHAPAI_RUNNER_REBUILD_INTERVAL_SECONDS = 24 * 60 * 60
+ROOT_FILES_TO_COPY = (
+    "Local State",
+    "First Run",
+    "Last Version",
+    "Last Browser",
+)
 PROFILE_FILES_TO_COPY = (
     "Bookmarks",
     "Cookies",
@@ -47,94 +63,12 @@ PROFILE_DIRS_TO_COPY = (
 )
 
 
-def _debug_url(path: str) -> str:
-    return f"http://127.0.0.1:{ALPHAPAI_DEBUG_PORT}{path}"
+def _now_ts() -> int:
+    return int(time.time())
 
 
-def _read_json(url: str) -> dict | list | None:
-    try:
-        with urllib.request.urlopen(url, timeout=2) as response:
-            return json.loads(response.read().decode("utf-8", errors="ignore"))
-    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
-        return None
-
-
-def is_alphapai_debug_browser_ready() -> bool:
-    payload = _read_json(_debug_url("/json/version"))
-    return isinstance(payload, dict) and bool(payload.get("Browser"))
-
-
-def wait_for_alphapai_debug_browser(timeout_seconds: int = 20) -> bool:
-    deadline = time.time() + timeout_seconds
-    while time.time() < deadline:
-        if is_alphapai_debug_browser_ready():
-            return True
-        time.sleep(0.5)
-    return False
-
-
-def list_debug_tabs() -> list[dict]:
-    payload = _read_json(_debug_url("/json"))
-    return payload if isinstance(payload, list) else []
-
-
-def close_alphapai_debug_browser() -> None:
-    for tab in list_debug_tabs():
-        tab_id = str(tab.get("id") or "").strip()
-        if not tab_id:
-            continue
-        try:
-            urllib.request.urlopen(_debug_url(f"/json/close/{tab_id}"), timeout=2).close()
-        except (HTTPError, URLError, TimeoutError, OSError):
-            pass
-    runner_dir_text = str(ALPHAPAI_RUNNER_DIR).lower()
-    try:
-        result = subprocess.run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-Command",
-                "Get-CimInstance Win32_Process -Filter \"name = 'chrome.exe'\" | "
-                "Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        payload = json.loads(result.stdout or "[]")
-    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
-        return
-    if isinstance(payload, dict):
-        processes = [payload]
-    elif isinstance(payload, list):
-        processes = payload
-    else:
-        processes = []
-    for item in processes:
-        command_line = str(item.get("CommandLine") or "").lower()
-        if runner_dir_text not in command_line:
-            continue
-        pid = str(item.get("ProcessId") or "").strip()
-        if not pid:
-            continue
-        try:
-            subprocess.run(["taskkill", "/pid", pid, "/t", "/f"], capture_output=True, timeout=10)
-        except (OSError, subprocess.SubprocessError):
-            pass
-
-
-def _is_runner_profile_ready() -> bool:
-    cookies = ALPHAPAI_RUNNER_PROFILE_DIR / "Network" / "Cookies"
-    prefs = ALPHAPAI_RUNNER_PROFILE_DIR / "Preferences"
-    return cookies.exists() and cookies.stat().st_size > 0 and prefs.exists()
-
-
-def _remove_runner_profile() -> None:
-    try:
-        if ALPHAPAI_RUNNER_DIR.exists():
-            shutil.rmtree(ALPHAPAI_RUNNER_DIR, ignore_errors=True)
-    except OSError:
-        pass
+def _source_profile_dir() -> Path:
+    return CHROME_USER_DATA / ALPHAPAI_PROFILE_NAME
 
 
 def _migrate_legacy_runner_dir() -> None:
@@ -146,158 +80,68 @@ def _migrate_legacy_runner_dir() -> None:
         pass
 
 
-def _ensure_all_chrome_processes_stopped(timeout_seconds: int = 20) -> bool:
-    deadline = time.time() + timeout_seconds
-    while time.time() < deadline:
-        result = subprocess.run(
-            ["tasklist", "/fi", "imagename eq chrome.exe"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        output = (result.stdout or "") + (result.stderr or "")
-        if "chrome.exe" not in output.lower():
-            return True
-        time.sleep(0.5)
-    return False
+def is_alphapai_debug_browser_ready() -> bool:
+    return is_debug_browser_ready(ALPHAPAI_DEBUG_PORT)
 
 
-def _safe_unlink(path: Path) -> None:
-    try:
-        if path.exists():
-            path.unlink()
-    except OSError:
-        pass
+def wait_for_alphapai_debug_browser(timeout_seconds: int = 20) -> bool:
+    return wait_for_debug_browser(ALPHAPAI_DEBUG_PORT, timeout_seconds=timeout_seconds)
 
 
-def _copy_path(src: Path, dst: Path) -> bool:
-    if not src.exists():
-        return False
-    try:
-        if src.is_dir():
-            shutil.copytree(src, dst, dirs_exist_ok=True)
-        else:
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst)
-        return True
-    except OSError:
-        return False
+def list_alphapai_debug_tabs() -> list[dict]:
+    return list_debug_tabs(ALPHAPAI_DEBUG_PORT)
 
 
-def _copy_sqlite_best_effort(src: Path, dst: Path) -> bool:
-    if not src.exists():
-        return False
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        shutil.copy2(src, dst)
-        return True
-    except OSError:
-        pass
-
-    read_uri = f"file:{src.as_posix()}?mode=ro"
-    try:
-        dest_conn = sqlite3.connect(str(dst))
-        try:
-            src_conn = sqlite3.connect(read_uri, uri=True)
-            try:
-                src_conn.backup(dest_conn)
-                return True
-            finally:
-                src_conn.close()
-        finally:
-            dest_conn.close()
-    except sqlite3.Error:
-        return False
+def close_alphapai_debug_browser() -> None:
+    close_debug_browser(ALPHAPAI_RUNNER_DIR, ALPHAPAI_DEBUG_PORT)
 
 
-def _ensure_minimal_preferences() -> None:
-    prefs = ALPHAPAI_RUNNER_PROFILE_DIR / "Preferences"
-    if prefs.exists():
-        return
-    prefs.parent.mkdir(parents=True, exist_ok=True)
-    prefs.write_text("{}", encoding="utf-8")
+def _is_runner_profile_ready() -> bool:
+    return is_runner_profile_ready(ALPHAPAI_RUNNER_PROFILE_DIR)
 
 
-def _now_ts() -> int:
-    return int(time.time())
-
-
-def _read_runner_meta() -> dict:
-    if not ALPHAPAI_RUNNER_META_PATH.exists():
-        return {}
-    try:
-        return json.loads(ALPHAPAI_RUNNER_META_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-
-def _write_runner_meta(*, rebuilt_at: int) -> None:
-    payload = {
-        "profile_name": ALPHAPAI_PROFILE_NAME,
-        "source_profile_dir": str(CHROME_USER_DATA / ALPHAPAI_PROFILE_NAME),
-        "rebuilt_at": rebuilt_at,
-    }
-    ALPHAPAI_RUNNER_META_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def should_rebuild_runner_profile() -> bool:
-    if not _is_runner_profile_ready():
-        return True
-    meta = _read_runner_meta()
-    rebuilt_at = int(meta.get("rebuilt_at") or 0)
-    if rebuilt_at <= 0:
-        return True
-    return (_now_ts() - rebuilt_at) >= ALPHAPAI_RUNNER_REBUILD_INTERVAL_SECONDS
+def should_rebuild_alphapai_runner_profile() -> bool:
+    return should_rebuild_runner_profile(
+        ALPHAPAI_RUNNER_PROFILE_DIR,
+        ALPHAPAI_RUNNER_DIR,
+        ALPHAPAI_RUNNER_REBUILD_INTERVAL_SECONDS,
+    )
 
 
 def prepare_alphapai_runner_profile() -> None:
     _migrate_legacy_runner_dir()
-    if not should_rebuild_runner_profile():
-        return
-
-    _remove_runner_profile()
-    ALPHAPAI_RUNNER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-
-    for name in ROOT_FILES_TO_COPY:
-        _copy_path(CHROME_USER_DATA / name, ALPHAPAI_RUNNER_DIR / name)
-
-    source_profile_dir = CHROME_USER_DATA / ALPHAPAI_PROFILE_NAME
-    if not source_profile_dir.exists():
-        raise RuntimeError(f"未找到系统 Chrome 配置目录: {source_profile_dir}")
-
-    for name in PROFILE_FILES_TO_COPY:
-        src = source_profile_dir / name
-        dst = ALPHAPAI_RUNNER_PROFILE_DIR / name
-        if name in {"Cookies", "History", "Web Data", "Login Data", "Favicons", "Top Sites"}:
-            _copy_sqlite_best_effort(src, dst)
-        else:
-            _copy_path(src, dst)
-    for name in PROFILE_DIRS_TO_COPY:
-        src = source_profile_dir / name
-        dst = ALPHAPAI_RUNNER_PROFILE_DIR / name
-        if name == "Network":
-            dst.mkdir(parents=True, exist_ok=True)
-            _copy_sqlite_best_effort(src / "Cookies", dst / "Cookies")
-        else:
-            _copy_path(src, dst)
-    _ensure_minimal_preferences()
-
-    for lock_name in ("SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"):
-        _safe_unlink(ALPHAPAI_RUNNER_DIR / lock_name)
-        _safe_unlink(ALPHAPAI_RUNNER_PROFILE_DIR / lock_name)
-
-    if not _is_runner_profile_ready():
-        raise RuntimeError("专用浏览器 profile 初始化失败，未能复制出有效 Cookies")
-    _write_runner_meta(rebuilt_at=_now_ts())
+    prepare_runner_profile(
+        _source_profile_dir(),
+        ALPHAPAI_RUNNER_DIR,
+        ALPHAPAI_PROFILE_NAME,
+        root_files=ROOT_FILES_TO_COPY,
+        profile_files=PROFILE_FILES_TO_COPY,
+        profile_dirs=PROFILE_DIRS_TO_COPY,
+    )
+    _write_runner_meta(
+        ALPHAPAI_RUNNER_DIR,
+        profile_name=ALPHAPAI_PROFILE_NAME,
+        source_profile_dir=_source_profile_dir(),
+        rebuilt_at=_now_ts(),
+    )
 
 
 def rebuild_alphapai_runner_profile() -> None:
-    if not kill_chrome_gracefully():
-        raise RuntimeError("Chrome 正在运行且无法关闭，无法重建蓝宝书专用浏览器 profile")
-    if not _ensure_all_chrome_processes_stopped():
-        raise RuntimeError("Chrome 进程未完全退出，无法重建蓝宝书专用浏览器 profile")
-    _remove_runner_profile()
-    prepare_alphapai_runner_profile()
+    _migrate_legacy_runner_dir()
+    rebuild_runner_profile(
+        _source_profile_dir(),
+        ALPHAPAI_RUNNER_DIR,
+        ALPHAPAI_PROFILE_NAME,
+        root_files=ROOT_FILES_TO_COPY,
+        profile_files=PROFILE_FILES_TO_COPY,
+        profile_dirs=PROFILE_DIRS_TO_COPY,
+    )
+    _write_runner_meta(
+        ALPHAPAI_RUNNER_DIR,
+        profile_name=ALPHAPAI_PROFILE_NAME,
+        source_profile_dir=_source_profile_dir(),
+        rebuilt_at=_now_ts(),
+    )
 
 
 def try_rebuild_alphapai_runner_profile() -> bool:
@@ -310,7 +154,8 @@ def try_rebuild_alphapai_runner_profile() -> bool:
 
 def try_prepare_alphapai_runner_profile() -> bool:
     try:
-        _remove_runner_profile()
+        from connectors._shared.chrome_runner import _remove_runner_dir
+        _remove_runner_dir(ALPHAPAI_RUNNER_DIR)
         prepare_alphapai_runner_profile()
         return _is_runner_profile_ready()
     except Exception:
@@ -318,62 +163,52 @@ def try_prepare_alphapai_runner_profile() -> bool:
 
 
 def ensure_alphapai_debug_browser() -> None:
-    if is_alphapai_debug_browser_ready():
-        if should_rebuild_runner_profile():
-            try_rebuild_alphapai_runner_profile()
-        else:
-            return
-        if is_alphapai_debug_browser_ready():
-            return
-    if should_rebuild_runner_profile():
-        if try_prepare_alphapai_runner_profile():
-            pass
-        elif not try_rebuild_alphapai_runner_profile() and _is_runner_profile_ready():
-            pass
-        elif not _is_runner_profile_ready():
-            rebuild_alphapai_runner_profile()
-    elif not _is_runner_profile_ready():
-        if not kill_chrome_gracefully():
-            raise RuntimeError("Chrome 正在运行且无法关闭，无法初始化蓝宝书专用浏览器 profile")
-        if not _ensure_all_chrome_processes_stopped():
-            raise RuntimeError("Chrome 进程未完全退出，无法初始化蓝宝书专用浏览器 profile")
-    prepare_alphapai_runner_profile()
-
-    _, chrome_executable = _resolve_default_browser_executable()
-    args = [
-        chrome_executable,
-        f"--remote-debugging-port={ALPHAPAI_DEBUG_PORT}",
-        f"--user-data-dir={ALPHAPAI_RUNNER_DIR}",
-        f"--profile-directory={ALPHAPAI_PROFILE_NAME}",
-        "--no-first-run",
-        "--disable-popup-blocking",
-        "--start-maximized",
+    _migrate_legacy_runner_dir()
+    ensure_debug_browser(
+        ALPHAPAI_RUNNER_DIR,
+        ALPHAPAI_PROFILE_NAME,
+        ALPHAPAI_DEBUG_PORT,
         ALPHAPAI_TARGET_URL,
-    ]
-    subprocess.Popen(
-        args,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        source_profile_dir=_source_profile_dir(),
+        rebuild_interval=ALPHAPAI_RUNNER_REBUILD_INTERVAL_SECONDS,
+        headless=False,
+        root_files=ROOT_FILES_TO_COPY,
+        profile_files=PROFILE_FILES_TO_COPY,
+        profile_dirs=PROFILE_DIRS_TO_COPY,
     )
-    if not wait_for_alphapai_debug_browser():
-        raise RuntimeError("Chrome 已启动，但远程调试端口未就绪")
+    _write_runner_meta(
+        ALPHAPAI_RUNNER_DIR,
+        profile_name=ALPHAPAI_PROFILE_NAME,
+        source_profile_dir=_source_profile_dir(),
+        rebuilt_at=_now_ts(),
+    )
 
 
 def force_rebuild_alphapai_debug_browser() -> None:
-    rebuild_alphapai_runner_profile()
-    if is_alphapai_debug_browser_ready():
-        return
-    ensure_alphapai_debug_browser()
+    _migrate_legacy_runner_dir()
+    force_rebuild_debug_browser(
+        ALPHAPAI_RUNNER_DIR,
+        ALPHAPAI_PROFILE_NAME,
+        ALPHAPAI_DEBUG_PORT,
+        ALPHAPAI_TARGET_URL,
+        source_profile_dir=_source_profile_dir(),
+        rebuild_interval=ALPHAPAI_RUNNER_REBUILD_INTERVAL_SECONDS,
+        headless=False,
+        root_files=ROOT_FILES_TO_COPY,
+        profile_files=PROFILE_FILES_TO_COPY,
+        profile_dirs=PROFILE_DIRS_TO_COPY,
+    )
+    _write_runner_meta(
+        ALPHAPAI_RUNNER_DIR,
+        profile_name=ALPHAPAI_PROFILE_NAME,
+        source_profile_dir=_source_profile_dir(),
+        rebuilt_at=_now_ts(),
+    )
 
 
 def find_alphapai_tab_url() -> str:
-    for tab in list_debug_tabs():
-        url = str(tab.get("url") or "").strip()
-        if "alphapai-web.rabyte.cn" in url:
-            return url
-    return ALPHAPAI_TARGET_URL
+    return find_tab_url(ALPHAPAI_DEBUG_PORT, "alphapai-web.rabyte.cn", ALPHAPAI_TARGET_URL)
 
 
 def connect_over_cdp_endpoint() -> str:
-    return _debug_url("")
+    return connect_over_cdp(ALPHAPAI_DEBUG_PORT)

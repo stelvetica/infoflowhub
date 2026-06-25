@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import json
 import re
-import winreg
 from pathlib import Path
 from typing import Any
 
-from playwright.sync_api import sync_playwright
-
 from apps.laterhub.config import DEBUG_DIR
+from connectors._shared.chrome_runner import SharedRunnerSession
+from connectors._shared.common import CHROME_USER_DATA, USER_AGENT
 from connectors.auth import get_auth_context_path
 
 
@@ -19,47 +18,6 @@ DOUYIN_WEAK_TITLE_PATTERNS = [
 DOUYIN_FAVORITE_URL = "https://www.douyin.com/user/self?from_tab_name=main&showTab=favorite_collection"
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 DEBUG_JSON_PATH = DEBUG_DIR / "tmp_pw_douyin_favorites.json"
-WINDOWS_BROWSER_PATHS = {
-    "ChromeHTML": [
-        Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
-        Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),
-    ],
-    "MSEdgeHTM": [
-        Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"),
-        Path(r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"),
-    ],
-    "BraveHTML": [
-        Path(r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"),
-        Path(r"C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe"),
-    ],
-    "VivaldiHTM": [
-        Path(r"C:\Program Files\Vivaldi\Application\vivaldi.exe"),
-        Path(r"C:\Program Files (x86)\Vivaldi\Application\vivaldi.exe"),
-    ],
-}
-
-
-def _resolve_default_browser_executable() -> tuple[str, str]:
-    prog_id = ""
-    try:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice",
-        ) as key:
-            prog_id, _ = winreg.QueryValueEx(key, "ProgId")
-    except OSError:
-        prog_id = ""
-
-    for candidate in WINDOWS_BROWSER_PATHS.get(prog_id, []):
-        if candidate.exists():
-            return prog_id or "unknown", str(candidate)
-
-    for fallback_prog_id in ("ChromeHTML", "MSEdgeHTM", "BraveHTML", "VivaldiHTM"):
-        for candidate in WINDOWS_BROWSER_PATHS[fallback_prog_id]:
-            if candidate.exists():
-                return fallback_prog_id, str(candidate)
-
-    raise RuntimeError("未找到可供 Playwright 启动的 Chromium 浏览器，请先安装 Chrome、Edge、Brave 或 Vivaldi")
 
 
 def normalize_douyin_item(item: dict[str, Any]) -> dict[str, Any] | None:
@@ -121,26 +79,32 @@ def _extract_visible_items(page) -> list[dict[str, Any]]:
     return page.evaluate(js)
 
 
+def _resolve_douyin_source_profile_dir() -> Path:
+    shared_profile_dir = get_auth_context_path("douyin_shared") / "Default"
+    default_profile_dir = CHROME_USER_DATA / "Default"
+    if (shared_profile_dir / "Network" / "Cookies").exists() and (shared_profile_dir / "Preferences").exists():
+        return shared_profile_dir
+    return default_profile_dir
+
+
 def fetch_douyin_favorites(*args, **kwargs) -> list[dict[str, Any]]:
-    profile_dir = get_auth_context_path("douyin_shared")
-    profile_dir.mkdir(parents=True, exist_ok=True)
-    with sync_playwright() as p:
-        _, browser_executable = _resolve_default_browser_executable()
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=str(profile_dir),
-            executable_path=browser_executable,
-            headless=False,
-            args=["--new-window"],
-        )
-        page = context.new_page()
+    items: list[dict[str, Any]] = []
+    with SharedRunnerSession(
+        source_profile_dir=_resolve_douyin_source_profile_dir(),
+        extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh"],
+    ) as session:
+        page = session.acquire_page()
         page.goto(DOUYIN_FAVORITE_URL, wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(5000)
         items = _extract_visible_items(page)
+        try:
+            page.close()
+        except Exception:
+            pass
         DEBUG_JSON_PATH.write_text(
             json.dumps({"ok": True, "count": len(items), "items": items}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        context.close()
 
     result: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -154,3 +118,5 @@ def fetch_douyin_favorites(*args, **kwargs) -> list[dict[str, Any]]:
         seen.add(url)
         result.append(normalized)
     return result
+
+

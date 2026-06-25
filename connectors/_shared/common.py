@@ -15,12 +15,11 @@ from connectors.auth import get_auth_context_path, validate_auth
 
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
-WEIBO_PROFILE_DIR = get_auth_context_path("weibo_shared")
 X_PROFILE_DIR = get_auth_context_path("x_profile2")
 DOUYIN_PROFILE_DIR = get_auth_context_path("douyin_shared")
 ALPHAPAI_PROFILE_DIR = get_auth_context_path("alphapai_main")
-X_LOGIN_HINT = "请先在本机 Chrome 的 Profile 2 中登录 x.com，并确认 MacroMargin 时间线可正常加载。"
-DOUYIN_LOGIN_HINT = "请先执行现有抖音登录流程，当前抖音订阅与抖音收藏共用同一份登录态。"
+X_LOGIN_HINT = "请先在本机 Chrome 的 Default Profile 中登录 x.com，并确认时间线可正常加载。"
+DOUYIN_LOGIN_HINT = "请先在本机 Chrome 的 Default Profile 中登录抖音，或执行现有抖音登录流程；当前支持从 Default 或 douyin_shared 复制登录态。"
 
 
 TRANSIENT_FETCH_ERROR_KEYWORDS = (
@@ -70,8 +69,13 @@ def validate_douyin_login_prerequisite(source: dict) -> str:
     feed_url = str(source.get("feed_url") or "").strip().lower()
     if auth_key != "douyin_shared" and "douyin.com/user/" not in site_url and "douyin.com/user/" not in feed_url:
         return ""
-    descriptor = validate_auth("douyin_shared")
-    return "" if descriptor.is_available else descriptor.hint
+    shared_profile_dir = get_auth_context_path("douyin_shared") / "Default"
+    default_profile_dir = CHROME_USER_DATA / "Default"
+    if (shared_profile_dir / "Network" / "Cookies").exists() and (shared_profile_dir / "Preferences").exists():
+        return ""
+    if (default_profile_dir / "Network" / "Cookies").exists() and (default_profile_dir / "Preferences").exists():
+        return ""
+    return DOUYIN_LOGIN_HINT
 
 
 def resolve_web_target(source: dict) -> WebSourceTarget | None:
@@ -88,10 +92,6 @@ def resolve_web_target(source: dict) -> WebSourceTarget | None:
     if match:
         uid = match.group(1)
         return WebSourceTarget(site="bilibili", uid=uid, page_url=f"https://space.bilibili.com/{uid}/dynamic")
-    match = re.search(r"weibo\.com/(\d+)", site_url)
-    if match:
-        uid = match.group(1)
-        return WebSourceTarget(site="weibo", uid=uid, page_url=f"https://weibo.com/{uid}/")
     match = re.search(r"x\.com/([^/?#]+)", site_url)
     if match:
         uid = match.group(1)
@@ -260,16 +260,6 @@ def is_transient_fetch_error(message: str) -> bool:
     if not text:
         return False
     return any(keyword in text for keyword in TRANSIENT_FETCH_ERROR_KEYWORDS)
-
-
-def launch_weibo_context(playwright, headless: bool):
-    WEIBO_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    return playwright.chromium.launch_persistent_context(
-        user_data_dir=str(WEIBO_PROFILE_DIR),
-        headless=headless,
-        args=["--window-size=1440,960"],
-        user_agent=USER_AGENT,
-    )
 
 
 def launch_x_context(playwright, headless: bool):

@@ -61,21 +61,6 @@
       "fallback_mode": "none"
     },
     {
-      "id": "硬核姬老板",
-      "name": "观点 基金 硬核姬老板",
-      "group": "",
-      "feed_url": "https://rsshub.app/bilibili/user/dynamic/2117498259",
-      "site_url": "https://space.bilibili.com/2117498259/dynamic",
-      "provider": "web",
-      "fetch_via": "web",
-      "kind": "web",
-      "enabled": true,
-      "note": "",
-      "channel": "bilibili",
-      "auth_key": "bilibili_main",
-      "fallback_mode": "none"
-    },
-    {
       "id": "巫师财经",
       "name": "观点 产业 巫师财经",
       "group": "",

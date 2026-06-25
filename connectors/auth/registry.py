@@ -11,9 +11,9 @@ from connectors.auth.providers import (
     validate_alphapai_auth,
     validate_bilibili_auth,
     validate_douyin_auth,
-    validate_weibo_auth,
     validate_x_auth,
     validate_xiaoheihe_auth,
+    validate_youtube_auth,
 )
 
 
@@ -52,25 +52,16 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         storage_ref=str(get_context_path("x_profile2")),
         renew_strategy="use_system_profile",
         display_name="X 平台共享登录态",
-        description="当前复用本机 Chrome Profile 2 登录态。",
-    ),
-    "weibo_shared": AuthRegistration(
-        auth_key="weibo_shared",
-        platform="weibo",
-        auth_mode="browser_profile",
-        storage_ref=str(get_context_path("weibo_shared")),
-        renew_strategy="use_system_profile",
-        display_name="微博共享登录态",
-        description="微博网页抓取统一复用这份浏览器登录态。",
+        description="复用本机 Chrome Default Profile 登录态。",
     ),
     "xiaoheihe_shared": AuthRegistration(
         auth_key="xiaoheihe_shared",
         platform="xiaoheihe",
-        auth_mode="browser_profile",
+        auth_mode="chrome_profile",
         storage_ref=str(get_context_path("xiaoheihe_shared")),
         renew_strategy="use_system_profile",
         display_name="小黑盒共享登录态",
-        description="later 收藏夹抓取复用这份浏览器登录态。",
+        description="复用本机 Chrome Default Profile 登录态。laterhub 收藏夹抓取使用。",
     ),
     "alphapai_main": AuthRegistration(
         auth_key="alphapai_main",
@@ -80,6 +71,15 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         renew_strategy="use_system_profile",
         display_name="Alpha派蓝宝书",
         description="复用系统 Chrome Default Profile 登录态。抓取前需关闭 Chrome。",
+    ),
+    "youtube_main": AuthRegistration(
+        auth_key="youtube_main",
+        platform="youtube",
+        auth_mode="chrome_profile",
+        storage_ref=str(get_context_path("youtube_main")),
+        renew_strategy="use_system_profile",
+        display_name="YouTube 共享登录态",
+        description="复用系统 Chrome Default Profile 登录态，可降低 YouTube 网页风控概率。",
     ),
 }
 
@@ -101,12 +101,12 @@ def validate_auth(auth_key: str) -> AuthDescriptor:
         status = validate_bilibili_auth()
     elif auth_key == "x_profile2":
         status = validate_x_auth()
-    elif auth_key == "weibo_shared":
-        status = validate_weibo_auth()
     elif auth_key == "xiaoheihe_shared":
         status = validate_xiaoheihe_auth()
     elif auth_key == "alphapai_main":
         status = validate_alphapai_auth()
+    elif auth_key == "youtube_main":
+        status = validate_youtube_auth()
     else:
         status = {"is_available": False, "status_level": "warn", "status_text": "未知", "hint": ""}
     return AuthDescriptor(

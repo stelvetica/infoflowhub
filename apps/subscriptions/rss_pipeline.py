@@ -6,9 +6,7 @@ from pathlib import Path
 
 from apps.subscriptions.importers import parse_opml
 from apps.subscriptions.rss_config import load_settings, load_sources, save_sources
-from apps.subscriptions.rss_db import save_entries
-from connectors.alphapai import fetch_alphapai_source
-from connectors.rss.fetch import fetch_many, trim_fetch_result
+from apps.subscriptions.runtime_health import run_source_fetch
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -49,29 +47,20 @@ def fetch_enabled(source_id: str = "") -> int:
         _safe_print("当前没有命中的启用订阅源")
         return 0
 
-    if len(sources) == 1 and sources[0].get("id") == "alphapai":
-        result = fetch_alphapai_source(sources[0])
-        result = trim_fetch_result(result)
-        if not result.ok:
-            _safe_print(f"FAIL {result.source_name}: {result.error or result.status}")
-            return 1
-        inserted = save_entries(result.entries)
-        _safe_print(f"OK {result.source_name}: 抓取 {len(result.entries)} 条, 新增 {inserted} 条")
-        _safe_print(f"完成: 新增 {inserted} 条")
-        return 0
+    outcome = run_source_fetch(sources, settings=settings, timeout=20)
+    if outcome.fatal_error:
+        _safe_print(f"FAIL runtime: {outcome.fatal_error}")
+        return 1
 
-    results = fetch_many(sources, settings=settings)
-    total_inserted = 0
     failed = False
-    for result in results:
+    for result in outcome.results:
         if not result.ok:
             _safe_print(f"FAIL {result.source_name}: {result.error or result.status}")
             failed = True
             continue
-        inserted = save_entries(result.entries)
-        total_inserted += inserted
+        inserted = int(outcome.inserted_by_source.get(result.source_id, 0))
         _safe_print(f"OK {result.source_name}: 抓取 {len(result.entries)} 条, 新增 {inserted} 条")
-    _safe_print(f"完成: 新增 {total_inserted} 条")
+    _safe_print(f"完成: 新增 {outcome.inserted_total} 条")
     return 1 if failed else 0
 
 

@@ -7,10 +7,10 @@ BASE_DIR = Path(__file__).resolve().parents[3]
 RUNTIME_DIR = BASE_DIR / "runtime"
 BROWSER_PROFILES_DIR = RUNTIME_DIR / "browser_profiles"
 DOUYIN_PROFILE_DIR = BROWSER_PROFILES_DIR / "douyin-shared"
-WEIBO_PROFILE_DIR = BROWSER_PROFILES_DIR / "weibo-shared"
-X_PROFILE_DIR = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data" / "Profile 2"
-XIAOHEIHE_PROFILE_DIR = BROWSER_PROFILES_DIR / "xiaoheihe-shared"
+X_PROFILE_DIR = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data" / "Default"
+XIAOHEIHE_PROFILE_DIR = X_PROFILE_DIR
 ALPHAPAI_PROFILE_DIR = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data"
+YOUTUBE_PROFILE_DIR = ALPHAPAI_PROFILE_DIR
 
 
 def _existing_state_files(base_dir: Path) -> list[Path]:
@@ -60,24 +60,16 @@ def validate_douyin_auth() -> dict[str, object]:
 def validate_x_auth() -> dict[str, object]:
     return _validate_profile_dir(
         X_PROFILE_DIR,
-        "X 平台共享登录态依赖本机 Chrome Profile 2",
-        "请先在本机 Chrome 的 Profile 2 中登录 x.com，并确认时间线可正常加载。",
-    )
-
-
-def validate_weibo_auth() -> dict[str, object]:
-    return _validate_profile_dir(
-        WEIBO_PROFILE_DIR,
-        "微博共享登录态目录存在",
-        "请先执行微博登录脚本，完成一次真人登录。",
+        "X 平台共享登录态依赖本机 Chrome Default Profile",
+        "请先在本机 Chrome 的 Default 中登录 x.com，并确认时间线可正常加载。",
     )
 
 
 def validate_xiaoheihe_auth() -> dict[str, object]:
     return _validate_profile_dir(
         XIAOHEIHE_PROFILE_DIR,
-        "小黑盒共享登录态目录存在",
-        "请先执行小黑盒登录脚本，完成一次真人登录。",
+        "小黑盒共享登录态依赖本机 Chrome Default Profile",
+        "请先在本机 Chrome 的 Default 中登录 xiaoheihe.cn，确认收藏页可正常访问。",
     )
 
 
@@ -89,13 +81,21 @@ def validate_alphapai_auth() -> dict[str, object]:
     )
 
 
+def validate_youtube_auth() -> dict[str, object]:
+    return _validate_profile_dir(
+        YOUTUBE_PROFILE_DIR,
+        "YouTube 共享登录态依赖本机 Chrome Default Profile",
+        "可选：在本机 Chrome Default 中登录 YouTube，可降低风控概率。",
+    )
+
+
 def get_context_path(auth_key: str) -> Path:
     mapping = {
         "douyin_shared": DOUYIN_PROFILE_DIR,
         "x_profile2": X_PROFILE_DIR,
-        "weibo_shared": WEIBO_PROFILE_DIR,
         "xiaoheihe_shared": XIAOHEIHE_PROFILE_DIR,
         "alphapai_main": ALPHAPAI_PROFILE_DIR,
+        "youtube_main": YOUTUBE_PROFILE_DIR,
     }
     if auth_key not in mapping:
         raise KeyError(f"未注册的 profile 登录态: {auth_key}")
