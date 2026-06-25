@@ -9,14 +9,8 @@
   </div>
 </div>
 <div class="settings-error-block">
-  <div class="runtime-dual-panel">
-    <section class="runtime-log-card">
-      <div class="subtle">运行日志</div>
-      <pre class="codebox compact codebox-scroll">{{ status.run_log_text or '-' }}</pre>
-    </section>
-    <section class="runtime-log-card">
-      <div class="subtle">错误摘要</div>
-      <pre class="codebox compact codebox-scroll">{{ status.last_error or '-' }}</pre>
-    </section>
-  </div>
+  <section class="runtime-log-card">
+    <div class="subtle">错误摘要</div>
+    <pre class="codebox compact codebox-scroll">{{ status.error_log_text or '-' }}</pre>
+  </section>
 </div>

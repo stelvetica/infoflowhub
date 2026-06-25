@@ -48,6 +48,7 @@ HEALTH_PATH = RUNTIME_DIR / "health" / "subscriptions_source_health.json"
 STATUS_PATH = RUNTIME_DIR / "health" / "subscriptions_status.json"
 LATERHUB_DB_PATH = BASE_DIR / "data" / "laterhub.sqlite3"
 WEB_LOG_PATH = RUNTIME_DIR / "web.log"
+LATERHUB_LOG_PATH = RUNTIME_DIR / "logs" / "laterhub.log"
 
 DELETED_SITE_URLS = {"https://www.huxiu.com/member/2321131.html"}
 ENTRIES_PAGE_SIZE = 20
@@ -149,10 +150,8 @@ def default_auth_key(channel: str, site_url: str, feed_url: str = "") -> str:
         return "wechat_mp_main"
     if "bilibili.com" in combined:
         return "bilibili_main"
-    if normalized_site == "https://x.com/macromargin" or "x.com/" in combined:
+    if "x.com/" in combined:
         return "x_profile2"
-    if "weibo.com/" in combined:
-        return "weibo_shared"
     if channel == "douyin":
         return "douyin_shared"
     return ""
@@ -167,7 +166,6 @@ def auth_requirement_meta(auth_key: str) -> dict[str, str] | None:
             "douyin_shared": "依赖抖音共享登录态",
             "bilibili_main": "依赖 B站主账号登录态",
             "x_profile2": "依赖 X 平台共享登录态",
-            "weibo_shared": "依赖微博共享登录态",
         }
         return {
             "requirement": requirement_map.get(auth_key, descriptor.display_name),
@@ -184,7 +182,7 @@ def infer_source_meta(feed_url: str, site_url: str) -> tuple[str, str, str]:
     combined = f"{feed} {site}"
     if "wechat://mp/" in combined or "mp.weixin.qq.com" in combined:
         return ("web", "wechat-api", "web")
-    if any(host in combined for host in ("bilibili.com", "x.com", "twitter.com", "weibo.com", "douyin.com", "youtube.com", "youtu.be")):
+    if any(host in combined for host in ("bilibili.com", "x.com", "twitter.com", "douyin.com", "youtube.com", "youtu.be")):
         return ("web", "web", "web")
     if "rsshub" in feed:
         return ("rsshub", "rsshub-self-hosted", "rsshub")
@@ -798,8 +796,11 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     status = load_status()
     status["success_sources_text"] = format_success_sources_text(status)
     status["last_run_inserted_entries"] = int(status.get("last_inserted_entries") or 0)
-    status["run_log_text"] = read_log_tail(WEB_LOG_PATH)
-    status["last_error"] = normalize_text_lines(status.get("last_error"))
+    last_error = normalize_text_lines(status.get("last_error"))
+    status["last_error"] = last_error
+    error_timestamp = str(status.get("last_run_at") or status.get("current_run_started_at") or "")
+    status["error_log_text"] = f"{error_timestamp} {last_error}".strip() if last_error else ""
+    laterhub_log_text = read_log_tail(LATERHUB_LOG_PATH)
     summary = get_laterhub_summary()
     laterhub_sources = get_laterhub_source_stats()
     stats = {item["source_id"]: item for item in list_source_stats()}
@@ -810,29 +811,24 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     wechat_auth = normalize_utf8_obj(get_wechat_auth_status())
     wechat_login_url = f"/wechat-login?next={quote('/?view=settings', safe='')}"
     wechat_entries_login_url = f"/wechat-login?next={quote('/', safe='')}"
-    wechat_renew_url = "/actions/wechat-login/renew?view=settings"
     auth_assets = []
     for descriptor in list_auth_statuses():
         expire_summary = ""
         expire_at_text = ""
         hint = normalize_utf8_text(descriptor.hint)
         action_url = wechat_login_url if descriptor.auth_key == "wechat_mp_main" else ""
-        action_label = "续期/登录" if descriptor.auth_key == "wechat_mp_main" else "查看说明"
+        action_label = "重新扫码" if descriptor.auth_key == "wechat_mp_main" else "查看说明"
         renew_action_url = ""
         renew_action_label = ""
         if descriptor.auth_key == "wechat_mp_main":
             expire_summary = str(wechat_auth.get("remaining_text") or "")
             expire_at_text = str(wechat_auth.get("expire_time_text") or "")
             if wechat_auth.get("is_expired"):
-                hint = "本地认证文件中的公众号登录态已过期，请点击续期/登录重新扫码。"
+                hint = "本地认证文件中的公众号登录态已过期，请点击重新扫码。"
             elif wechat_auth.get("is_expiring_soon"):
-                hint = f"距离过期还剩 {expire_summary}，建议现在续期。"
-                renew_action_url = wechat_renew_url
-                renew_action_label = "免扫码续期"
+                hint = f"距离过期还剩 {expire_summary}，建议重新扫码。"
             elif expire_at_text:
                 hint = f"当前登录态可用，预计到期时间 {expire_at_text}。"
-                renew_action_url = wechat_renew_url
-                renew_action_label = "免扫码续期"
         row = {
             "auth_key": descriptor.auth_key,
             "display_name": normalize_utf8_text(descriptor.display_name),
@@ -900,6 +896,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         "laterhub_sources": laterhub_sources,
         "sources": rows,
         "auth_assets": auth_assets,
+        "laterhub_log_text": laterhub_log_text,
         "q": query.get("source_q", ""),
         "source_filter": source_filter,
         "sort": sort,

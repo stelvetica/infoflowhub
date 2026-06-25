@@ -21,38 +21,9 @@
         </div>
         <section class="card">
           <div class="panel-title">
-            <h3>稍后处理概览</h3>
+            <h3>稍后处理运行日志</h3>
           </div>
-          <div class="settings-summary-row">
-            <p class="subtle">总数：{{ settings.summary.total_count }}</p>
-            <p class="subtle">未完成：{{ settings.summary.unfinished_count }}</p>
-            <p class="subtle">已打开：{{ settings.summary.opened_count }}</p>
-            <p class="subtle">已完成：{{ settings.summary.finished_count }}</p>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>来源</th>
-                  <th>用途说明</th>
-                  <th>抓取方式</th>
-                  <th>总数</th>
-                  <th>未完成</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for item in settings.laterhub_sources %}
-                <tr>
-                  <td>{{ item.label }}</td>
-                  <td>{{ item.purpose }}</td>
-                  <td>{{ item.fetch_mode }}</td>
-                  <td>{{ item.total_count }}</td>
-                  <td>{{ item.unfinished_count }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
+          <pre class="codebox compact codebox-scroll">{{ settings.laterhub_log_text or '-' }}</pre>
         </section>
 
         <section class="card">

@@ -25,7 +25,6 @@ class AutoRunner:
         self._stopped = asyncio.Event()
 
     async def start(self) -> None:
-        await self._maybe_run_morning()
         self._task = asyncio.create_task(self._loop(), name="infoflowhub-auto-runner")
 
     async def stop(self) -> None:
@@ -48,12 +47,15 @@ class AutoRunner:
         hour = now.hour
         today = now.date().isoformat()
 
-        if not (MORNING_WINDOW_START <= hour < MORNING_WINDOW_END):
-            return
-
         state = self._load_state()
         last_run_date = str(state.get("last_run_date") or "")
         if last_run_date == today:
+            return
+
+        # Catch-up: if today's run was missed (process was down during the
+        # 7-8 window), run as soon as the process is alive again at or after
+        # the window start, so a day is never silently skipped.
+        if hour < MORNING_WINDOW_START:
             return
 
         await self._do_run_morning(now, today)

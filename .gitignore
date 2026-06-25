@@ -13,8 +13,11 @@ __pycache__/
 *.py[cod]
 
 data/*.sqlite3
+data/*.db
+data/alphapai_markdown/
 runtime/browser_profiles/
 runtime/debug/
+runtime/logs/
 runtime/health/*.json
 !runtime/health/*.example.json
 web/__pycache__/

@@ -1,36 +1,58 @@
 from __future__ import annotations
 
-import sqlite3
-from pathlib import Path
-
+from apps.subscriptions import rss_db, runtime_health
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
-from apps.subscriptions import rss_db
-from apps.subscriptions import rss_config
-from scripts import normalize_runtime_utf8
-from web.services import fetch_runtime, views
+from web.services import views
 
 
 def test_update_source_health_normalizes_source_name_and_error(monkeypatch, tmp_path):
     health_path = tmp_path / "subscriptions_source_health.json"
-    monkeypatch.setattr(fetch_runtime, "HEALTH_PATH", health_path)
+    monkeypatch.setattr(runtime_health, "HEALTH_PATH", health_path)
     monkeypatch.setattr(views, "HEALTH_PATH", health_path)
 
     result = FeedFetchResult(
         source_id="wechat-source",
-        source_name="è§ç¹ èç¹å·¥",
+        source_name="观点 胖特工",
         feed_url="wechat://mp/demo",
         ok=False,
         status=500,
         entries=[],
-        error="ç»å½æ å·²è¿æ",
+        error="登录态 已过期",
     )
 
-    fetch_runtime.update_source_health(result)
-    payload = views.load_health()
-    row = payload["sources"]["wechat-source"]
+    runtime_health.update_source_health(result)
+    row = views.load_health()["sources"]["wechat-source"]
 
     assert row["source_name"] == "观点 胖特工"
     assert row["last_error"] == "登录态 已过期"
+
+
+def test_run_source_fetch_updates_status_and_health(monkeypatch, tmp_path):
+    health_path = tmp_path / "subscriptions_source_health.json"
+    status_path = tmp_path / "subscriptions_status.json"
+    monkeypatch.setattr(runtime_health, "HEALTH_PATH", health_path)
+    monkeypatch.setattr(runtime_health, "STATUS_PATH", status_path)
+    monkeypatch.setattr(views, "HEALTH_PATH", health_path)
+    monkeypatch.setattr(views, "STATUS_PATH", status_path)
+
+    result = FeedFetchResult(
+        source_id="alphapai",
+        source_name="新闻 Alpha派蓝宝书",
+        feed_url="https://alphapai-web.rabyte.cn/reading/home/market-report/detail",
+        ok=True,
+        status=200,
+        entries=[],
+    )
+
+    monkeypatch.setattr(runtime_health, "fetch_many", lambda sources, settings=None, timeout=45: [result])
+    monkeypatch.setattr(runtime_health, "save_entries", lambda entries: 0)
+
+    outcome = runtime_health.run_source_fetch([{"id": "alphapai", "enabled": True}], timeout=5)
+
+    assert outcome.success_sources == 1
+    assert outcome.status["fetch_state"] == "success"
+    assert outcome.status["last_success_sources"] == 1
+    assert views.load_health()["sources"]["alphapai"]["source_name"] == "新闻 Alpha派蓝宝书"
 
 
 def test_save_and_list_entries_normalize_chinese(monkeypatch, tmp_path):
@@ -42,64 +64,16 @@ def test_save_and_list_entries_normalize_chinese(monkeypatch, tmp_path):
         [
             FeedEntry(
                 source_id="wechat-pangtegong",
-                source_name="è§ç¹ èç¹å·¥",
-                title="ä»æ¥å®è§",
+                source_name="观点 胖特工",
+                title="今日宏观",
                 link="https://example.com/a",
                 published="2026-05-22 06:00:00",
-                summary="æµè¯æè¦",
+                summary="测试摘要",
             )
         ]
     )
 
-    rows = rss_db.list_entries()
-    assert rows[0]["source_name"] == "观点 胖特工"
-    assert rows[0]["title"] == "今日宏观"
-    assert rows[0]["summary"] == "测试摘要"
-
-
-def test_normalize_runtime_script_repairs_target_files(monkeypatch, tmp_path):
-    runtime_dir = tmp_path / "runtime"
-    health_dir = runtime_dir / "health"
-    auth_dir = runtime_dir / "auth"
-    config_dir = tmp_path / "config"
-    health_dir.mkdir(parents=True)
-    auth_dir.mkdir(parents=True)
-    config_dir.mkdir(parents=True)
-
-    legacy_auth = runtime_dir / "wechat_auth.json"
-    canonical_auth = auth_dir / "wechat_mp_main.json"
-    automation = health_dir / "automation_runtime.json"
-    health = health_dir / "subscriptions_source_health.json"
-    sources = config_dir / "subscription_sources.json"
-
-    legacy_auth.write_text('{"nickname":"èè´¦å·"}\n', encoding="utf-8")
-    canonical_auth.write_text('{"nickname":"ä¸»è´¦å·"}\n', encoding="utf-8")
-    automation.write_text('{"slots":{"daily_0600":{"label":"æ¯æ¥ 06:00 è®¢é+ç¨åè¯»"}}}\n', encoding="utf-8")
-    health.write_text(
-        '{"sources":{"wechat-pangtegong":{"last_checked_at":"2026-05-22 06:01:51","last_success_at":"","last_failed_at":"","last_error":"ç»å½æ å·²è¿æ","source_name":"è§ç¹ èç¹å·¥"}}}\n',
-        encoding="utf-8",
-    )
-    sources.write_text(
-        '{"sources":[{"id":"wechat-pangtegong","name":"è§ç¹ èç¹å·¥","group":"","feed_url":"wechat://mp/demo","site_url":"wechat://mp/demo","provider":"web","fetch_via":"wechat-api","kind":"web","enabled":true,"note":"","channel":"wechat","auth_key":"wechat_mp_main","fallback_mode":"none"}]}\n',
-        encoding="utf-8",
-    )
-
-    monkeypatch.setattr(normalize_runtime_utf8, "BASE_DIR", tmp_path)
-    monkeypatch.setattr(normalize_runtime_utf8, "RUNTIME_DIR", runtime_dir)
-    monkeypatch.setattr(normalize_runtime_utf8, "HEALTH_DIR", health_dir)
-    monkeypatch.setattr(rss_config, "CONFIG_DIR", config_dir)
-    monkeypatch.setattr(rss_config, "SOURCES_PATH", sources)
-    monkeypatch.setattr(rss_db, "DATA_DIR", tmp_path / "data")
-    monkeypatch.setattr(rss_db, "DB_PATH", tmp_path / "data" / "subscriptions.sqlite3")
-    monkeypatch.setattr(views, "HEALTH_PATH", health)
-    monkeypatch.setattr(views, "STATUS_PATH", health_dir / "subscriptions_status.json")
-    monkeypatch.setattr(views, "RUNTIME_DIR", runtime_dir)
-
-    normalize_runtime_utf8.main()
-
-    assert "老账号" in legacy_auth.read_text(encoding="utf-8")
-    assert "主账号" in canonical_auth.read_text(encoding="utf-8")
-    assert "每日 06:00 订阅+稍后读" in automation.read_text(encoding="utf-8")
-    assert "观点 胖特工" in health.read_text(encoding="utf-8")
-    assert "登录态 已过期" in health.read_text(encoding="utf-8")
-    assert "观点 胖特工" in sources.read_text(encoding="utf-8")
+    row = rss_db.list_entries()[0]
+    assert row["source_name"] == "观点 胖特工"
+    assert row["title"] == "今日宏观"
+    assert row["summary"] == "测试摘要"

@@ -103,8 +103,9 @@ def test_settings_view_keeps_wechat_auth_actions(monkeypatch):
 
     asset = settings["auth_assets"][0]
     assert asset["action_url"].startswith("/wechat-login")
-    assert asset["renew_action_url"] == "/actions/wechat-login/renew?view=settings"
-    assert asset["renew_action_label"] == "免扫码续期"
+    assert asset["action_label"] == "重新扫码"
+    assert asset["renew_action_url"] == ""
+    assert asset["renew_action_label"] == ""
     assert asset["nickname"] == "主账号"
 
 
