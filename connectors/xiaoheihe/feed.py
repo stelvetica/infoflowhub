@@ -216,6 +216,7 @@ def fetch_xiaoheihe_favorites(
             items = _extract_visible_items(page, scroll_times=8, scroll_pause_ms=2000)
             _log(f"DOM 提取完成，原始 {len(items)} 条")
 
+        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         DEBUG_JSON_PATH.write_text(
             json.dumps({"ok": True, "count": len(items), "items": items}, ensure_ascii=False, indent=2),
             encoding="utf-8",

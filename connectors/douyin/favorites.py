@@ -106,6 +106,7 @@ def fetch_douyin_favorites(*args, session: SharedRunnerSession | None = None, **
             page.close()
         except Exception:
             pass
+        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         DEBUG_JSON_PATH.write_text(
             json.dumps({"ok": True, "count": len(items), "items": items}, ensure_ascii=False, indent=2),
             encoding="utf-8",
