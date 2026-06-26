@@ -190,9 +190,9 @@ def fetch_xiaoheihe_favorites(
 ) -> list[dict[str, Any]]:
     own_session = session is None
     if own_session:
-        from connectors.auth.providers.browser_profiles import XIAOHEIHE_AUTH_PROFILE_DIR
+        from connectors.auth.providers.browser_profiles import AUTH_PROFILE_DIR
         session = SharedRunnerSession(
-            source_profile_dir=XIAOHEIHE_AUTH_PROFILE_DIR,
+            source_profile_dir=AUTH_PROFILE_DIR,
             extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh;q=0.9,en;q=0.8"],
         )
         session.start()

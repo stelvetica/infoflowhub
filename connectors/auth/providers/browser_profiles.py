@@ -7,12 +7,8 @@ BASE_DIR = Path(__file__).resolve().parents[3]
 RUNTIME_DIR = BASE_DIR / "runtime"
 BROWSER_PROFILES_DIR = RUNTIME_DIR / "browser_profiles"
 
-# 独立专用登录 profile（每个站点一个，避开 Chrome 主 profile 的 cookie 加密绑定）
-DOUYIN_AUTH_PROFILE_DIR = BROWSER_PROFILES_DIR / "douyin-auth"
-X_AUTH_PROFILE_DIR = BROWSER_PROFILES_DIR / "x-auth"
-YOUTUBE_AUTH_PROFILE_DIR = BROWSER_PROFILES_DIR / "youtube-auth"
-XIAOHEIHE_AUTH_PROFILE_DIR = BROWSER_PROFILES_DIR / "xiaoheihe-auth"
-ALPHAPAI_AUTH_PROFILE_DIR = BROWSER_PROFILES_DIR / "alphapai-auth"
+# 单一共享登录 profile：所有浏览器站点共用一份 profile（cookie 按域名隔离）
+AUTH_PROFILE_DIR = BROWSER_PROFILES_DIR / "auth"
 
 # 旧路径（兼容）
 DOUYIN_PROFILE_DIR = BROWSER_PROFILES_DIR / "douyin-shared"

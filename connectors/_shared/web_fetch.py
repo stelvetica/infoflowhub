@@ -49,19 +49,9 @@ def _shared_runner_extra_args() -> list[str]:
 
 
 def _shared_runner_source_profile_dir(site: str) -> Path:
-    """各站点独立 auth profile 目录（首次需跑 login_profiles.py 登录）。"""
-    from connectors.auth.providers.browser_profiles import (
-        ALPHAPAI_AUTH_PROFILE_DIR,
-        DOUYIN_AUTH_PROFILE_DIR,
-        X_AUTH_PROFILE_DIR,
-        YOUTUBE_AUTH_PROFILE_DIR,
-    )
-    return {
-        "douyin": DOUYIN_AUTH_PROFILE_DIR,
-        "x": X_AUTH_PROFILE_DIR,
-        "youtube": YOUTUBE_AUTH_PROFILE_DIR,
-        "alphapai": ALPHAPAI_AUTH_PROFILE_DIR,
-    }.get(site, CHROME_USER_DATA / "Default")
+    """所有浏览器站点共用单一共享登录 profile（cookie 按域名隔离）。"""
+    from connectors.auth.providers.browser_profiles import AUTH_PROFILE_DIR
+    return AUTH_PROFILE_DIR
 
 
 def _preflight_login_check(source: dict, site: str) -> str:
@@ -198,17 +188,12 @@ def fetch_web_many(
     shared_indices = [i for i, s in enumerate(sources) if _needs_shared_runner(s)]
     other_indices = [i for i in range(len(sources)) if i not in set(shared_indices)]
 
-    # 按站点分组共享源，每组共用一个 session（同一 auth profile）
-    by_site: dict[str, list[int]] = {}
-    for i in shared_indices:
-        site = resolve_web_target(sources[i]).site
-        by_site.setdefault(site, []).append(i)
-
-    for site, idxs in by_site.items():
-        session = _make_session_for(sources[idxs[0]])
+    # 所有浏览器站点共用一个 session（单一共享 auth profile）
+    if shared_indices:
+        session = _make_session_for(sources[shared_indices[0]])
         session.start()
         try:
-            for i in idxs:
+            for i in shared_indices:
                 source = sources[i]
                 try:
                     results_by_index[i] = _fetch_one_via_session(session, source, limit=limit, timeout_ms=timeout_ms)

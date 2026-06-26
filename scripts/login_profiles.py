@@ -1,20 +1,17 @@
-"""独立登录 profile 首次登录脚本。
+"""共享登录 profile 登录脚本。
 
-为每个需要登录的站点创建独立专用 profile 并打开浏览器供扫码登录。
-登录态存入 runtime/browser_profiles/<site>-auth/，后续抓取直接挂载该 profile。
+所有浏览器站点共用一份 profile（runtime/browser_profiles/auth/），
+cookie 按域名隔离互不干扰。一次打开浏览器，在多个 tab 里登录各站点。
 
 用法:
-    python scripts/login_profiles.py douyin
-    python scripts/login_profiles.py xiaoheihe
-    python scripts/login_profiles.py x
-    python scripts/login_profiles.py youtube
-    python scripts/login_profiles.py alphapai
-    python scripts/login_profiles.py all       # 依次登录全部
+    python scripts/login_profiles.py            # 打开浏览器，多 tab 登录全部站点
+    python scripts/login_profiles.py douyin      # 只登录指定站点（可选: douyin xiaoheihe x youtube alphapai）
 """
 from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,37 +22,41 @@ from playwright.sync_api import sync_playwright
 
 from connectors._shared.chrome_runner import _resolve_default_browser_executable
 from connectors._shared.common import USER_AGENT
-from connectors.auth.providers.browser_profiles import (
-    ALPHAPAI_AUTH_PROFILE_DIR,
-    DOUYIN_AUTH_PROFILE_DIR,
-    X_AUTH_PROFILE_DIR,
-    XIAOHEIHE_AUTH_PROFILE_DIR,
-    YOUTUBE_AUTH_PROFILE_DIR,
-)
+from connectors.auth.providers.browser_profiles import AUTH_PROFILE_DIR
 
 
 SITES = {
-    "douyin": (DOUYIN_AUTH_PROFILE_DIR, "https://www.douyin.com/"),
-    "xiaoheihe": (XIAOHEIHE_AUTH_PROFILE_DIR, "https://www.xiaoheihe.cn/"),
-    "x": (X_AUTH_PROFILE_DIR, "https://x.com/"),
-    "youtube": (YOUTUBE_AUTH_PROFILE_DIR, "https://www.youtube.com/"),
-    "alphapai": (ALPHAPAI_AUTH_PROFILE_DIR, "https://alphapai-web.rabyte.cn/reading/home/market-report/detail"),
+    "douyin": "https://www.douyin.com/",
+    "xiaoheihe": "https://www.xiaoheihe.cn/",
+    "x": "https://x.com/",
+    "youtube": "https://www.youtube.com/",
+    "alphapai": "https://alphapai-web.rabyte.cn/reading/home/market-report/detail",
 }
 
 
-def login_site(site: str) -> int:
-    if site not in SITES:
-        print(f"未知站点: {site}，可选: {', '.join(SITES)}")
-        return 1
-    profile_dir, url = SITES[site]
-    profile_dir.mkdir(parents=True, exist_ok=True)
+def main() -> int:
+    parser = argparse.ArgumentParser(description="共享登录 profile 登录")
+    parser.add_argument("site", nargs="?", default="", help=f"单个站点（可选: {', '.join(SITES)}），留空则打开全部")
+    args = parser.parse_args()
+
+    AUTH_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     _, chrome_executable = _resolve_default_browser_executable()
-    print(f"=== 登录 {site} ===")
-    print(f"profile: {profile_dir}")
-    print(f"打开 {url}，请在浏览器中完成登录，登录成功后关闭浏览器窗口或按 Ctrl+C 退出。")
+
+    if args.site:
+        if args.site not in SITES:
+            print(f"未知站点: {args.site}，可选: {', '.join(SITES)}")
+            return 1
+        targets = {args.site: SITES[args.site]}
+    else:
+        targets = SITES
+
+    print(f"=== 共享登录 profile: {AUTH_PROFILE_DIR} ===")
+    print(f"将在浏览器中打开 {len(targets)} 个站点，请分别登录后关闭浏览器窗口结束。")
+    print("登录态存入同一 profile，cookie 按域名隔离互不干扰。")
+
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
-            user_data_dir=str(profile_dir),
+            user_data_dir=str(AUTH_PROFILE_DIR),
             executable_path=chrome_executable,
             headless=False,
             args=[
@@ -66,20 +67,19 @@ def login_site(site: str) -> int:
             ],
             ignore_default_args=["--enable-automation"],
         )
-        page = ctx.new_page()
-        page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        for name, url in targets.items():
+            page = ctx.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            print(f"  已打开 {name}: {url}")
         print("浏览器已打开，等待登录...（关闭浏览器窗口结束）")
         try:
-            # 阻塞直到用户关闭浏览器窗口
             while True:
                 try:
-                    pages = ctx.pages
-                    if not pages:
+                    if not ctx.pages:
                         break
                 except Exception:
                     break
-                import time as _t
-                _t.sleep(2)
+                time.sleep(2)
         except (KeyboardInterrupt, Exception):
             pass
         finally:
@@ -87,19 +87,8 @@ def login_site(site: str) -> int:
                 ctx.close()
             except Exception:
                 pass
-    print(f"=== {site} 登录态已存入 {profile_dir} ===")
+    print(f"=== 登录态已存入 {AUTH_PROFILE_DIR} ===")
     return 0
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description="独立登录 profile 首次登录")
-    parser.add_argument("site", help=f"站点名: {', '.join(SITES)} 或 all")
-    args = parser.parse_args()
-    if args.site == "all":
-        for site in SITES:
-            login_site(site)
-        return 0
-    return login_site(args.site)
 
 
 if __name__ == "__main__":
