@@ -60,22 +60,30 @@ infoflowhub/
 
 ## 启动方式
 
-### 1. 安装 Python Web 依赖
+项目对 Python 解释器**环境无关**：换台机器无需手动配置，启动脚本会用该机器自带的 Python 自动就绪环境。
 
-```powershell
-uv sync --extra browser
-```
+### 前置条件
 
-uv 会自动管理 Python 解释器与虚拟环境（`.venv`），无需手动指定。
+- 目标机器装有 Python 3.12 / 3.13（`python` 在 PATH，或 `py -3.12` 可用）；首次启动需联网装依赖一次
+- （可选）装了 [uv](https://docs.astral.sh/uv/) 则可改用 `uv sync --extra browser` 获得锁版本环境
 
-### 2. 启动控制台
+### 启动控制台
 
-- 推荐：`powershell -ExecutionPolicy Bypass -File scripts\restart_infoflow_web.ps1`
+- 推荐：`powershell -ExecutionPolicy Bypass -File scripts\start_infoflow_web.ps1`
 - 或双击：`scripts\一键重新拉起InfoFlowHub服务.bat`
 
-默认地址：
+启动时 `scripts\ensure_python_env.ps1` 按序解析 Python：`INFOFLOW_PYTHON` 环境变量 → 项目内可用 `.venv` → 机器 `python` → `py` launcher；`.venv` 失效则用本机 Python 重建；依赖缺失则自动 `pip install -r requirements.txt`。
 
-- [http://127.0.0.1:18421](http://127.0.0.1:18421)
+默认地址：[http://127.0.0.1:18421](http://127.0.0.1:18421)
+
+### 可选：浏览器抓取器
+
+若使用抖音 / X / YouTube / 小黑盒等浏览器抓取器，需额外安装 playwright 并下载浏览器：
+
+```powershell
+.venv\Scripts\python.exe -m pip install "playwright>=1.40,<2"
+.venv\Scripts\python.exe -m playwright install chromium
+```
 
 ## 版本库约束
 

@@ -13,10 +13,15 @@ $cloudflaredExe = Join-Path $scriptDir "cloudflared.exe"
 $logDir = Join-Path $root "runtime"
 $logPath = Join-Path $logDir "web.log"
 
-$python = $env:INFOFLOW_PYTHON
-if ([string]::IsNullOrWhiteSpace($python)) { $python = Join-Path $root ".venv\Scripts\python.exe" }
-
 if (!(Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
+
+# ============================================================
+# Phase 0: Ensure Python env (machine-independent)
+# ============================================================
+Write-Host "=== Phase 0: Ensuring Python environment ===" -ForegroundColor Cyan
+$python = & (Join-Path $scriptDir "ensure_python_env.ps1")
+if ([string]::IsNullOrWhiteSpace($python)) { throw "No usable Python interpreter resolved." }
+Write-Host "[OK] Python: $python" -ForegroundColor Green
 
 # ============================================================
 # Phase 1: Stop old processes

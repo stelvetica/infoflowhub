@@ -1,0 +1,15 @@
+# InfoFlowHub core runtime dependencies (mirrors pyproject.toml [project].dependencies)
+# Install with:  pip install -r requirements.txt
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+jinja2>=3.1,<4
+python-multipart>=0.0.9,<1
+feedparser>=6,<7
+httpx>=0.27,<1
+requests>=2.31,<3
+python-dotenv>=1,<2
+pyyaml>=6,<7
+
+# Optional: browser-based fetchers (douyin/x/youtube/xiaoheihe via chrome_runner).
+# After installing, also run:  python -m playwright install chromium
+# playwright>=1.40,<2
