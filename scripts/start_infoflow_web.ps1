@@ -109,37 +109,42 @@ Write-Host "[OK] Chrome closed" -ForegroundColor Green
 # 3b. Start cloudflared
 $tunnelUrl = $null
 $cfLog = Join-Path $logDir "cloudflared.log"
-$maxRetries = 3
-$retry = 0
 
-while ($retry -lt $maxRetries -and -not $tunnelUrl) {
-    if ($retry -gt 0) {
-        Write-Host "[Retry $retry/$maxRetries] Restarting cloudflared..." -ForegroundColor Yellow
-        Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+if (-not (Test-Path $cloudflaredExe)) {
+    Write-Host "[WARN] cloudflared.exe not found at $cloudflaredExe, skipping tunnel (will use local URL)" -ForegroundColor Yellow
+} else {
+    $maxRetries = 3
+    $retry = 0
+
+    while ($retry -lt $maxRetries -and -not $tunnelUrl) {
+        if ($retry -gt 0) {
+            Write-Host "[Retry $retry/$maxRetries] Restarting cloudflared..." -ForegroundColor Yellow
+            Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 3
+        }
+
+        Remove-Item $cfLog -ErrorAction SilentlyContinue
+        $cfProc = Start-Process -FilePath $cloudflaredExe -ArgumentList "tunnel","--url","http://127.0.0.1:${port}","--no-autoupdate","--protocol","http2","--edge-ip-version","4" -WindowStyle Hidden -PassThru -RedirectStandardError $cfLog
+        Write-Host "[Step] Starting cloudflared tunnel..." -ForegroundColor Cyan
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        while ($sw.Elapsed.TotalSeconds -lt 30) {
+            Start-Sleep -Milliseconds 500
+            if (Test-Path $cfLog) {
+                $content = Get-Content $cfLog -Raw -ErrorAction SilentlyContinue
+                if ($content -match "https://(.+?)\.trycloudflare\.com") {
+                    $tunnelUrl = $matches[0]
+                    break
+                }
+            }
+            if ($cfProc.HasExited) { break }
+        }
+        $retry++
+    }
+
+    if ($tunnelUrl) {
+        # Give tunnel 3s to settle before using it
         Start-Sleep -Seconds 3
     }
-
-    Remove-Item $cfLog -ErrorAction SilentlyContinue
-    $cfProc = Start-Process -FilePath $cloudflaredExe -ArgumentList "tunnel","--url","http://127.0.0.1:${port}","--no-autoupdate","--protocol","http2","--edge-ip-version","4" -WindowStyle Hidden -PassThru -RedirectStandardError $cfLog
-    Write-Host "[Step] Starting cloudflared tunnel..." -ForegroundColor Cyan
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    while ($sw.Elapsed.TotalSeconds -lt 30) {
-        Start-Sleep -Milliseconds 500
-        if (Test-Path $cfLog) {
-            $content = Get-Content $cfLog -Raw -ErrorAction SilentlyContinue
-            if ($content -match "https://(.+?)\.trycloudflare\.com") {
-                $tunnelUrl = $matches[0]
-                break
-            }
-        }
-        if ($cfProc.HasExited) { break }
-    }
-    $retry++
-}
-
-if ($tunnelUrl) {
-    # Give tunnel 3s to settle before using it
-    Start-Sleep -Seconds 3
 }
 
 if (-not $tunnelUrl) {
