@@ -2,7 +2,7 @@
 name = "infoflowhub"
 version = "0.1.0"
 description = "InfoFlowHub: fetch + store + web console for personal content tracking"
-requires-python = ">=3.14,<3.15"
+requires-python = ">=3.12,<3.15"
 dependencies = [
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.30,<1",
