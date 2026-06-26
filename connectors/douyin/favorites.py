@@ -90,8 +90,9 @@ def _resolve_douyin_source_profile_dir() -> Path:
 def fetch_douyin_favorites(*args, session: SharedRunnerSession | None = None, **kwargs) -> list[dict[str, Any]]:
     own_session = session is None
     if own_session:
+        from connectors.auth.providers.browser_profiles import DOUYIN_AUTH_PROFILE_DIR
         session = SharedRunnerSession(
-            source_profile_dir=_resolve_douyin_source_profile_dir(),
+            source_profile_dir=DOUYIN_AUTH_PROFILE_DIR,
             extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh;q=0.9,en;q=0.8"],
         )
         session.start()

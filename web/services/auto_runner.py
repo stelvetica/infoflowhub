@@ -76,16 +76,9 @@ class AutoRunner:
             self._save_state(state)
 
             try:
-                from connectors._shared.chrome_runner import SharedRunnerSession
-                from connectors._shared.common import CHROME_USER_DATA, USER_AGENT
-
-                # 一次晨跑只起一个共享 Chrome runner，顺序服务 subscriptions + laterhub
-                with SharedRunnerSession(
-                    source_profile_dir=CHROME_USER_DATA / "Default",
-                    extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh;q=0.9,en;q=0.8"],
-                ) as session:
-                    subscriptions = await asyncio.to_thread(fetch_now, session)
-                    laterhub = await asyncio.to_thread(fetch_laterhub_now, session)
+                # 各 fetcher 内部按站点自起独立 session（每站点一个 auth profile）
+                subscriptions = await asyncio.to_thread(fetch_now)
+                laterhub = await asyncio.to_thread(fetch_laterhub_now)
                 result = {"subscriptions": subscriptions, "laterhub": laterhub}
             except Exception as exc:
                 state = self._load_state()

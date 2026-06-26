@@ -591,15 +591,16 @@ SHARED_RUNNER_PROFILE_NAME = "Default"
 class SharedRunnerSession:
     """抓取会话级常驻的共享 Chrome runner。
 
-    一次 fetch 周期内：start() 起一次 Chrome（复制一份 Default profile），
-    各站点抓取通过 acquire_page() 拿到新页面，最后 shutdown() 关闭浏览器。
-    全程共用一个 Chrome 进程、一个端口、一份 profile 副本。
+    直接用 launch_persistent_context 挂载本机 Chrome Default profile（不复制），
+    保证登录态（Cookies）原生有效。抓取期间 Chrome 必须关闭（profile 锁）。
+    一次 fetch 周期内 start() 起一次 Chrome，各站点 acquire_page() 拿新页面，
+    最后 shutdown() 关闭浏览器。
     """
 
     def __init__(
         self,
         *,
-        source_profile_dir: Path,
+        source_profile_dir: Path | None = None,
         runner_dir: Path = SHARED_RUNNER_DIR,
         debug_port: int = SHARED_RUNNER_DEBUG_PORT,
         profile_name: str = SHARED_RUNNER_PROFILE_NAME,
@@ -607,6 +608,8 @@ class SharedRunnerSession:
         headless: bool = True,
         extra_args: list[str] | None = None,
     ) -> None:
+        # source_profile_dir/runner_dir/debug_port 保留签名兼容旧调用方，
+        # 直接挂载模式下不再使用（直接挂 CHROME_USER_DATA）。
         self.source_profile_dir = source_profile_dir
         self.runner_dir = runner_dir
         self.debug_port = debug_port
@@ -615,77 +618,87 @@ class SharedRunnerSession:
         self.headless = headless
         self.extra_args = extra_args
         self._playwright = None
-        self._browser = None
+        self._context = None
         self._started = False
 
     def start(self) -> None:
         if self._started:
             return
-        ensure_debug_browser(
-            self.runner_dir,
-            self.profile_name,
-            self.debug_port,
-            "about:blank",
-            source_profile_dir=self.source_profile_dir,
-            rebuild_interval=self.rebuild_interval,
-            headless=self.headless,
-            extra_args=self.extra_args,
-        )
+        # 挂载 profile 必须先关闭 Chrome（profile 锁）
+        if not kill_chrome_gracefully():
+            raise RuntimeError("Chrome 正在运行且无法关闭，无法挂载 profile")
+        if not _ensure_all_chrome_processes_stopped():
+            if not _force_kill_chrome_powershell():
+                raise RuntimeError("Chrome 进程未完全退出，无法挂载 profile")
+
         from playwright.sync_api import sync_playwright
 
         self._playwright = sync_playwright().start()
-        self._browser = self._playwright.chromium.connect_over_cdp(connect_over_cdp(self.debug_port))
+        args = [
+            "--disable-blink-features=AutomationControlled",
+            "--disable-extensions",
+            "--no-first-run",
+            "--disable-popup-blocking",
+        ]
+        if self.extra_args:
+            args.extend(self.extra_args)
+        # source_profile_dir 为要挂载的独立 profile 目录；缺省回退到系统 Default profile
+        profile_dir = self.source_profile_dir or (CHROME_USER_DATA / "Default")
+        _, chrome_executable = _resolve_default_browser_executable()
+        self._context = self._playwright.chromium.launch_persistent_context(
+            user_data_dir=str(profile_dir),
+            executable_path=chrome_executable,
+            headless=self.headless,
+            args=args,
+            ignore_default_args=["--enable-automation"],
+        )
         self._started = True
 
     def acquire_page(self):
-        if not self._started or self._browser is None:
+        if not self._started or self._context is None:
             raise RuntimeError("SharedRunnerSession 未启动，请先调用 start()")
-        context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
-        return context.new_page()
+        return self._context.new_page()
 
     def acquire_page_by_url(self, url: str, *, wait_until: str = "domcontentloaded", timeout_ms: int = 30000):
         """优先复用已打开匹配域名 tab，否则新开 tab 并导航到 url。
 
         供蓝宝书等需要复用特定 tab 的站点使用。
         """
-        if not self._started or self._browser is None:
+        if not self._started or self._context is None:
             raise RuntimeError("SharedRunnerSession 未启动，请先调用 start()")
-        context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
         from urllib.parse import urlparse
 
         host = urlparse(url).hostname or ""
-        for candidate in context.pages:
+        for candidate in self._context.pages:
             try:
                 candidate_host = urlparse(str(candidate.url or "")).hostname or ""
             except Exception:
                 candidate_host = ""
             if host and candidate_host == host:
                 return candidate
-        page = context.new_page()
+        page = self._context.new_page()
         page.goto(url, wait_until=wait_until, timeout=timeout_ms)
         return page
 
     def restart(self) -> None:
-        """登录态失效时重建：关掉再重启浏览器（profile 已就绪则复用）。"""
+        """登录态失效时重建：关掉再重启浏览器。"""
         self.shutdown()
         self.start()
 
     def shutdown(self) -> None:
-        if self._browser is not None:
+        if self._context is not None:
             try:
-                self._browser.close()
+                self._context.close()
             except Exception:
                 pass
-            self._browser = None
+            self._context = None
         if self._playwright is not None:
             try:
                 self._playwright.stop()
             except Exception:
                 pass
             self._playwright = None
-        if self._started:
-            close_debug_browser(self.runner_dir, self.debug_port)
-            self._started = False
+        self._started = False
 
     def __enter__(self):
         self.start()

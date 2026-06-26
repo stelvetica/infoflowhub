@@ -56,8 +56,9 @@ def fetch_alphapai_source(
 ) -> FeedFetchResult:
     own_session = session is None
     if own_session:
+        from connectors.auth.providers.browser_profiles import ALPHAPAI_AUTH_PROFILE_DIR
         session = SharedRunnerSession(
-            source_profile_dir=CHROME_USER_DATA / "Default",
+            source_profile_dir=ALPHAPAI_AUTH_PROFILE_DIR,
             extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh;q=0.9,en;q=0.8"],
         )
         session.start()
