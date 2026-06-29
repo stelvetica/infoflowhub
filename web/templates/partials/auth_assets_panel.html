@@ -6,9 +6,8 @@
     <table class="auth-assets-table">
       <thead>
         <tr>
-          <th>认证资产</th>
-          <th>平台</th>
-          <th>模式</th>
+          <th>站点</th>
+          <th>登录方式</th>
           <th>状态</th>
           <th>说明</th>
           <th>操作</th>
@@ -19,13 +18,13 @@
         <tr class="{% if item.is_expired %}auth-row-expired{% elif item.is_expiring_soon %}auth-row-warning{% endif %}">
           <td title="{{ item.auth_key }}">
             <strong>{{ item.display_name }}</strong>
-            <div class="subtle">{{ item.auth_key }}</div>
             {% if item.nickname %}
             <div class="subtle">当前账号：{{ item.nickname }}</div>
             {% endif %}
           </td>
-          <td>{{ item.platform }}</td>
-          <td>{{ item.auth_mode }}</td>
+          <td>
+            <span class="auth-mode-tag">{{ item.login_method }}</span>
+          </td>
           <td>
             <span class="auth-status-badge {{ item.status_level }}">{{ item.status_text }}</span>
             {% if item.expire_summary %}
@@ -49,8 +48,8 @@
             {% endif %}
             {% if item.action_url %}
             <a class="btn {% if item.is_expired %}warn{% else %}ghost{% endif %}" href="{{ item.action_url }}">{{ item.action_label }}</a>
-            {% else %}
-            <span class="subtle" title="{{ item.hint }}">{{ item.action_label }}</span>
+            {% elif item.renew_label %}
+            <span class="subtle" title="{{ item.hint }}">{{ item.renew_label }}</span>
             {% endif %}
           </td>
         </tr>

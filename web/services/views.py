@@ -23,7 +23,7 @@ from apps.subscriptions.rss_db import (
 )
 from apps.subscriptions.source_ids import canonicalize_source_id, legacy_source_ids, merge_source_health_rows
 from connectors._shared.common import parse_published_datetime, resolve_web_target
-from connectors.auth import list_auth_statuses
+from connectors.auth import list_auth_statuses, resolve_auth
 from connectors.wechat.auth import get_wechat_auth_status
 from infra.text_normalizer import normalize_text_lines, normalize_utf8_obj, normalize_utf8_text
 from infra.utf8_json import dump_json_utf8, load_json_utf8
@@ -834,6 +834,8 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             "display_name": normalize_utf8_text(descriptor.display_name),
             "platform": descriptor.platform,
             "auth_mode": descriptor.auth_mode,
+            "login_method": normalize_utf8_text(getattr(descriptor, "login_method", "")),
+            "renew_label": normalize_utf8_text(reg.renew_label) if (reg := resolve_auth(descriptor.auth_key)).renew_label else "",
             "storage_ref": descriptor.storage_ref,
             "renew_strategy": descriptor.renew_strategy,
             "description": normalize_utf8_text(descriptor.description),

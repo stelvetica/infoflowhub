@@ -708,3 +708,106 @@ class SharedRunnerSession:
         self.shutdown()
         return False
 
+
+class CopyRunnerSession:
+    """复制本机 Chrome Default profile 到副本，再 CDP 抓取。
+
+    供蓝宝书等单设备登录限制的站点使用：不在副本里登录，而是复制你常用
+    Chrome 的登录态，副本独立运行不影响你常用浏览器。
+    """
+
+    def __init__(
+        self,
+        *,
+        runner_dir: Path,
+        debug_port: int,
+        source_profile_dir: Path | None = None,
+        start_url: str = "about:blank",
+        headless: bool = True,
+        extra_args: list[str] | None = None,
+        rebuild_interval: int = DEFAULT_REBUILD_INTERVAL_SECONDS,
+    ) -> None:
+        self.runner_dir = runner_dir
+        self.debug_port = debug_port
+        self.source_profile_dir = source_profile_dir or (CHROME_USER_DATA / "Default")
+        self.start_url = start_url
+        self.headless = headless
+        self.extra_args = extra_args
+        self.rebuild_interval = rebuild_interval
+        self._playwright = None
+        self._browser = None
+        self._started = False
+
+    def start(self) -> None:
+        if self._started:
+            return
+        ensure_debug_browser(
+            self.runner_dir,
+            "Default",
+            self.debug_port,
+            self.start_url,
+            source_profile_dir=self.source_profile_dir,
+            rebuild_interval=self.rebuild_interval,
+            headless=self.headless,
+            extra_args=self.extra_args,
+        )
+        from playwright.sync_api import sync_playwright
+
+        self._playwright = sync_playwright().start()
+        self._browser = self._playwright.chromium.connect_over_cdp(connect_over_cdp(self.debug_port))
+        self._started = True
+
+    def acquire_page(self):
+        if not self._started or self._browser is None:
+            raise RuntimeError("CopyRunnerSession 未启动，请先调用 start()")
+        context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
+        return context.new_page()
+
+    def acquire_page_by_url(self, url: str, *, wait_until: str = "domcontentloaded", timeout_ms: int = 30000):
+        if not self._started or self._browser is None:
+            raise RuntimeError("CopyRunnerSession 未启动，请先调用 start()")
+        context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
+        from urllib.parse import urlparse
+
+        host = urlparse(url).hostname or ""
+        for candidate in context.pages:
+            try:
+                candidate_host = urlparse(str(candidate.url or "")).hostname or ""
+            except Exception:
+                candidate_host = ""
+            if host and candidate_host == host:
+                return candidate
+        page = context.new_page()
+        page.goto(url, wait_until=wait_until, timeout=timeout_ms)
+        return page
+
+    def restart(self) -> None:
+        self.shutdown()
+        self.start()
+
+    def shutdown(self) -> None:
+        if self._browser is not None:
+            try:
+                self._browser.close()
+            except Exception:
+                pass
+            self._browser = None
+        if self._playwright is not None:
+            try:
+                self._playwright.stop()
+            except Exception:
+                pass
+            self._playwright = None
+        if self._started:
+            close_debug_browser(self.runner_dir, self.debug_port)
+            self._started = False
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.shutdown()
+        return False
+
+

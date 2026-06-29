@@ -4,11 +4,14 @@ from pathlib import Path
 
 from apps.subscriptions.models import FeedFetchResult
 from apps.subscriptions.rss_db import save_entries
-from connectors._shared.chrome_runner import SharedRunnerSession
+from connectors._shared.chrome_runner import CopyRunnerSession
 from connectors._shared.common import CHROME_USER_DATA, USER_AGENT, result_error
+from connectors.alphapai.browser import ALPHAPAI_TARGET_URL
 from connectors.alphapai.feed import fetch_alphapai_with_page
 
 DEBUG_DIR = Path(__file__).resolve().parents[2] / "runtime" / "debug"
+ALPHAPAI_RUNNER_DIR = Path(__file__).resolve().parents[2] / "runtime" / "browser_profiles" / "alphapai-runner"
+ALPHAPAI_DEBUG_PORT = 9222
 
 
 def _write_debug(name: str, content: str) -> None:
@@ -23,9 +26,20 @@ def _needs_profile_rebuild(result: FeedFetchResult) -> bool:
     return "登录态失效" in error_text or "登录" in error_text
 
 
-def _run_fetch_once(session: SharedRunnerSession, source: dict, *, limit: int, timeout_ms: int) -> FeedFetchResult:
-    from connectors.alphapai.browser import ALPHAPAI_TARGET_URL
+def _make_session() -> CopyRunnerSession:
+    # 蓝宝书单设备登录限制：复制本机 Chrome Default profile 登录态到副本，
+    # 不在副本登录，副本独立运行不影响常用浏览器。
+    return CopyRunnerSession(
+        runner_dir=ALPHAPAI_RUNNER_DIR,
+        debug_port=ALPHAPAI_DEBUG_PORT,
+        source_profile_dir=CHROME_USER_DATA / "Default",
+        start_url=ALPHAPAI_TARGET_URL,
+        headless=True,
+        extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh;q=0.9,en;q=0.8"],
+    )
 
+
+def _run_fetch_once(session: CopyRunnerSession, source: dict, *, limit: int, timeout_ms: int) -> FeedFetchResult:
     page = session.acquire_page_by_url(ALPHAPAI_TARGET_URL, timeout_ms=30000)
     try:
         result = fetch_alphapai_with_page(page, source, timeout_ms=timeout_ms, limit=limit)
@@ -52,15 +66,11 @@ def fetch_alphapai_source(
     *,
     limit: int = 12,
     timeout_ms: int = 120000,
-    session: SharedRunnerSession | None = None,
+    session=None,
 ) -> FeedFetchResult:
     own_session = session is None
     if own_session:
-        from connectors.auth.providers.browser_profiles import AUTH_PROFILE_DIR
-        session = SharedRunnerSession(
-            source_profile_dir=AUTH_PROFILE_DIR,
-            extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh;q=0.9,en;q=0.8"],
-        )
+        session = _make_session()
         session.start()
     try:
         return _run_fetch_once(session, source, limit=limit, timeout_ms=timeout_ms)

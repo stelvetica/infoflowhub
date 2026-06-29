@@ -19,6 +19,7 @@ class AuthDescriptor:
     is_expired: bool = False
     is_expiring_soon: bool = False
     remaining_hours: int = -1
+    login_method: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,3 +31,5 @@ class AuthRegistration:
     renew_strategy: str
     display_name: str
     description: str
+    login_method: str = ""
+    renew_label: str = ""

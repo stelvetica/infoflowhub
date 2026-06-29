@@ -11,15 +11,12 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from apps.subscriptions.models import FeedFetchResult
-from connectors.auth import get_auth_context_path, validate_auth
+from connectors.auth import validate_auth
 
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
-X_PROFILE_DIR = get_auth_context_path("x_profile2")
-DOUYIN_PROFILE_DIR = get_auth_context_path("douyin_shared")
-ALPHAPAI_PROFILE_DIR = get_auth_context_path("alphapai_main")
-X_LOGIN_HINT = "请先在本机 Chrome 的 Default Profile 中登录 x.com，并确认时间线可正常加载。"
-DOUYIN_LOGIN_HINT = "请先在本机 Chrome 的 Default Profile 中登录抖音，或执行现有抖音登录流程；当前支持从 Default 或 douyin_shared 复制登录态。"
+X_LOGIN_HINT = "请运行 login_profiles.py x 扫码登录 X（登录态存入共享 auth profile）。"
+DOUYIN_LOGIN_HINT = "请运行 login_profiles.py douyin 扫码登录抖音（登录态存入共享 auth profile）。"
 
 
 TRANSIENT_FETCH_ERROR_KEYWORDS = (

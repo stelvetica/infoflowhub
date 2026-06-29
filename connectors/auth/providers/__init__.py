@@ -4,11 +4,8 @@ from connectors.auth.providers.bilibili import (
     validate_bilibili_auth,
 )
 from connectors.auth.providers.browser_profiles import (
-    ALPHAPAI_PROFILE_DIR,
-    DOUYIN_PROFILE_DIR,
-    XIAOHEIHE_PROFILE_DIR,
-    X_PROFILE_DIR,
-    YOUTUBE_PROFILE_DIR,
+    ALPHAPAI_RUNNER_DIR,
+    AUTH_PROFILE_DIR,
     get_context_path,
     validate_alphapai_auth,
     validate_douyin_auth,
@@ -26,12 +23,9 @@ from connectors.auth.providers.wechat import (
 )
 
 __all__ = [
-    "ALPHAPAI_PROFILE_DIR",
-    "DOUYIN_PROFILE_DIR",
+    "ALPHAPAI_RUNNER_DIR",
+    "AUTH_PROFILE_DIR",
     "WECHAT_AUTH_PATH",
-    "XIAOHEIHE_PROFILE_DIR",
-    "X_PROFILE_DIR",
-    "YOUTUBE_PROFILE_DIR",
     "get_bilibili_cookie",
     "get_bilibili_headers",
     "get_context_path",
