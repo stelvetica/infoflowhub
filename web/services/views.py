@@ -252,15 +252,17 @@ def load_source_catalog() -> list[dict[str, Any]]:
 
 
 def normalize_sources() -> list[dict[str, Any]]:
+    # 预算一次 auth 状态，避免每个源重复调 list_auth_statuses（N×M 重复验证）
+    descriptors = {d.auth_key: d for d in list_auth_statuses()}
     normalized: list[dict[str, Any]] = []
     for item in load_source_catalog():
         source = dict(item)
-        login_meta = auth_requirement_meta(source.get("auth_key", ""))
-        if login_meta:
-            source["login_requirement"] = login_meta["requirement"]
-            source["login_hint"] = login_meta["hint"]
-            source["auth_status_text"] = login_meta["status_text"]
-            source["auth_status_level"] = login_meta["status_level"]
+        descriptor = descriptors.get(source.get("auth_key", ""))
+        if descriptor:
+            source["login_requirement"] = descriptor.display_name
+            source["login_hint"] = normalize_utf8_text(descriptor.hint)
+            source["auth_status_text"] = normalize_utf8_text(descriptor.status_text)
+            source["auth_status_level"] = descriptor.status_level
         else:
             source["login_requirement"] = ""
             source["login_hint"] = ""
