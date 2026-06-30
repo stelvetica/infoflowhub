@@ -73,7 +73,7 @@ $webReady = $false
 do {
     Start-Sleep -Seconds 1
     try {
-        $resp = Invoke-WebRequest -Uri $localUrl -UseBasicParsing -TimeoutSec 3
+        $resp = Invoke-WebRequest -Uri $localUrl -UseBasicParsing -TimeoutSec 10
         if ($resp.StatusCode -eq 200 -and $resp.Content -match "InfoFlowHub") {
             $webReady = $true
             break

@@ -146,8 +146,28 @@ def validate_auth(auth_key: str) -> AuthDescriptor:
     )
 
 
+_AUTH_STATUS_CACHE: tuple[float, list[AuthDescriptor]] | None = None
+_AUTH_STATUS_CACHE_TTL = 10.0
+
+
 def list_auth_statuses() -> list[AuthDescriptor]:
-    return [validate_auth(auth_key) for auth_key in AUTH_REGISTRY]
+    """带 10 秒短时缓存。一次设置页渲染会多次调用，避免重复读 SQLite。"""
+    global _AUTH_STATUS_CACHE
+    import time as _time
+
+    now = _time.time()
+    if _AUTH_STATUS_CACHE is not None and (now - _AUTH_STATUS_CACHE[0]) < _AUTH_STATUS_CACHE_TTL:
+        return _AUTH_STATUS_CACHE[1]
+    result = [validate_auth(auth_key) for auth_key in AUTH_REGISTRY]
+    _AUTH_STATUS_CACHE = (now, result)
+    return result
+
+
+def invalidate_auth_status_cache() -> None:
+    """登录/重新扫码后调用，使下次读取刷新缓存。"""
+    global _AUTH_STATUS_CACHE
+    _AUTH_STATUS_CACHE = None
+
 
 
 def get_auth_headers(auth_key: str) -> dict[str, str]:
