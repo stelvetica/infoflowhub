@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 from typing import Any
 
 from apps.laterhub.config import DEBUG_DIR
 from connectors._shared.chrome_runner import SharedRunnerSession
-from connectors._shared.common import CHROME_USER_DATA, USER_AGENT
-from connectors.auth import get_auth_context_path
+from connectors._shared.common import USER_AGENT
 
 
 DOUYIN_WEAK_TITLE_PATTERNS = [
@@ -77,14 +75,6 @@ def _extract_visible_items(page) -> list[dict[str, Any]]:
     }
     """
     return page.evaluate(js)
-
-
-def _resolve_douyin_source_profile_dir() -> Path:
-    shared_profile_dir = get_auth_context_path("douyin_shared") / "Default"
-    default_profile_dir = CHROME_USER_DATA / "Default"
-    if (shared_profile_dir / "Network" / "Cookies").exists() and (shared_profile_dir / "Preferences").exists():
-        return shared_profile_dir
-    return default_profile_dir
 
 
 def fetch_douyin_favorites(*args, session: SharedRunnerSession | None = None, **kwargs) -> list[dict[str, Any]]:

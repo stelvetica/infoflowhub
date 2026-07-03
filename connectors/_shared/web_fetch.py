@@ -6,7 +6,6 @@ from pathlib import Path
 from apps.subscriptions.models import FeedFetchResult
 from connectors._shared.chrome_runner import SharedRunnerSession
 from connectors._shared.common import (
-    CHROME_USER_DATA,
     USER_AGENT,
     is_transient_fetch_error,
     resolve_web_target,
@@ -16,7 +15,6 @@ from connectors._shared.common import (
 )
 from connectors.alphapai import fetch_alphapai_with_page
 from connectors.alphapai.browser import ALPHAPAI_TARGET_URL
-from connectors.auth import get_auth_context_path
 from connectors.bilibili import fetch_bilibili_dynamic_feed
 from connectors.douyin import fetch_douyin_subscription_with_page
 from connectors.wechat import fetch_wechat_feed
@@ -33,14 +31,6 @@ def _needs_profile_rebuild(result: FeedFetchResult) -> bool:
     if result.status == 401:
         return True
     return "登录态失效" in error_text or "登录" in error_text or "login" in error_text
-
-
-def _resolve_douyin_source_profile_dir() -> Path:
-    shared_profile_dir = get_auth_context_path("douyin_shared") / "Default"
-    default_profile_dir = CHROME_USER_DATA / "Default"
-    if (shared_profile_dir / "Network" / "Cookies").exists() and (shared_profile_dir / "Preferences").exists():
-        return shared_profile_dir
-    return default_profile_dir
 
 
 def _shared_runner_extra_args() -> list[str]:

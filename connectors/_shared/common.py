@@ -66,11 +66,10 @@ def validate_douyin_login_prerequisite(source: dict) -> str:
     feed_url = str(source.get("feed_url") or "").strip().lower()
     if auth_key != "douyin_shared" and "douyin.com/user/" not in site_url and "douyin.com/user/" not in feed_url:
         return ""
+    # 抓取走 SharedRunnerSession 直接挂载 AUTH_PROFILE_DIR，前置检查只认它（同源），
+    # 避免常用 Chrome 登了但 auth profile 没登时误判通过、实际抓取触发风控。
     shared_profile_dir = get_auth_context_path("douyin_shared") / "Default"
-    default_profile_dir = CHROME_USER_DATA / "Default"
     if (shared_profile_dir / "Network" / "Cookies").exists() and (shared_profile_dir / "Preferences").exists():
-        return ""
-    if (default_profile_dir / "Network" / "Cookies").exists() and (default_profile_dir / "Preferences").exists():
         return ""
     return DOUYIN_LOGIN_HINT
 
