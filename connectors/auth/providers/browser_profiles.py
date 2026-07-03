@@ -109,7 +109,14 @@ def validate_youtube_auth() -> dict[str, object]:
 
 
 def validate_alphapai_auth() -> dict[str, object]:
-    """蓝宝书：检查常用 Chrome Default profile 是否登了蓝宝书（copy 来源）。"""
+    """蓝宝书：检查常用 Chrome Default profile 是否登了蓝宝书（copy 来源）。
+
+    Chrome 运行时会排他锁定 Default profile 的 Cookies SQLite（Windows 下连
+    只读/复制都被拒），无法精确校验登录态。但抓取走 CopyRunnerSession 复制
+    profile 副本（抓取前关 Chrome），不受此锁影响，且有 401 失效检测兜底。
+    故 Cookies 读不了时降级为"可用"——profile 存在即视为可用，仅 hint 注明
+    未精确校验；Chrome 关闭后自然恢复精确校验。
+    """
     cookies = _default_chrome_profile_dir() / "Network" / "Cookies"
     if not cookies.exists():
         return {
@@ -127,7 +134,9 @@ def validate_alphapai_auth() -> dict[str, object]:
         ).fetchone()[0]
         conn.close()
     except Exception:
-        return {"is_available": False, "status_level": "warn", "status_text": "无法读取", "hint": "常用 Chrome 占用中，关 Chrome 后重试"}
+        # Chrome 占用 Cookies 锁，无法精确校验。profile 存在即可用：
+        # 抓取走复制副本不受影响，且有 401 失效检测兜底。
+        return {"is_available": True, "status_level": "ok", "status_text": "可用", "hint": "常用 Chrome 运行中，未精确校验登录态；抓取走复制副本，不受影响。"}
     if count <= 0:
         return {
             "is_available": False,
