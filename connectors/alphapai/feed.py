@@ -43,7 +43,9 @@ def _wait_ready(page, timeout_ms: int = 20000) -> bool:
 
 
 def _pick_list_text(page) -> str:
-    best_text = ""
+    # 收集所有含版本关键词的列表容器文本并拼接，避免国内/全球分属不同容器时
+    # 只取最长那个而漏抓另一类（_parse_list_entries 按行解析，_extract_list_entries 去重）。
+    chunks: list[str] = []
     try:
         count = page.locator(LIST_SELECTOR).count()
     except Exception:
@@ -55,9 +57,8 @@ def _pick_list_text(page) -> str:
             continue
         if "午间版" not in text and "晨会版" not in text and "晚间版" not in text and "全球版" not in text:
             continue
-        if len(text) > len(best_text):
-            best_text = text
-    return best_text
+        chunks.append(text)
+    return "\n".join(chunks)
 
 
 def _fetch_last_published(source_id: str) -> str:
@@ -90,6 +91,9 @@ def looks_like_login_page(page) -> bool:
     return any(keyword in body_text for keyword in LOGIN_KEYWORDS)
 
 
+_EXISTING_KEY_RE = re.compile(r"^(国内|全球)蓝宝书\s+(\d{1,2})月(\d{1,2})日(晨会版|午间版|晚间版|全球版)")
+
+
 def _get_existing_keys(source_id: str) -> set[str]:
     db_path = Path(__file__).resolve().parents[2] / "data" / "subscriptions.sqlite3"
     if not db_path.exists():
@@ -100,9 +104,10 @@ def _get_existing_keys(source_id: str) -> set[str]:
         conn.close()
         keys = set()
         for (title,) in rows:
-            parts = clean_line(str(title or "")).split()
-            if len(parts) >= 3:
-                keys.add(f"{parts[0]}_{parts[1]}_{parts[2]}")
+            match = _EXISTING_KEY_RE.match(clean_line(str(title or "")))
+            if match:
+                region, month, day, edition = match.groups()
+                keys.add(f"{region}_{int(month)}月{int(day)}日_{edition}")
         return keys
     except Exception:
         return set()
