@@ -1,50 +1,23 @@
 {
-  "slots": {
-    "daily_0600": {
-      "label": "每日 06:00 订阅+稍后读",
-      "last_started_at": "2026-06-03 06:00:01",
-      "last_run_date": "2026-06-03",
-      "last_status": "success",
-      "last_finished_at": "2026-06-03 06:01:30",
-      "last_error": "",
-      "last_result": {
-        "subscriptions": {
-          "last_run_at": "2026-06-03 06:01:18",
-          "last_success_at": "2026-06-03 06:01:18",
-          "last_error": "",
-          "last_total_sources": 27,
-          "last_success_sources": 27,
-          "last_inserted_entries": 44,
-          "fetch_state": "success",
-          "current_run_started_at": "2026-06-03 06:00:01"
-        },
-        "laterhub": {
-          "fetched_sources": 2,
-          "pending_total": 169,
-          "push_enabled": 0
-        }
-      }
-    }
-  },
-  "last_run_date": "2026-06-15",
-  "last_started_at": "2026-06-15 07:06:08",
+  "last_run_date": "2026-07-06",
+  "last_started_at": "2026-07-06 08:45:09",
   "last_status": "success",
-  "last_finished_at": "2026-06-15 07:09:21",
+  "last_finished_at": "2026-07-06 08:47:12",
   "last_error": "",
   "last_result": {
     "subscriptions": {
-      "last_run_at": "2026-06-15 07:08:32",
-      "last_success_at": "2026-06-12 15:28:48",
-      "last_error": "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint",
-      "last_total_sources": 29,
-      "last_success_sources": 0,
-      "last_inserted_entries": 0,
+      "last_run_at": "2026-07-06 08:46:33",
+      "last_success_at": "2026-06-29 14:41:01",
+      "last_error": "观点 宏观 MacroMargin: auth profile 读取失败 | 技术 阮一峰周刊: HTTP Error 502: Bad Gateway",
+      "last_total_sources": 28,
+      "last_success_sources": 26,
+      "last_inserted_entries": 46,
       "fetch_state": "error",
-      "current_run_started_at": "2026-06-15 07:06:08"
+      "current_run_started_at": "2026-07-06 08:45:09"
     },
     "laterhub": {
       "fetched_sources": 3,
-      "pending_total": 225,
+      "pending_total": 299,
       "push_enabled": 0
     }
   }

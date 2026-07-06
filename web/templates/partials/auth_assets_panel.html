@@ -9,8 +9,8 @@
           <th>站点</th>
           <th>登录方式</th>
           <th>状态</th>
-          <th>说明</th>
           <th>操作</th>
+          <th>说明</th>
         </tr>
       </thead>
       <tbody>
@@ -34,12 +34,6 @@
             <div class="subtle auth-expire-text">到期：{{ item.expire_at_text }}</div>
             {% endif %}
           </td>
-          <td title="{{ item.hint }}">
-            <div>{{ item.description }}</div>
-            {% if item.hint %}
-            <div class="subtle auth-hint-text">{{ item.hint }}</div>
-            {% endif %}
-          </td>
           <td class="auth-actions-cell">
             {% if item.renew_action_url %}
             <form hx-post="{{ item.renew_action_url }}" hx-target="#auth-assets-panel-root" hx-swap="outerHTML">
@@ -51,6 +45,9 @@
             {% elif item.renew_label %}
             <span class="subtle" title="{{ item.hint }}">{{ item.renew_label }}</span>
             {% endif %}
+          </td>
+          <td title="{{ item.hint }}">
+            <div class="auth-desc-text line-clamp-2">{{ item.description }}{% if item.hint %} {{ item.hint }}{% endif %}</div>
           </td>
         </tr>
         {% endfor %}

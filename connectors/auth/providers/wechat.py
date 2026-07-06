@@ -17,6 +17,8 @@ WECHAT_AUTH_PATH = AUTH_DIR / "wechat_mp_main.json"
 LEGACY_WECHAT_AUTH_PATH = RUNTIME_DIR / "wechat_auth.json"
 WEB_LOG_PATH = RUNTIME_DIR / "web.log"
 WECHAT_AUTH_EXPIRE_WINDOW_MS = 24 * 3600 * 1000
+# 续期提醒阈值：以实测两次扫码间隔中位数（约 3 天）为标准，提前提醒用户扫码重登
+WECHAT_REMIND_THRESHOLD_MS = 3 * 24 * 3600 * 1000
 WECHAT_AUTH_INITIAL_EXPIRE_KEY = "initial_expire_time"
 
 
@@ -210,12 +212,15 @@ def get_wechat_status() -> dict[str, Any]:
     expire_time = int(expire_text) if expire_text.isdigit() else 0
     initial_expire_time = int(initial_expire_text) if initial_expire_text.isdigit() else 0
     now_ms = int(time.time() * 1000)
-    # 提醒阈值：按当前实际过期时间提前 1 天
+    # 提醒阈值：以实测两次扫码间隔（约 3 天）为标准，提前提醒续期
     effective_expire_time = expire_time or initial_expire_time
-    one_day_ms = 24 * 60 * 60 * 1000
-    renew_highlight_threshold = effective_expire_time - one_day_ms if effective_expire_time > one_day_ms else 0
+    renew_highlight_threshold = (
+        effective_expire_time - WECHAT_REMIND_THRESHOLD_MS
+        if effective_expire_time > WECHAT_REMIND_THRESHOLD_MS
+        else 0
+    )
     should_highlight_renew = bool(status.get("is_expired")) or (
-        effective_expire_time > 0 and now_ms >= effective_expire_time - one_day_ms
+        effective_expire_time > 0 and now_ms >= effective_expire_time - WECHAT_REMIND_THRESHOLD_MS
     )
     return {
         "has_credentials": bool(_clean_text(credentials.get("token")) and _clean_text(credentials.get("cookie"))),
