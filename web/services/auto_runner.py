@@ -13,9 +13,9 @@ from web.services.views import read_json, write_json
 BASE_DIR = Path(__file__).resolve().parents[2]
 RUNTIME_PATH = BASE_DIR / "runtime" / "health" / "automation_runtime.json"
 
-MORNING_WINDOW_START = 7
-MORNING_WINDOW_END = 8
-CHECK_INTERVAL_SECONDS = 3600
+MORNING_START_HOUR = 8
+MORNING_START_MINUTE = 10
+CHECK_INTERVAL_SECONDS = 600
 
 
 class AutoRunner:
@@ -44,7 +44,6 @@ class AutoRunner:
 
     async def _maybe_run_morning(self) -> None:
         now = datetime.now()
-        hour = now.hour
         today = now.date().isoformat()
 
         state = self._load_state()
@@ -52,10 +51,10 @@ class AutoRunner:
         if last_run_date == today:
             return
 
-        # Catch-up: if today's run was missed (process was down during the
-        # 7-8 window), run as soon as the process is alive again at or after
-        # the window start, so a day is never silently skipped.
-        if hour < MORNING_WINDOW_START:
+        # Catch-up: if today's run was missed (process was down at the
+        # 8:10 start), run as soon as the process is alive again at or after
+        # the start, so a day is never silently skipped.
+        if (now.hour, now.minute) < (MORNING_START_HOUR, MORNING_START_MINUTE):
             return
 
         await self._do_run_morning(now, today)

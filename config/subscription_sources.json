@@ -415,7 +415,7 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "系统Chrome Default Profile登录态，抓取前自动关闭Chrome。每天08:30跑",
+      "note": "系统Chrome Default Profile登录态，CopyRunnerSession复制副本抓取。随每日例行任务8:10跑",
       "channel": "web",
       "auth_key": "alphapai_main",
       "fallback_mode": "none"
