@@ -1,4 +1,5 @@
-# InfoFlowHub 一键启动：Web + Tunnel + Chrome 书签同步到手机
+# InfoFlowHub 一键启动：Web 服务（仅本地）
+# 隧道（cloudflared + Chrome 书签同步）见 start_tunnel.ps1
 $ErrorActionPreference = "Stop"
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
@@ -9,7 +10,6 @@ Set-Location $root
 $port = 18421
 $bindHost = "127.0.0.1"
 $localUrl = "http://${bindHost}:${port}/"
-$cloudflaredExe = Join-Path $scriptDir "cloudflared.exe"
 $logDir = Join-Path $root "runtime"
 $logPath = Join-Path $logDir "web.log"
 
@@ -86,154 +86,13 @@ if (-not $webReady) { throw "Web service failed to start within 45s: $localUrl" 
 Write-Host "[OK] Web service running at $localUrl" -ForegroundColor Green
 
 # ============================================================
-# Phase 3: Tunnel + Chrome bookmark
+# Phase 3: Open browser
 # ============================================================
-Write-Host "=== Phase 3: Tunnel + Chrome bookmark ===" -ForegroundColor Cyan
+Write-Host "=== Phase 3: Open browser ===" -ForegroundColor Cyan
 
-# 3a. Close Chrome to unlock bookmarks DB
-Write-Host "[Step] Closing Chrome..." -ForegroundColor Cyan
-Get-Process -Name "chrome" -ErrorAction SilentlyContinue | Stop-Process -Force
-
-$chromeBookmarks = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Bookmarks"
-$deadline = (Get-Date).AddSeconds(30)
-while ($true) {
-    try {
-        $fs = [System.IO.File]::Open($chromeBookmarks, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
-        $fs.Close()
-        break
-    } catch {
-        if ((Get-Date) -gt $deadline) {
-            Write-Host "[WARN] Chrome bookmarks still locked after 30s, proceeding anyway" -ForegroundColor Yellow
-            break
-        }
-        Start-Sleep -Seconds 3
-    }
-}
-Write-Host "[OK] Chrome closed" -ForegroundColor Green
-
-# 3b. Start cloudflared
-$tunnelUrl = $null
-$cfLog = Join-Path $logDir "cloudflared.log"
-
-if (-not (Test-Path $cloudflaredExe)) {
-    Write-Host "[WARN] cloudflared.exe not found at $cloudflaredExe, skipping tunnel (will use local URL)" -ForegroundColor Yellow
-} else {
-    $maxRetries = 3
-    $retry = 0
-
-    while ($retry -lt $maxRetries -and -not $tunnelUrl) {
-        if ($retry -gt 0) {
-            Write-Host "[Retry $retry/$maxRetries] Restarting cloudflared..." -ForegroundColor Yellow
-            Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 3
-        }
-
-        Remove-Item $cfLog -ErrorAction SilentlyContinue
-        $cfProc = Start-Process -FilePath $cloudflaredExe -ArgumentList "tunnel","--url","http://127.0.0.1:${port}","--no-autoupdate","--protocol","http2","--edge-ip-version","4" -WindowStyle Hidden -PassThru -RedirectStandardError $cfLog
-        Write-Host "[Step] Starting cloudflared tunnel..." -ForegroundColor Cyan
-        $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        while ($sw.Elapsed.TotalSeconds -lt 30) {
-            Start-Sleep -Milliseconds 500
-            if (Test-Path $cfLog) {
-                $content = Get-Content $cfLog -Raw -ErrorAction SilentlyContinue
-                if ($content -match "https://(.+?)\.trycloudflare\.com") {
-                    $tunnelUrl = $matches[0]
-                    break
-                }
-            }
-            if ($cfProc.HasExited) { break }
-        }
-        $retry++
-    }
-
-    if ($tunnelUrl) {
-        # Give tunnel 3s to settle before using it
-        Start-Sleep -Seconds 3
-    }
-}
-
-if (-not $tunnelUrl) {
-    Write-Host "[WARN] Failed to get tunnel URL, skipping bookmark update" -ForegroundColor Yellow
-} else {
-    Write-Host "[OK] Tunnel URL: $tunnelUrl" -ForegroundColor Green
-
-    # 3c. Update Chrome bookmark directly via PowerShell
-    Write-Host "[Step] Updating Chrome bookmark..." -ForegroundColor Cyan
-    $bmPath = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Bookmarks"
-    $tunnelUrlNormalized = $tunnelUrl.TrimEnd("/")
-    try {
-        $bmData = Get-Content $bmPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        function Remove-InfoFlowHubBookmarks {
-            param($node)
-            if ($null -eq $node -or -not $node.children) { return 0 }
-
-            $removedHere = @($node.children | Where-Object {
-                $_.type -eq "url" -and (
-                    $_.name -eq "InfoFlowHub" -or
-                    ($_.url -is [string] -and $_.url -match "^https://[^/]+\.trycloudflare\.com/?$")
-                )
-            }).Count
-
-            $node.children = @($node.children | Where-Object {
-                -not (
-                    $_.type -eq "url" -and (
-                        $_.name -eq "InfoFlowHub" -or
-                        ($_.url -is [string] -and $_.url -match "^https://[^/]+\.trycloudflare\.com/?$")
-                    )
-                )
-            })
-
-            $removedNested = 0
-            foreach ($child in $node.children) {
-                $removedNested += Remove-InfoFlowHubBookmarks $child
-            }
-
-            return ($removedHere + $removedNested)
-        }
-
-        $removedCount = 0
-        $removedCount += Remove-InfoFlowHubBookmarks $bmData.roots.bookmark_bar
-        $removedCount += Remove-InfoFlowHubBookmarks $bmData.roots.other
-        $removedCount += Remove-InfoFlowHubBookmarks $bmData.roots.synced
-        Write-Host "[Step] Removed $removedCount old InfoFlowHub / trycloudflare bookmark(s)" -ForegroundColor DarkGray
-
-        $bar = $bmData.roots.bookmark_bar
-        $newBm = [PSCustomObject]@{
-            date_added = [string]([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() * 1000)
-            date_last_used = "0"
-            guid = "infoflowhub-auto-tunnel-001"
-            id = "9999"
-            meta_info = [PSCustomObject]@{ power_bookmark_meta = "" }
-            name = "InfoFlowHub"
-            type = "url"
-            url = $tunnelUrlNormalized
-        }
-        $bar.children = @($newBm) + $bar.children
-        Write-Host "[OK] Chrome bookmark created" -ForegroundColor Green
-        # Recalculate checksum
-        $bmData.PSObject.Properties.Remove("checksum")
-        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-        $rawBytes = $utf8NoBom.GetBytes(($bmData | ConvertTo-Json -Depth 10 -Compress))
-        $md5 = [System.Security.Cryptography.MD5]::Create()
-        $hash = [BitConverter]::ToString($md5.ComputeHash($rawBytes)).Replace("-", "").ToLower()
-        $bmData | Add-Member -NotePropertyName "checksum" -NotePropertyValue $hash -Force
-        $bmData | ConvertTo-Json -Depth 10 | Set-Content $bmPath -Encoding UTF8
-    } catch {
-        Write-Host "[WARN] Chrome bookmark update failed: $_" -ForegroundColor Yellow
-    }
-}
-
-# ============================================================
-# Phase 4: Open browser
-# ============================================================
-Write-Host "=== Phase 4: Open browser ===" -ForegroundColor Cyan
-
-if ($tunnelUrl) {
-    Start-Process $tunnelUrl | Out-Null
-    Write-Host "[OK] Default browser opened" -ForegroundColor Green
-} else {
-    Start-Process $localUrl | Out-Null
-    Write-Host "[OK] Default browser opened (local URL)" -ForegroundColor Green
-}
+Start-Process $localUrl | Out-Null
+Write-Host "[OK] Default browser opened (local URL)" -ForegroundColor Green
 
 Write-Host "=== All done ===" -ForegroundColor Green
+Write-Host "Local: $localUrl" -ForegroundColor Green
+Write-Host "Need remote access? Run: scripts\start_tunnel.ps1" -ForegroundColor DarkGray
