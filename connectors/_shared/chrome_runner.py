@@ -250,6 +250,8 @@ def _ensure_all_chrome_processes_stopped(timeout_seconds: int = 20) -> bool:
             ["tasklist", "/fi", "imagename eq chrome.exe"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="ignore",
             timeout=10,
         )
         output = (result.stdout or "") + (result.stderr or "")
@@ -305,7 +307,14 @@ def prepare_runner_profile(
     profile_files: tuple[str, ...] = DEFAULT_PROFILE_FILES_TO_COPY,
     profile_dirs: tuple[str, ...] = DEFAULT_PROFILE_DIRS_TO_COPY,
 ) -> None:
-    """将系统 Chrome profile 复制到隔离的 runner 目录。"""
+    """将系统 Chrome profile 复制到隔离的 runner 目录。
+
+    复制源 profile 前必须先关闭 Chrome——源 Network/Cookies 被 Chrome 持锁时
+    任何复制手段（shutil / sqlite3.backup）都会失败。把关 Chrome 下沉到这里，
+    所有调用方（try_prepare / try_rebuild / ensure_debug_browser）自动受保护，
+    不再需要各自记得关 Chrome（懒汉：一处 guard 覆盖全部调用方）。
+    """
+    _stop_chrome_for_profile_copy()
     runner_profile_dir = runner_dir / profile_name
     _remove_runner_dir(runner_dir)
     runner_profile_dir.mkdir(parents=True, exist_ok=True)
@@ -361,7 +370,7 @@ def rebuild_runner_profile(
     profile_files: tuple[str, ...] = DEFAULT_PROFILE_FILES_TO_COPY,
     profile_dirs: tuple[str, ...] = DEFAULT_PROFILE_DIRS_TO_COPY,
 ) -> None:
-    _stop_chrome_for_profile_copy()
+    # 关 Chrome 已下沉到 prepare_runner_profile，此处不再重复
     prepare_runner_profile(
         source_profile_dir,
         runner_dir,
@@ -468,7 +477,6 @@ def ensure_debug_browser(
                 profile_dirs=profile_dirs,
             )
     elif not is_runner_profile_ready(runner_profile_dir):
-        _stop_chrome_for_profile_copy()
         prepare_runner_profile(
             source_profile_dir,
             runner_dir,

@@ -284,9 +284,23 @@ CHROME_USER_DATA = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "Us
 
 
 def is_chrome_running() -> bool:
-    """检测 Chrome 是否正在运行（通过 SingletonLock 文件）"""
-    lock_file = CHROME_USER_DATA / "SingletonLock"
-    return lock_file.exists()
+    """检测 Chrome 是否正在运行。
+
+    双保险：SingletonLock 文件 + 进程检测。新版 Chrome 不一定写 SingletonLock，
+    仅靠文件会误判已关，导致后续复制 profile 时 Cookies 被持锁失败。
+    """
+    if (CHROME_USER_DATA / "SingletonLock").exists():
+        return True
+    try:
+        result = subprocess.run(
+            ["tasklist", "/fi", "imagename eq chrome.exe", "/nh"],
+            capture_output=True, timeout=5,
+        )
+        # tasklist 无匹配时输出 "信息: 没有运行的任务..." ; 有匹配则含 "chrome.exe"
+        out = (result.stdout or b"").decode("utf-8", errors="ignore").lower()
+        return "chrome.exe" in out
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def kill_chrome_gracefully() -> bool:
