@@ -157,16 +157,18 @@ def _copy_path(src: Path, dst: Path) -> bool:
         return False
 
 
-def _copy_sqlite_best_effort(src: Path, dst: Path) -> bool:
+def _copy_sqlite_best_effort(src: Path, dst: Path) -> tuple[bool, str]:
+    """返回 (是否成功, 失败原因)。成功时原因为空串。"""
     if not src.exists():
-        return False
+        return False, f"源文件不存在: {src}"
     dst.parent.mkdir(parents=True, exist_ok=True)
     try:
         shutil.copy2(src, dst)
-        return True
-    except OSError:
-        pass
+        return True, ""
+    except OSError as exc:
+        copy_err = f"shutil.copy2 失败({exc})"
 
+    # 源被持锁时走 sqlite3.backup 兜底（只读句柄绕过文件锁）
     read_uri = f"file:{src.as_posix()}?mode=ro"
     try:
         dest_conn = sqlite3.connect(str(dst))
@@ -174,13 +176,13 @@ def _copy_sqlite_best_effort(src: Path, dst: Path) -> bool:
             src_conn = sqlite3.connect(read_uri, uri=True)
             try:
                 src_conn.backup(dest_conn)
-                return True
+                return True, ""
             finally:
                 src_conn.close()
         finally:
             dest_conn.close()
-    except sqlite3.Error:
-        return False
+    except sqlite3.Error as exc:
+        return False, f"{copy_err}; sqlite3.backup 失败({exc})"
 
 
 def _ensure_minimal_preferences(profile_dir: Path) -> None:
@@ -315,11 +317,16 @@ def prepare_runner_profile(
         raise RuntimeError(f"未找到源 Chrome profile 目录: {source_profile_dir}")
 
     sqlite_files = {"Cookies", "History", "Web Data", "Login Data", "Favicons", "Top Sites"}
+    # 登录态命脉：源存在却复制失败立即抛错（带具体原因），不让上层兜底吞成"未能复制出有效 Cookies"。
+    # 其余 sqlite 失败可降级（best-effort），登录态不靠它们。源不存在视为正常（不同 Chrome 版本路径差异）。
+    critical_sqlite = {"Cookies", "Login Data"}
     for name in profile_files:
         src = source_profile_dir / name
         dst = runner_profile_dir / name
         if name in sqlite_files:
-            _copy_sqlite_best_effort(src, dst)
+            ok, reason = _copy_sqlite_best_effort(src, dst)
+            if not ok and src.exists() and name in critical_sqlite:
+                raise RuntimeError(f"复制关键登录态文件失败 {src}: {reason}")
         else:
             _copy_path(src, dst)
 
@@ -328,7 +335,10 @@ def prepare_runner_profile(
         dst = runner_profile_dir / name
         if name == "Network":
             dst.mkdir(parents=True, exist_ok=True)
-            _copy_sqlite_best_effort(src / "Cookies", dst / "Cookies")
+            src_cookies = src / "Cookies"
+            ok, reason = _copy_sqlite_best_effort(src_cookies, dst / "Cookies")
+            if not ok and src_cookies.exists():
+                raise RuntimeError(f"复制 Network/Cookies 失败 {src_cookies}: {reason}")
         else:
             _copy_path(src, dst)
 
