@@ -11,7 +11,7 @@ import winreg
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 
-from connectors._shared.common import CHROME_USER_DATA, kill_chrome_gracefully
+from connectors._shared.common import CHROME_USER_DATA, is_chrome_running, kill_chrome_gracefully
 
 
 DEFAULT_ROOT_FILES_TO_COPY = ("Local State", "First Run", "Last Version", "Last Browser")
@@ -296,6 +296,25 @@ def _stop_chrome_for_profile_copy() -> None:
     if not _ensure_all_chrome_processes_stopped():
         if not _force_kill_chrome_powershell():
             raise RuntimeError("Chrome 进程未完全退出，无法复制浏览器 profile")
+
+
+def _reopen_user_chrome() -> None:
+    """抓取结束后重开用户常用 Chrome（profile 复制时被关掉的）。
+
+    ponytail: 不带 URL 直接启动，Chrome 会恢复上次会话或显示新标签页。
+    天花板：无法恢复用户抓取前的精确窗口/标签状态；若用户本就无 Chrome
+    在跑（_chrome_was_running=False），不会调用此函数。
+    """
+    try:
+        _, chrome_executable = _resolve_default_browser_executable()
+        subprocess.Popen(
+            [chrome_executable],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        )
+    except Exception:
+        pass
 
 
 def prepare_runner_profile(
@@ -755,10 +774,14 @@ class CopyRunnerSession:
         self._playwright = None
         self._browser = None
         self._started = False
+        # 记录 start 前用户 Chrome 是否在跑：shutdown 时据此决定是否重开
+        self._chrome_was_running = False
 
     def start(self) -> None:
         if self._started:
             return
+        # ensure_debug_browser 可能关掉用户 Chrome 来复制 profile，先记下状态供 shutdown 重开
+        self._chrome_was_running = is_chrome_running()
         ensure_debug_browser(
             self.runner_dir,
             "Default",
@@ -800,10 +823,11 @@ class CopyRunnerSession:
         return page
 
     def restart(self) -> None:
-        self.shutdown()
+        # restart 中途的 shutdown 不重开 Chrome（马上要再 start），否则会跟新 start 抢 profile 锁
+        self.shutdown(_reopen_chrome=False)
         self.start()
 
-    def shutdown(self) -> None:
+    def shutdown(self, *, _reopen_chrome: bool = True) -> None:
         if self._browser is not None:
             try:
                 self._browser.close()
@@ -819,6 +843,10 @@ class CopyRunnerSession:
         if self._started:
             close_debug_browser(self.runner_dir, self.debug_port)
             self._started = False
+        # 抓取前用户 Chrome 在跑、且本次 start 关过它 → 抓取完重开
+        if _reopen_chrome and self._chrome_was_running:
+            _reopen_user_chrome()
+            self._chrome_was_running = False
 
     def __enter__(self):
         self.start()
