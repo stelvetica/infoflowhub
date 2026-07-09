@@ -2,23 +2,24 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 from typing import Any
-
-from playwright.sync_api import sync_playwright
 
 from apps.laterhub.config import DEBUG_DIR
 from connectors._shared.chrome_runner import SharedRunnerSession
 from connectors._shared.common import USER_AGENT
-from connectors.auth import get_auth_context_path
 
 
-XIAOHEIHE_FAVOR_URL = "https://www.xiaoheihe.cn/app/user/favour/content"
-XIAOHEIHE_LOGIN_URL_PREFIX = "https://account.xiaoheihe.cn"
+XIAOHEIHE_HOME_URL = "https://www.xiaoheihe.cn/"
 MESSAGE_PREFIX = "[小黑盒]"
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 DEBUG_JSON_PATH = DEBUG_DIR / "tmp_pw_xiaoheihe_favorites.json"
+
+# 收藏夹 API（PC 网页版收藏夹页面已下线，但此 API 仍可用）。
+# 经抓包确认：GET /bbs/app/favour/list，翻页用 offset+limit，total_page 表总页数。
+FAVOUR_API_PATH = "/bbs/app/favour/list"
+FAVOUR_PAGE_SIZE = 20
+FAVOUR_MAX_PAGES = 50  # 安全上限，防异常死循环
 
 
 def _log(msg: str) -> None:
@@ -26,15 +27,14 @@ def _log(msg: str) -> None:
 
 
 def normalize_xiaoheihe_item(item: dict[str, Any]) -> dict[str, Any] | None:
-    url = (item.get("url") or "").strip().split("?")[0]
+    # API 返回字段为 linkid（非 link_id），无 url 需自拼
+    link_id = str(item.get("linkid") or item.get("link_id") or "").strip()
     raw_title = (item.get("title") or "").strip()
-    link_id = (item.get("link_id") or "").strip()
 
-    if not url or not link_id:
-        return None
-    if not url.startswith("https://www.xiaoheihe.cn/app/bbs/"):
+    if not link_id:
         return None
 
+    url = f"https://www.xiaoheihe.cn/app/bbs/link/{link_id}"
     title = re.sub(r"\s+", " ", raw_title).strip()
     if not title:
         title = f"小黑盒帖子_{link_id[:8]}"
@@ -51,137 +51,78 @@ def normalize_xiaoheihe_item(item: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _extract_visible_items(page, *, scroll_times: int = 8, scroll_pause_ms: int = 2000) -> list[dict[str, Any]]:
-    for i in range(scroll_times):
-        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        page.wait_for_timeout(scroll_pause_ms)
+def _fetch_favour_via_api(page) -> list[dict[str, Any]]:
+    """用小黑盒前端 $hbRequest 拿到合法签名，再手动 fetch 翻页拉全量收藏。
 
-    js = r"""
-    () => {
-      const results = [];
-      const seen = new Set();
-      const anchors = Array.from(document.querySelectorAll('a[href*="/app/bbs/"]'));
-      for (const a of anchors) {
-        const href = (a.href || '').split('?')[0];
-        const match = href.match(/\/app\/bbs\/(link|detail)\/(\w+)/);
-        if (!match) continue;
-        const linkId = match[2];
-        if (seen.has(linkId)) continue;
-        seen.add(linkId);
-
-        let title = '';
-        const card = a.closest('[class*="card"]')
-                  || a.closest('[class*="item"]')
-                  || a.closest('[class*="post"]')
-                  || a.closest('[class*="feed"]')
-                  || a.closest('li')
-                  || a.closest('article')
-                  || a.parentElement;
-        if (card) {
-          const titleEl = card.querySelector(
-            '[class*="title"], h1, h2, h3, h4, h5, h6, .content-title, .feed-title, .post-title, [class*="subject"]'
-          );
-          if (titleEl) {
-            title = (titleEl.textContent || '').trim();
-          }
-        }
-        if (!title) {
-          const text = (a.textContent || '').trim();
-          if (text.length < 200) {
-            title = text;
-          }
-        }
-        if (!title) title = '';
-
-        results.push({
-          link_id: linkId,
-          url: 'https://www.xiaoheihe.cn/app/bbs/link/' + linkId,
-          title: title.slice(0, 200),
-          raw_text: card ? (card.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 1000) : '',
-        });
-      }
-      return results;
-    }
+    $hbRequest 自动算 hkey 签名但吞没 query 参数（page/offset 均不进 URL），
+    故先用它发首请求拿 hkey/nonce/_time/heybox_id，再手动 fetch 带 offset 翻页。
+    hkey 可在一次会话内复用（已抓包验证）。翻页靠 offset（page 无效）。
     """
-    return page.evaluate(js)
+    # Step 1: $hbRequest 发首请求，拦截实际 URL 提取签名参数
+    sign_params: dict[str, str] = {}
 
+    def _capture(request):
+        if "favour/list" in request.url and not sign_params:
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(request.url).query)
+            sign_params.update({k: v[0] for k, v in qs.items()})
 
-def _extract_items_via_api(page, *, timeout_ms: int = 60000) -> list[dict[str, Any]] | None:
-    """Try to intercept the favorites API response after page load."""
-    api_responses: list[dict[str, Any]] = []
+    page.on("request", _capture)
+    page.evaluate(r"""
+        async (apiPath) => {
+            const app = document.querySelector('#app');
+            const req = app.__vue_app__.config.globalProperties.$hbRequest;
+            const resp = await req(apiPath, {}, {method: "GET"});
+            return (resp.data || resp).status;
+        }
+    """, FAVOUR_API_PATH)
+    page.wait_for_timeout(1500)
+    if not sign_params:
+        raise RuntimeError("未能从 $hbRequest 拦截到签名参数，前端封装可能已变更")
+    page.remove_listener("request", _capture)
 
-    def capture(response):
-        url = response.url
-        if "api.xiaoheihe.cn" in url and "favour" in url.lower():
-            try:
-                body = response.json()
-                api_responses.append({"url": url, "body": body})
-            except Exception:
-                pass
-
-    page.on("response", capture)
-
-    try:
-        page.goto(XIAOHEIHE_FAVOR_URL, wait_until="networkidle", timeout=timeout_ms)
-    except Exception:
-        _log("首次导航超时，可能跳转登录页，等待登录后自动跳转...")
-
-    page.wait_for_timeout(3000)
-
-    if not api_responses:
-        return None
-
-    items: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for resp in api_responses:
-        body = resp["body"]
-        result = body.get("result") or body.get("data") or body
-        if isinstance(result, dict):
-            candidates = result.get("links") or result.get("list") or result.get("items") or [result]
-        elif isinstance(result, list):
-            candidates = result
-        else:
-            continue
-        for entry in candidates:
-            if not isinstance(entry, dict):
-                continue
-            link_id = (
-                entry.get("link_id")
-                or entry.get("linkid")
-                or entry.get("id")
-                or entry.get("object_id")
-                or ""
-            )
-            link_id = str(link_id).strip()
-            if not link_id or link_id in seen:
-                continue
-            seen.add(link_id)
-            title = str(entry.get("title") or entry.get("content_title") or entry.get("name") or "").strip()
-            url = f"https://www.xiaoheihe.cn/app/bbs/link/{link_id}"
-            items.append({
-                "link_id": link_id,
-                "url": url,
-                "title": title[:200] if title else f"小黑盒帖子_{link_id[:8]}",
-                "raw_text": "",
-            })
-    return items if items else None
-
-
-def _wait_until_favour_loaded(page, *, max_wait_ms: int = 20000, check_interval_ms: int = 2000) -> bool:
-    """Wait for the favourites page to load (rely on copied login state)."""
-    start = page.evaluate("Date.now()")
-    _log("等待收藏页加载…")
-    while page.evaluate("Date.now()") - start < max_wait_ms:
-        current_url = page.url
-        if "favour/content" in current_url or "favour" in current_url:
-            page.wait_for_timeout(check_interval_ms)
-            # Verify page actually rendered content (not just a blank SPA frame)
-            link_count: int = page.evaluate("document.querySelectorAll('a[href*=\"/app/bbs/\"]').length")
-            if link_count > 0:
-                _log(f"收藏页已加载，检测到 {link_count} 个帖子链接")
-                return True
-        page.wait_for_timeout(check_interval_ms)
-    return False
+    # Step 2: 手动 fetch 带 offset 翻页
+    js = r"""
+        async (argsJson) => {
+            const args = JSON.parse(argsJson);
+            const base = "https://api.xiaoheihe.cn" + args.apiPath;
+            const all = [];
+            let totalPage = 1;
+            for (let i = 0; i < args.maxPages; i++) {
+                const u = new URL(base);
+                for (const [k, v] of Object.entries(args.sign)) u.searchParams.set(k, v);
+                u.searchParams.set("limit", String(args.pageSize));
+                u.searchParams.set("offset", String(i * args.pageSize));
+                const resp = await fetch(u.toString(), {credentials: "include"});
+                const data = await resp.json();
+                if (i === 0) {
+                    if (data.status !== "ok") {
+                        return {error: "api status=" + data.status + " msg=" + (data.msg || "")};
+                    }
+                    totalPage = data.total_page || 1;
+                }
+                const items = data.result || [];
+                if (items.length === 0) break;
+                for (const it of items) {
+                    all.push({linkid: it.linkid, title: it.title || "", is_favour: it.is_favor || it.is_favour});
+                }
+                if (i + 1 >= totalPage) break;
+            }
+            return {total_page: totalPage, count: all.length, items: all};
+        }
+    """
+    import json as _json
+    result = page.evaluate(js, _json.dumps({
+        "apiPath": FAVOUR_API_PATH,
+        "sign": sign_params,
+        "pageSize": FAVOUR_PAGE_SIZE,
+        "maxPages": FAVOUR_MAX_PAGES,
+    }))
+    if isinstance(result, dict) and result.get("error"):
+        raise RuntimeError(f"收藏 API 调用失败: {result['error']}")
+    items = result.get("items", []) if isinstance(result, dict) else []
+    _log(f"API 翻页完成，total_page={result.get('total_page')} 获取 {len(items)} 条")
+    return items
 
 
 def fetch_xiaoheihe_favorites(
@@ -201,21 +142,29 @@ def fetch_xiaoheihe_favorites(
     try:
         page = session.acquire_page()
 
-        # Step 1: Navigate with API interception
-        api_items = _extract_items_via_api(page)
+        # 导航到首页激活登录态 cookie（收藏夹页面已下线，直接走 API）
+        try:
+            page.goto(XIAOHEIHE_HOME_URL, wait_until="domcontentloaded", timeout=60000)
+        except Exception as exc:
+            raise RuntimeError(f"导航小黑盒首页失败: {exc}") from exc
+        page.wait_for_timeout(4000)
 
-        if api_items:
-            items = api_items
-            _log(f"API 拦截抓取成功，获取 {len(items)} 条")
-        else:
-            # Step 2: Wait for favorites page to load (rely on copied login state)
-            loaded = _wait_until_favour_loaded(page, max_wait_ms=20000)
-            if not loaded:
-                _log("等待超时，尝试当前页面提取…")
+        # 校验登录态：restore_login 必须返回 ok
+        login_ok = page.evaluate(r"""
+        async () => {
+            try {
+                const app = document.querySelector('#app');
+                const req = app.__vue_app__.config.globalProperties.$hbRequest;
+                const resp = await req("/account/restore_login", {}, {method: "GET"});
+                const data = resp.data || resp;
+                return data.status === "ok";
+            } catch(e) { return false; }
+        }
+        """)
+        if not login_ok:
+            raise RuntimeError("小黑盒登录态失效（restore_login 未返回 ok），请运行 login_profiles.py xiaoheihe 重新登录")
 
-            # Step 3: DOM extraction
-            items = _extract_visible_items(page, scroll_times=8, scroll_pause_ms=2000)
-            _log(f"DOM 提取完成，原始 {len(items)} 条")
+        items = _fetch_favour_via_api(page)
 
         DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         DEBUG_JSON_PATH.write_text(
@@ -243,5 +192,3 @@ def fetch_xiaoheihe_favorites(
         seen.add(url)
         result.append(normalized)
     return result
-
-

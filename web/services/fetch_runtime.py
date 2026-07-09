@@ -25,9 +25,7 @@ def fetch_now(session=None) -> dict:
 
 
 def fetch_laterhub_now(session=None) -> dict[str, int]:
-    # 小黑盒收藏：PC 网页版收藏夹功能已下线，登录态也无法校验，暂停抓取。
-    # 待 App 端收藏 API 调通后再恢复 fetch_xiaoheihe=True。
-    result = run_main_flow(fetch_bilibili=True, fetch_douyin=True, fetch_xiaoheihe=False, retry_failed=False, session=session)
+    result = run_main_flow(fetch_bilibili=True, fetch_douyin=True, fetch_xiaoheihe=True, retry_failed=False, session=session)
     return {
         "fetched_sources": result.fetched_sources,
         "pending_total": result.pending_total,
