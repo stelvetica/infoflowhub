@@ -1,4 +1,6 @@
 from connectors.auth.providers.bilibili import (
+    BILIBILI_AUTH_PATH,
+    export_bilibili_cookie_from_chrome,
     get_bilibili_cookie,
     get_bilibili_headers,
     validate_bilibili_auth,
@@ -25,7 +27,9 @@ from connectors.auth.providers.wechat import (
 __all__ = [
     "ALPHAPAI_RUNNER_DIR",
     "AUTH_PROFILE_DIR",
+    "BILIBILI_AUTH_PATH",
     "WECHAT_AUTH_PATH",
+    "export_bilibili_cookie_from_chrome",
     "get_bilibili_cookie",
     "get_bilibili_headers",
     "get_context_path",

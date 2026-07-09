@@ -20,6 +20,7 @@ class AuthDescriptor:
     is_expiring_soon: bool = False
     remaining_hours: int = -1
     login_method: str = ""
+    nickname: str = ""
 
 
 @dataclass(frozen=True, slots=True)

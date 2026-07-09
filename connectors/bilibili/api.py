@@ -53,6 +53,8 @@ class BilibiliWatchLaterFetcher:
         self.config = config
         self.timeout = timeout
         self.session = requests.Session()
+        # B站是国内站点，绕过系统代理（避免 127.0.0.1:7892 等本地代理未开时 ProxyError）
+        self.session.trust_env = False
         self.session.headers.update(
             {
                 "User-Agent": (
@@ -127,6 +129,7 @@ class BilibiliApiSession:
         self.config = config
         self.timeout = timeout
         self.session = requests.Session()
+        self.session.trust_env = False  # 同 BilibiliWatchLaterFetcher，绕过系统代理
         self.session.headers.update(
             {
                 "User-Agent": (

@@ -27,7 +27,7 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         renew_strategy="scan_qr",
         display_name="抖音",
         description="订阅抖音主页 + laterhub 抖音收藏共用。",
-        login_method="独立登录扫码",
+        login_method="扫码登录(共享Profile)",
         renew_label="运行 login_profiles.py douyin",
     ),
     "x_profile2": AuthRegistration(
@@ -38,7 +38,7 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         renew_strategy="scan_qr",
         display_name="X (Twitter)",
         description="订阅 MacroMargin 时间线。",
-        login_method="独立登录扫码",
+        login_method="扫码登录(共享Profile)",
         renew_label="运行 login_profiles.py x",
     ),
     "xiaoheihe_shared": AuthRegistration(
@@ -49,7 +49,7 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         renew_strategy="scan_qr",
         display_name="小黑盒",
         description="laterhub 小黑盒收藏。",
-        login_method="独立登录扫码",
+        login_method="扫码登录(共享Profile)",
         renew_label="运行 login_profiles.py xiaoheihe",
     ),
     "youtube_main": AuthRegistration(
@@ -60,7 +60,7 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         renew_strategy="scan_qr",
         display_name="YouTube",
         description="订阅 YouTube 频道（公开内容可不登录）。",
-        login_method="独立登录扫码",
+        login_method="扫码登录(共享Profile)",
         renew_label="运行 login_profiles.py youtube",
     ),
     # 方式2：copy profile（蓝宝书单设备限制，复制常用 Chrome 登录态）
@@ -72,20 +72,20 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         renew_strategy="copy_default_profile",
         display_name="蓝宝书",
         description="单设备登录限制，复制常用 Chrome 登录态，抓取前关 Chrome。",
-        login_method="复制常用浏览器",
+        login_method="复制常用Chrome(单设备限制)",
         renew_label="在常用 Chrome 登录蓝宝书",
     ),
-    # 方式3：cookie 手动填 .env
+    # 方式3：扫码登录共享 profile（B站 cookie v20 加密无法复制本机 Chrome，走扫码）
     "bilibili_main": AuthRegistration(
         auth_key="bilibili_main",
         platform="bilibili",
-        auth_mode="cookie_session",
-        storage_ref=".env:BILIBILI_COOKIE/SESSDATA",
-        renew_strategy="manual_cookie_refresh",
+        auth_mode="browser_profile",
+        storage_ref="共享 auth profile -> bilibili_main.json",
+        renew_strategy="scan_qr_sync",
         display_name="B站",
         description="订阅 B站动态 + laterhub 稍后看共用。",
-        login_method="手动填 .env cookie",
-        renew_label="编辑 .env 配置 BILIBILI_SESSDATA",
+        login_method="扫码登录(共享Profile)",
+        renew_label="运行 login_profiles.py bilibili 后点同步",
     ),
     # 方式4：扫码公众号
     "wechat_mp_main": AuthRegistration(
@@ -96,7 +96,7 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         renew_strategy="scan_qr",
         display_name="微信公众号",
         description="9 个公众号文章抓取共用。",
-        login_method="扫码公众号后台",
+        login_method="扫码登录(公众号后台)",
         renew_label="重新扫码",
     ),
 }
@@ -143,6 +143,7 @@ def validate_auth(auth_key: str) -> AuthDescriptor:
         is_expiring_soon=bool(status.get("is_expiring_soon")),
         remaining_hours=int(status.get("remaining_hours", -1) or -1),
         login_method=registration.login_method,
+        nickname=str(status.get("nickname") or ""),
     )
 
 

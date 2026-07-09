@@ -30,6 +30,7 @@ SITES = {
     "xiaoheihe": "https://www.xiaoheihe.cn/",
     "x": "https://x.com/",
     "youtube": "https://www.youtube.com/",
+    "bilibili": "https://www.bilibili.com/",
     "alphapai": "https://alphapai-web.rabyte.cn/reading/home/market-report/detail",
 }
 

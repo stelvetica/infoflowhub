@@ -822,15 +822,25 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         action_label = "重新扫码" if descriptor.auth_key == "wechat_mp_main" else "查看说明"
         renew_action_url = ""
         renew_action_label = ""
+        is_expired = False
+        is_expiring_soon = False
+        nickname = normalize_utf8_text(descriptor.nickname)
         if descriptor.auth_key == "wechat_mp_main":
             expire_summary = str(wechat_auth.get("remaining_text") or "")
             expire_at_text = str(wechat_auth.get("expire_time_text") or "")
-            if wechat_auth.get("is_expired"):
+            is_expired = bool(wechat_auth.get("is_expired"))
+            is_expiring_soon = bool(wechat_auth.get("is_expiring_soon"))
+            nickname = normalize_utf8_text(wechat_auth.get("nickname"))
+            if is_expired:
                 hint = "本地认证文件中的公众号登录态已过期，请点击重新扫码。"
-            elif wechat_auth.get("is_expiring_soon"):
+            elif is_expiring_soon:
                 hint = f"距离过期还剩 {expire_summary}，建议重新扫码。"
             elif expire_at_text:
                 hint = f"当前登录态可用，预计到期时间 {expire_at_text}。"
+        elif descriptor.auth_key == "bilibili_main":
+            renew_action_url = "/actions/bilibili-login/sync"
+            renew_action_label = "同步登录态"
+            is_expired = bool(descriptor.is_expired)
         row = {
             "auth_key": descriptor.auth_key,
             "display_name": normalize_utf8_text(descriptor.display_name),
@@ -850,9 +860,9 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             "renew_action_label": renew_action_label,
             "expire_summary": expire_summary,
             "expire_at_text": expire_at_text,
-            "is_expired": bool(wechat_auth.get("is_expired")) if descriptor.auth_key == "wechat_mp_main" else False,
-            "is_expiring_soon": bool(wechat_auth.get("is_expiring_soon")) if descriptor.auth_key == "wechat_mp_main" else False,
-            "nickname": normalize_utf8_text(wechat_auth.get("nickname")) if descriptor.auth_key == "wechat_mp_main" else "",
+            "is_expired": is_expired,
+            "is_expiring_soon": is_expiring_soon,
+            "nickname": nickname,
         }
         auth_assets.append(row)
 
