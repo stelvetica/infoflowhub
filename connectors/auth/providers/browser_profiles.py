@@ -57,8 +57,18 @@ def _validate_profile_dir(base_dir: Path, requirement: str, hint: str) -> dict[s
     }
 
 
-def _validate_auth_profile_cookie(host_keyword: str, label: str) -> dict[str, object]:
-    """检查共享 auth profile 里是否含某域名 cookie（判断是否已登录该站点）。"""
+def _validate_auth_profile_cookie(
+    host_keyword: str,
+    label: str,
+    *,
+    required_cookies: tuple[str, ...] = (),
+) -> dict[str, object]:
+    """检查共享 auth profile 里是否含某域名 cookie（判断是否已登录该站点）。
+
+    required_cookies 非空时，要求这些 cookie 名（任一存在即可）在匹配域名下
+    存在才算已登录--避免被追踪/指纹类 cookie（GA、百度统计、设备指纹等）
+    蒙混。留空则退化为"按域名 cookie 计数 > 0"的旧逻辑（向后兼容）。
+    """
     cookies = AUTH_PROFILE_DIR / "Default" / "Network" / "Cookies"
     if not cookies.exists():
         return {
@@ -71,13 +81,20 @@ def _validate_auth_profile_cookie(host_keyword: str, label: str) -> dict[str, ob
         import sqlite3
 
         conn = sqlite3.connect(str(cookies))
-        count = conn.execute(
-            "SELECT COUNT(*) FROM cookies WHERE host_key LIKE ?", (f"%{host_keyword}%",)
-        ).fetchone()[0]
+        if required_cookies:
+            placeholders = ", ".join("?" for _ in required_cookies)
+            auth_count = conn.execute(
+                f"SELECT COUNT(*) FROM cookies WHERE host_key LIKE ? AND name IN ({placeholders})",
+                (f"%{host_keyword}%", *required_cookies),
+            ).fetchone()[0]
+        else:
+            auth_count = conn.execute(
+                "SELECT COUNT(*) FROM cookies WHERE host_key LIKE ?", (f"%{host_keyword}%",)
+            ).fetchone()[0]
         conn.close()
     except Exception:
         return {"is_available": False, "status_level": "warn", "status_text": "无法读取", "hint": "auth profile 读取失败"}
-    if count <= 0:
+    if auth_count <= 0:
         return {
             "is_available": False,
             "status_level": "warn",
@@ -101,7 +118,10 @@ def validate_x_auth() -> dict[str, object]:
 
 
 def validate_xiaoheihe_auth() -> dict[str, object]:
-    return _validate_auth_profile_cookie("xiaoheihe", "xiaoheihe")
+    # heybox_id 是小黑盒前端判断 isLogin 的唯一标识 cookie（app.js:
+    # if(userinfo.heybox_id) isLogin=true; else 读 cookie heybox_id）。
+    # 按域名计数会被 GA/百度统计/设备指纹等追踪 cookie 蒙混，必须精确校验。
+    return _validate_auth_profile_cookie("xiaoheihe", "xiaoheihe", required_cookies=("heybox_id",))
 
 
 def validate_youtube_auth() -> dict[str, object]:
