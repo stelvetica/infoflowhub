@@ -123,6 +123,10 @@ def resolve_web_target(source: dict) -> WebSourceTarget | None:
             uid="market-report",
             page_url="https://alphapai-web.rabyte.cn/reading/home/market-report/detail",
         )
+    match = re.search(r"jiuyangongshe\.com/u/([A-Za-z0-9]+)", site_url)
+    if match:
+        uid = match.group(1)
+        return WebSourceTarget(site="jiuyangongshe", uid=uid, page_url=f"https://www.jiuyangongshe.com/u/{uid}")
     return None
 
 

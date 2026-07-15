@@ -78,12 +78,28 @@ def write_json(path: Path, value: Any) -> None:
     dump_json_utf8(path, value)
 
 
-def read_log_tail(path: Path, max_lines: int = 80) -> str:
+def read_log_tail(
+    path: Path,
+    max_lines: int = 80,
+    last_run_only: bool = False,
+    run_start_marker: str = "[1/6] 初始化 laterhub",
+) -> str:
     try:
         lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
     except Exception:
         return ""
-    tail = [normalize_utf8_text(line) for line in lines[-max_lines:] if line.strip()]
+    if last_run_only:
+        # ponytail: 仅取最近一次运行；以固定起始行切片，省去结构化日志头
+        start = 0
+        for idx in range(len(lines) - 1, -1, -1):
+            if run_start_marker in lines[idx]:
+                start = idx
+                break
+        # 新的在上：倒序输出该次运行
+        picked = [lines[idx] for idx in range(len(lines) - 1, start - 1, -1)]
+    else:
+        picked = lines[-max_lines:]
+    tail = [normalize_utf8_text(line) for line in picked if line.strip()]
     return "\n".join(tail)
 
 
@@ -182,7 +198,7 @@ def infer_source_meta(feed_url: str, site_url: str) -> tuple[str, str, str]:
     combined = f"{feed} {site}"
     if "wechat://mp/" in combined or "mp.weixin.qq.com" in combined:
         return ("web", "wechat-api", "web")
-    if any(host in combined for host in ("bilibili.com", "x.com", "twitter.com", "douyin.com", "youtube.com", "youtu.be")):
+    if any(host in combined for host in ("bilibili.com", "x.com", "twitter.com", "douyin.com", "youtube.com", "youtu.be", "jiuyangongshe.com")):
         return ("web", "web", "web")
     if "rsshub" in feed:
         return ("rsshub", "rsshub-self-hosted", "rsshub")
@@ -802,7 +818,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     status["last_error"] = last_error
     error_timestamp = str(status.get("last_run_at") or status.get("current_run_started_at") or "")
     status["error_log_text"] = f"{error_timestamp} {last_error}".strip() if last_error else ""
-    laterhub_log_text = read_log_tail(LATERHUB_LOG_PATH)
+    laterhub_log_text = read_log_tail(LATERHUB_LOG_PATH, last_run_only=True)
     summary = get_laterhub_summary()
     laterhub_sources = get_laterhub_source_stats()
     stats = {item["source_id"]: item for item in list_source_stats()}

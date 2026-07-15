@@ -134,6 +134,7 @@ def source_channel_label(feed_url: str, site_url: str, provider: str) -> str:
             "wechat": "微信公众号",
             "x": "X",
             "douyin": "抖音",
+            "jiuyangongshe": "韭研公社",
         }
         return mapping.get(target.site, target.site.upper())
     feed = normalize_text(feed_url)
