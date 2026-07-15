@@ -128,6 +128,16 @@ def validate_youtube_auth() -> dict[str, object]:
     return _validate_auth_profile_cookie("youtube", "youtube")
 
 
+def validate_jiuyangongshe_auth() -> dict[str, object]:
+    """韭研公社：用户主页 SSR 渲染，未登录即可抓取，无需登录态资产。"""
+    return {
+        "is_available": True,
+        "status_level": "ok",
+        "status_text": "无需登录",
+        "hint": "用户主页公开可读，纯 HTTP 抓取，无需登录态。",
+    }
+
+
 def validate_alphapai_auth() -> dict[str, object]:
     """蓝宝书：检查常用 Chrome Default profile 是否登了蓝宝书（copy 来源）。
 

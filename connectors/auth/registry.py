@@ -11,6 +11,7 @@ from connectors.auth.providers import (
     validate_alphapai_auth,
     validate_bilibili_auth,
     validate_douyin_auth,
+    validate_jiuyangongshe_auth,
     validate_x_auth,
     validate_xiaoheihe_auth,
     validate_youtube_auth,
@@ -62,6 +63,17 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         description="订阅 YouTube 频道（公开内容可不登录）。",
         login_method="扫码登录(共享Profile)",
         renew_label="运行 login_profiles.py youtube",
+    ),
+    "jiuyangongshe_main": AuthRegistration(
+        auth_key="jiuyangongshe_main",
+        platform="jiuyangongshe",
+        auth_mode="none",
+        storage_ref="无需登录态",
+        renew_strategy="none",
+        display_name="韭研公社",
+        description="用户主页公开可读，纯 HTTP 抓取，无需登录态。",
+        login_method="无需登录",
+        renew_label="",
     ),
     # 方式2：copy profile（蓝宝书单设备限制，复制常用 Chrome 登录态）
     "alphapai_main": AuthRegistration(
@@ -125,6 +137,8 @@ def validate_auth(auth_key: str) -> AuthDescriptor:
         status = validate_alphapai_auth()
     elif auth_key == "youtube_main":
         status = validate_youtube_auth()
+    elif auth_key == "jiuyangongshe_main":
+        status = validate_jiuyangongshe_auth()
     else:
         status = {"is_available": False, "status_level": "warn", "status_text": "未知", "hint": ""}
     return AuthDescriptor(

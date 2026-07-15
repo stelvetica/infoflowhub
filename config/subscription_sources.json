@@ -407,7 +407,7 @@
     },
     {
       "id": "alphapai",
-      "name": "新闻 Alpha派蓝宝书",
+      "name": "资讯 Alpha派蓝宝书",
       "group": "投研",
       "feed_url": "https://alphapai-web.rabyte.cn/reading/home/market-report/detail",
       "site_url": "https://alphapai-web.rabyte.cn/reading/home/market-report/detail",
@@ -422,7 +422,7 @@
     },
     {
       "id": "jiuyangongshe_jiujiubashiyi",
-      "name": "韭研公社-韭韭八十一",
+      "name": "资讯 韭韭八十一",
       "group": "投研",
       "feed_url": "https://www.jiuyangongshe.com/u/13da545295e349fc9eb89811b1265b31",
       "site_url": "https://www.jiuyangongshe.com/u/13da545295e349fc9eb89811b1265b31",
@@ -432,12 +432,12 @@
       "enabled": true,
       "note": "韭研公社用户主页，纯HTTP抓取，无需登录态",
       "channel": "jiuyangongshe",
-      "auth_key": "",
+      "auth_key": "jiuyangongshe_main",
       "fallback_mode": "none"
     },
     {
       "id": "jiuyangongshe_jiucaituanzi",
-      "name": "韭研公社-韭菜团子",
+      "name": "资讯 韭菜团子",
       "group": "投研",
       "feed_url": "https://www.jiuyangongshe.com/u/1",
       "site_url": "https://www.jiuyangongshe.com/u/1",
@@ -447,7 +447,7 @@
       "enabled": true,
       "note": "韭研公社用户主页，纯HTTP抓取，无需登录态",
       "channel": "jiuyangongshe",
-      "auth_key": "",
+      "auth_key": "jiuyangongshe_main",
       "fallback_mode": "none"
     }
   ]

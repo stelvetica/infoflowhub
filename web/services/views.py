@@ -170,6 +170,8 @@ def default_auth_key(channel: str, site_url: str, feed_url: str = "") -> str:
         return "x_profile2"
     if channel == "douyin":
         return "douyin_shared"
+    if channel == "jiuyangongshe":
+        return "jiuyangongshe_main"
     return ""
 
 
