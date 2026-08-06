@@ -14,6 +14,7 @@ __pycache__/
 
 data/*.sqlite3
 data/*.db
+data/*.sqlite3.bak
 data/alphapai_markdown/
 runtime/browser_profiles/
 runtime/python-portable/
@@ -22,7 +23,14 @@ runtime/debug/
 runtime/logs/
 runtime/health/*.json
 !runtime/health/*.example.json
+runtime/auth/
+runtime/wechat_auth.json
+runtime/tmp_chrome_probe.mjs
 web/__pycache__/
+
+# 调试 / 会话产物，不入库
+.playwright-mcp/
+.zcode/plans/
 
 .pytest_cache/
 .mypy_cache/

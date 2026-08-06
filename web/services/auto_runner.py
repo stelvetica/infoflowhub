@@ -69,7 +69,6 @@ class AutoRunner:
             if str(state.get("last_run_date") or "") == today:
                 return
 
-            state["last_run_date"] = today
             state["last_started_at"] = self._format_dt(refreshed)
             state["last_status"] = "running"
             self._save_state(state)
@@ -88,6 +87,7 @@ class AutoRunner:
                 return
 
             state = self._load_state()
+            state["last_run_date"] = today
             state["last_status"] = "success"
             state["last_finished_at"] = self._format_dt(datetime.now())
             state["last_error"] = ""

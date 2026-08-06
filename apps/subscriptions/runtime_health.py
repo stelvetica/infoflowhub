@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,10 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 RUNTIME_DIR = BASE_DIR / "runtime"
 HEALTH_PATH = RUNTIME_DIR / "health" / "subscriptions_source_health.json"
 STATUS_PATH = RUNTIME_DIR / "health" / "subscriptions_status.json"
+
+# 进程级抓取互斥锁：定时任务（auto_runner）与手动“立即抓取”共享同一进程，
+# 防止并发跑全源抓取互相覆盖订阅状态文件。
+FETCH_LOCK = threading.RLock()
 
 
 @dataclass
@@ -129,49 +134,50 @@ def run_source_fetch(
 
     outcome = FetchRunOutcome()
     total_sources = len(sources)
-    try:
-        results = fetch_many(sources, settings=settings, timeout=timeout, session=session)
-        outcome.results = results
-        for result in results:
-            update_source_health(result)
-            if not result.ok:
-                issue_text = f"{normalize_utf8_text(result.source_name)}: {normalize_utf8_text(result.error or result.status)}"
-                if is_expected_login_requirement_error(result.error or ""):
-                    outcome.warnings.append(issue_text)
+    with FETCH_LOCK:
+        try:
+            results = fetch_many(sources, settings=settings, timeout=timeout, session=session)
+            outcome.results = results
+            for result in results:
+                update_source_health(result)
+                if not result.ok:
+                    issue_text = f"{normalize_utf8_text(result.source_name)}: {normalize_utf8_text(result.error or result.status)}"
+                    if is_expected_login_requirement_error(result.error or ""):
+                        outcome.warnings.append(issue_text)
+                        continue
+                    outcome.failures.append(issue_text)
                     continue
-                outcome.failures.append(issue_text)
-                continue
-            outcome.success_sources += 1
-            inserted = save_entries(result.entries)
-            outcome.inserted_total += inserted
-            outcome.inserted_by_source[result.source_id] = inserted
+                outcome.success_sources += 1
+                inserted = save_entries(result.entries)
+                outcome.inserted_total += inserted
+                outcome.inserted_by_source[result.source_id] = inserted
 
-        status = load_status()
-        run_success = is_successful_run(outcome.success_sources, len(outcome.failures))
-        status["fetch_state"] = "success" if run_success else "error"
-        status["last_run_at"] = now_text()
-        status["last_success_at"] = status["last_run_at"] if run_success else status.get("last_success_at", "")
-        status["last_total_sources"] = total_sources
-        status["last_success_sources"] = outcome.success_sources
-        status["last_inserted_entries"] = outcome.inserted_total
-        status["last_error"] = " | ".join((outcome.failures + outcome.warnings)[:10])
-        save_status(status)
-        outcome.status = status
-        return outcome
-    except Exception as exc:
-        status = load_status()
-        status["fetch_state"] = "error"
-        status["last_run_at"] = now_text()
-        status["last_total_sources"] = total_sources
-        status["last_success_sources"] = 0
-        status["last_inserted_entries"] = 0
-        status["last_error"] = clean_health_error(str(exc))
-        save_status(status)
-        outcome.status = status
-        outcome.fatal_error = status["last_error"]
-        return outcome
-    finally:
-        status = load_status()
-        if status.get("fetch_state") == "running":
-            status["fetch_state"] = "idle"
+            status = load_status()
+            run_success = is_successful_run(outcome.success_sources, len(outcome.failures))
+            status["fetch_state"] = "success" if run_success else "error"
+            status["last_run_at"] = now_text()
+            status["last_success_at"] = status["last_run_at"] if run_success else status.get("last_success_at", "")
+            status["last_total_sources"] = total_sources
+            status["last_success_sources"] = outcome.success_sources
+            status["last_inserted_entries"] = outcome.inserted_total
+            status["last_error"] = " | ".join((outcome.failures + outcome.warnings)[:10])
             save_status(status)
+            outcome.status = status
+            return outcome
+        except Exception as exc:
+            status = load_status()
+            status["fetch_state"] = "error"
+            status["last_run_at"] = now_text()
+            status["last_total_sources"] = total_sources
+            status["last_success_sources"] = 0
+            status["last_inserted_entries"] = 0
+            status["last_error"] = clean_health_error(str(exc))
+            save_status(status)
+            outcome.status = status
+            outcome.fatal_error = status["last_error"]
+            return outcome
+        finally:
+            status = load_status()
+            if status.get("fetch_state") == "running":
+                status["fetch_state"] = "idle"
+                save_status(status)

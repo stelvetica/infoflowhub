@@ -65,12 +65,11 @@
           <div class="panel-title panel-title-settings-nowrap">
               <div class="panel-title-inline">
                 <h3 class="panel-heading-nowrap">订阅内容</h3>
-                <form hx-post="/actions/fetch-now?{{ params|urlencode }}" hx-target="#entries-fetch-progress" hx-swap="outerHTML">
+                <form hx-post="/actions/fetch-now?{{ params|urlencode }}" hx-target="#runtime-status-panel" hx-swap="innerHTML">
                   <button class="btn" type="submit">立即抓取</button>
                 </form>
-                <div id="entries-fetch-progress" class="inline-metric entries-fetch-progress" title="复用设置里的抓取进度">
-                  <span class="label">抓取状态</span>
-                  <strong>{{ settings.status['success_sources_text'] }}</strong>
+                <div id="runtime-status-panel">
+                  {% include "partials/runtime_status.html" %}
                 </div>
                 <a
                   class="btn ghost wechat-renew-btn {% if settings.wechat_auth['should_highlight_renew'] %}warn wechat-renew-btn-active{% endif %}"

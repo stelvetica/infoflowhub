@@ -10,6 +10,44 @@
 
 当前前端控制台已迁移为 `Python Web + Jinja2 + HTMX`，Python 同时负责抓取、入库、状态维护与页面服务。
 
+## 环境要求（重要）
+
+本仓库通过**复制常用 Chrome 的登录态**来抓取需要登录的站点（蓝宝书、抖音收藏、小黑盒等）。复制原理是：抓取前关闭 Chrome → 复制其 `Default` profile 到隔离副本 → 用副本抓取 → 抓完重开你的 Chrome。
+
+**Chrome ≥ 127 默认启用 App-Bound Encryption（ABE）**，会把登录 cookie 加密后绑定到本机 Windows 用户 + Chrome 安装。这会导致复制 profile 后登录 cookie 无法解密、被 Chrome 清空，抓取失效（表现为"能抓公开内容、但抓不到需要登录的内容"）。
+
+**必须通过注册表策略关闭 ABE**（仅 Windows）：
+
+```cmd
+reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v ApplicationBoundEncryptionEnabled /t REG_DWORD /d 0 /f
+```
+
+- 关闭后**重启 Chrome** 使策略生效。
+- 关闭后**需重新登录各站点**（旧 ABE 加密 cookie 无法被工具读取，重登后生成可复制的 DPAPI(v10) 格式）。
+- 验证：`chrome://policy` 中 `ApplicationBoundEncryptionEnabled` 应为 `false`。
+- 恢复安全：`reg delete "HKLM\SOFTWARE\Policies\Google\Chrome" /v ApplicationBoundEncryptionEnabled /f`。
+- Mac/Linux 无 ABE 机制，无需此操作。
+
+> ⚠️ 关闭 ABE 会降低本机 Chrome 本地 cookie/密码的安全性，仅在本机运行抓取时建议如此。
+
+登录态来源：**常用 Chrome 的 `Default` profile**。各站点需先在常用 Chrome 里登录（见 `scripts/login_chrome.py` 一键拉起所有站点登录页）。
+
+### 首次配置流程（新环境 / 换机后）
+
+1. **关闭 ABE**（见上，Windows 才需要）：
+   ```cmd
+   reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v ApplicationBoundEncryptionEnabled /t REG_DWORD /d 0 /f
+   ```
+2. **重启 Chrome** 使策略生效（`chrome://policy` 确认值为 `false`）。
+3. **拉起所有站点登录页并逐一登录**：
+   ```cmd
+   python scripts\login_chrome.py
+   ```
+   登录态会存到常用 Chrome 的 `Default` profile，成为复制登录态的来源。
+4. **启动控制台**并触发一次「立即抓取」验证登录态复制生效。
+
+> 换机后若某需登录站点抓不到（能抓公开内容、抓不到登录内容），多半是 ABE 未关或该站未重登。
+
 ## 当前结构
 
 ```text

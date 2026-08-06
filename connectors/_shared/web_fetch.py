@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 from apps.subscriptions.models import FeedFetchResult
-from connectors._shared.chrome_runner import SharedRunnerSession
+from connectors._shared.chrome_runner import CopyRunnerSession, SharedRunnerSession
 from connectors._shared.common import (
     USER_AGENT,
     is_transient_fetch_error,
@@ -23,6 +23,7 @@ from connectors.x import fetch_x_with_page
 from connectors.youtube import fetch_youtube_with_page
 
 WEB_RETRY_DELAYS = (0.0, 2.0)
+WEB_RUNNER_DEBUG_PORT = 9223
 
 _SHARED_RUNNER_SITES = {"x", "youtube", "douyin", "alphapai"}
 
@@ -40,9 +41,9 @@ def _shared_runner_extra_args() -> list[str]:
 
 
 def _shared_runner_source_profile_dir(site: str) -> Path:
-    """所有浏览器站点共用单一共享登录 profile（cookie 按域名隔离）。"""
-    from connectors.auth.providers.browser_profiles import AUTH_PROFILE_DIR
-    return AUTH_PROFILE_DIR
+    """所有浏览器站点统一复制常用 Chrome Default profile 登录态（cookie 按域名隔离）。"""
+    from connectors.auth.providers.browser_profiles import _default_chrome_profile_dir
+    return _default_chrome_profile_dir()
 
 
 def _preflight_login_check(source: dict, site: str) -> str:
@@ -54,7 +55,7 @@ def _preflight_login_check(source: dict, site: str) -> str:
 
 
 def _fetch_via_shared_runner(
-    session: SharedRunnerSession,
+    session: CopyRunnerSession,
     source: dict,
     fetch_fn,
     *,
@@ -62,7 +63,7 @@ def _fetch_via_shared_runner(
     timeout_ms: int = 60000,
     use_url_tab: bool = False,
 ) -> FeedFetchResult:
-    """在共享 session 上抓一个源。use_url_tab=True 时复用/打开目标 URL 的 tab（蓝宝书用）。"""
+    """在复制副本 session 上抓一个源。use_url_tab=True 时复用/打开目标 URL 的 tab（蓝宝书用）。"""
     target = resolve_web_target(source)
     start_url = target.page_url if target else ""
     if use_url_tab:
@@ -86,12 +87,12 @@ def _fetch_via_shared_runner(
             pass
 
 
-def _fetch_alphapai_via_session(session: SharedRunnerSession, source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
+def _fetch_alphapai_via_session(session: CopyRunnerSession, source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
     return _fetch_via_shared_runner(session, source, fetch_alphapai_with_page, limit=limit, timeout_ms=timeout_ms, use_url_tab=True)
 
 
-def _fetch_one_via_session(session: SharedRunnerSession, source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
-    """在已启动的共享 session 上抓单个源（含蓝宝书）。"""
+def _fetch_one_via_session(session: CopyRunnerSession, source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
+    """在已启动的复制副本 session 上抓单个源（含蓝宝书）。"""
     target = resolve_web_target(source)
     if not target:
         return result_error(source, "暂不支持的网页直抓源")
@@ -131,11 +132,20 @@ def _needs_shared_runner(source: dict) -> bool:
     return bool(target and target.site in _SHARED_RUNNER_SITES)
 
 
-def _make_session_for(source: dict) -> SharedRunnerSession:
-    target = resolve_web_target(source)
-    site = target.site if target else ""
-    return SharedRunnerSession(
-        source_profile_dir=_shared_runner_source_profile_dir(site),
+def _make_session_for(source: dict) -> CopyRunnerSession:
+    """订阅抓取统一走 CopyRunnerSession：复制常用 Chrome Default profile 登录态到副本。
+
+    各站点（X/YouTube/抖音/蓝宝书）共用同一常用 Chrome 来源，cookie 按域名隔离天然可用。
+    headless 无头抓取，副本独立运行不影响你常用浏览器。
+    """
+    from connectors.auth.providers.browser_profiles import WEB_RUNNER_DIR
+
+    return CopyRunnerSession(
+        runner_dir=WEB_RUNNER_DIR,
+        debug_port=WEB_RUNNER_DEBUG_PORT,
+        source_profile_dir=_shared_runner_source_profile_dir(""),
+        start_url="about:blank",
+        headless=True,
         extra_args=_shared_runner_extra_args(),
     )
 
@@ -174,9 +184,9 @@ def fetch_web_many(
     sources: list[dict],
     limit: int = 12,
     timeout_ms: int = 60000,
-    session: SharedRunnerSession | None = None,
+    session: CopyRunnerSession | None = None,
 ) -> list[FeedFetchResult]:
-    """批量抓取。独立 profile 模式下按站点分组，每站点起一个 session（同站点多源共用）。"""
+    """批量抓取。所有浏览器站点共用一个复制副本 session（单一常用 Chrome 登录态来源）。"""
     if not sources:
         return []
 
@@ -184,7 +194,7 @@ def fetch_web_many(
     shared_indices = [i for i, s in enumerate(sources) if _needs_shared_runner(s)]
     other_indices = [i for i in range(len(sources)) if i not in set(shared_indices)]
 
-    # 所有浏览器站点共用一个 session（单一共享 auth profile）
+    # 所有浏览器站点共用一个复制副本 session（单一常用 Chrome 登录态来源）
     if shared_indices:
         session = _make_session_for(sources[shared_indices[0]])
         session.start()

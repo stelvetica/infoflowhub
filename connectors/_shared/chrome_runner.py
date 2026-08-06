@@ -61,24 +61,12 @@ WINDOWS_BROWSER_PATHS = {
 
 
 def _resolve_default_browser_executable() -> tuple[str, str]:
-    prog_id = ""
-    try:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice",
-        ) as key:
-            prog_id, _ = winreg.QueryValueEx(key, "ProgId")
-    except OSError:
-        prog_id = ""
-
-    for candidate in WINDOWS_BROWSER_PATHS.get(prog_id, []):
-        if candidate.exists():
-            return prog_id or "unknown", str(candidate)
-
-    for fallback_prog_id in ("ChromeHTML", "MSEdgeHTM", "BraveHTML", "VivaldiHTM"):
-        for candidate in WINDOWS_BROWSER_PATHS[fallback_prog_id]:
+    # 全局统一用 Chrome：只要本机装了 Chrome 就优先选它，不跟随系统默认浏览器
+    # （系统默认可能是 Edge，会与复制的 Chrome profile/共享 profile 不兼容）。
+    for prog_id in ("ChromeHTML", "MSEdgeHTM", "BraveHTML", "VivaldiHTM"):
+        for candidate in WINDOWS_BROWSER_PATHS[prog_id]:
             if candidate.exists():
-                return fallback_prog_id, str(candidate)
+                return prog_id, str(candidate)
 
     raise RuntimeError("未找到可供 Playwright 启动的 Chromium 浏览器，请先安装 Chrome、Edge、Brave 或 Vivaldi")
 
@@ -657,11 +645,14 @@ class SharedRunnerSession:
         self._playwright = None
         self._context = None
         self._started = False
+        # 记录 start 前用户 Chrome 是否在跑：shutdown 时据此决定是否重开
+        self._chrome_was_running = False
 
     def start(self) -> None:
         if self._started:
             return
         # 挂载 profile 必须先关闭 Chrome（profile 锁）
+        self._chrome_was_running = is_chrome_running()
         if not kill_chrome_gracefully():
             raise RuntimeError("Chrome 正在运行且无法关闭，无法挂载 profile")
         if not _ensure_all_chrome_processes_stopped():
@@ -718,11 +709,11 @@ class SharedRunnerSession:
         return page
 
     def restart(self) -> None:
-        """登录态失效时重建：关掉再重启浏览器。"""
-        self.shutdown()
+        """登录态失效时重建：关掉再重启浏览器。restart 中途的 shutdown 不重开 Chrome。"""
+        self.shutdown(_reopen_chrome=False)
         self.start()
 
-    def shutdown(self) -> None:
+    def shutdown(self, *, _reopen_chrome: bool = True) -> None:
         if self._context is not None:
             try:
                 self._context.close()
@@ -736,6 +727,10 @@ class SharedRunnerSession:
                 pass
             self._playwright = None
         self._started = False
+        # 抓取前用户 Chrome 在跑、且本次 start 关过它 → 抓取完重开
+        if _reopen_chrome and self._chrome_was_running:
+            _reopen_user_chrome()
+            self._chrome_was_running = False
 
     def __enter__(self):
         self.start()
@@ -823,6 +818,10 @@ class CopyRunnerSession:
         return page
 
     def restart(self) -> None:
+        # 登录态失效时：先删副本强制重建，否则 ensure_debug_browser 的 24h rebuild
+        # 缓存会复用失效旧副本，导致"常用 Chrome 重登后"仍抓不到新登录态。
+        # 复制的源是同一常用 Chrome Default profile，删除副本不丢任何登录态。
+        _remove_runner_dir(self.runner_dir)
         # restart 中途的 shutdown 不重开 Chrome（马上要再 start），否则会跟新 start 抢 profile 锁
         self.shutdown(_reopen_chrome=False)
         self.start()
