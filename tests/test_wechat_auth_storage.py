@@ -59,7 +59,7 @@ def test_settings_view_keeps_wechat_auth_actions(monkeypatch):
     monkeypatch.setattr(settings_views, "migrate_legacy_source_ids", lambda: None)
     monkeypatch.setattr(settings_views, "load_status", lambda: {"last_inserted_entries": 0, "last_error": ""})
     monkeypatch.setattr(settings_views, "format_success_sources_text", lambda status: "1/1")
-    monkeypatch.setattr(settings_views, "read_log_tail", lambda path: "")
+    monkeypatch.setattr(settings_views, "read_log_tail", lambda path, **kwargs: "")
     monkeypatch.setattr(settings_views, "get_laterhub_summary", lambda: {})
     monkeypatch.setattr(settings_views, "get_laterhub_source_stats", lambda: [])
     monkeypatch.setattr(settings_views, "list_source_stats", lambda: [])

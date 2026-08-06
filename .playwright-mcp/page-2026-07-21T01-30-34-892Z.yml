@@ -1,0 +1,334 @@
+- generic [active] [ref=f1e1]:
+  - button "开启读屏标签" [ref=f1e2]
+  - generic: 读屏标签已关闭
+  - generic [ref=f1e4]:
+    - generic [ref=f1e6]:
+      - link [ref=f1e7] [cursor=pointer]:
+        - /url: //www.douyin.com/jingxuan
+      - generic [ref=f1e15]:
+        - link "精选" [ref=f1e19] [cursor=pointer]:
+          - /url: https://www.douyin.com/jingxuan?from_nav=1
+        - link "推荐" [ref=f1e26] [cursor=pointer]:
+          - /url: https://www.douyin.com/?recommend=1&from_nav=1
+        - link "AI抖音" [ref=f1e33] [cursor=pointer]:
+          - /url: https://www.douyin.com/aisearch?from_nav=1
+        - link "关注" [ref=f1e41] [cursor=pointer]:
+          - /url: https://www.douyin.com/follow?from_nav=1
+        - link "朋友" [ref=f1e48] [cursor=pointer]:
+          - /url: https://www.douyin.com/friend?from_nav=1
+        - link "我的" [ref=f1e55] [cursor=pointer]:
+          - /url: https://www.douyin.com/user/self?from_nav=1
+        - link "直播" [ref=f1e63] [cursor=pointer]:
+          - /url: https://live.douyin.com/?from_nav=1
+        - link "放映厅" [ref=f1e70] [cursor=pointer]:
+          - /url: https://www.douyin.com/vs?from_nav=1
+        - link "短剧" [ref=f1e77] [cursor=pointer]:
+          - /url: https://www.douyin.com/series?from_nav=1
+        - link "小游戏" [ref=f1e84] [cursor=pointer]:
+          - /url: https://www.douyin.com/microgame?from_nav=1
+    - generic [ref=f1e103]:
+      - banner [ref=f1e106]:
+        - generic [ref=f1e108]:
+          - generic [ref=f1e112]:
+            - textbox "搜索你感兴趣的内容" [ref=f1e114]
+            - button "搜索" [ref=f1e116] [cursor=pointer]
+          - generic [ref=f1e123]:
+            - paragraph [ref=f1e132] [cursor=pointer]: 更多
+            - generic [ref=f1e133]: 壁纸
+            - list [ref=f1e142]:
+              - paragraph [ref=f1e152] [cursor=pointer]: 通知
+            - list [ref=f1e153]:
+              - paragraph [ref=f1e160] [cursor=pointer]: 消息
+            - paragraph [ref=f1e169] [cursor=pointer]: 投稿
+            - generic [ref=f1e170]: 登录
+      - generic [ref=f1e181]:
+        - generic [ref=f1e192]:
+          - generic [ref=f1e193]:
+            - listitem [ref=f1e195] [cursor=pointer]:
+              - img "破壁狗头像" [ref=f1e196]
+            - generic [ref=f1e197]:
+              - generic [ref=f1e198]:
+                - heading "破壁狗" [level=1] [ref=f1e199]
+                - generic [ref=f1e206]: 2026年4月精选作者
+              - generic [ref=f1e209]:
+                - generic [ref=f1e210] [cursor=pointer]:
+                  - generic [ref=f1e211]: 关注
+                  - generic [ref=f1e291]: "11"
+                - generic [ref=f1e212] [cursor=pointer]:
+                  - generic [ref=f1e213]: 粉丝
+                  - generic [ref=f1e292]: 59.7万
+                - generic [ref=f1e214]:
+                  - generic [ref=f1e215]: 获赞
+                  - generic [ref=f1e293]: 226.8万
+              - paragraph [ref=f1e216]:
+                - generic [ref=f1e217]: 抖音号：20950233034
+                - generic [ref=f1e218]: IP属地：浙江
+              - generic [ref=f1e219]: 财经博主，关注资本、技术和权力的博弈
+            - generic [ref=f1e225]:
+              - generic [ref=f1e226]:
+                - button [ref=f1e228] [cursor=pointer]
+                - button "分享主页" [ref=f1e297] [cursor=pointer]
+              - generic [ref=f1e229]:
+                - button "私信" [ref=f1e230] [cursor=pointer]
+                - button "关注" [ref=f1e232] [cursor=pointer]
+          - generic [ref=f1e236]:
+            - generic [ref=f1e240]:
+              - tablist [ref=f1e241]:
+                - tab [selected] [ref=f1e242]:
+                  - heading "作品 137" [level=2] [ref=f1e244] [cursor=pointer]:
+                    - generic [ref=f1e245]: 作品
+                    - generic [ref=f1e246]: "137"
+                - tab "推荐" [ref=f1e247] [cursor=pointer]
+                - tab "喜欢" [ref=f1e250] [cursor=pointer]
+              - generic:
+                - tabpanel "作品 137"
+            - generic [ref=f1e257]:
+              - generic [ref=f1e260]:
+                - generic [ref=f1e261]:
+                  - tablist [ref=f1e262]:
+                    - tab "作品" [selected] [ref=f1e263]
+                    - tab "合集" [ref=f1e266] [cursor=pointer]
+                    - tab "短剧" [ref=f1e269] [cursor=pointer]
+                  - generic:
+                    - tabpanel "作品"
+                - generic [ref=f1e272]:
+                  - generic [ref=f1e273]:
+                    - generic [ref=f1e274]: 搜索 Ta 的作品
+                    - textbox "搜索 Ta 的作品" [ref=f1e277]
+                  - generic [ref=f1e279] [cursor=pointer]: 日期筛选
+              - generic [ref=f1e281]:
+                - list [ref=f1e307]:
+                  - listitem [ref=f1e308]:
+                    - 'link "破壁狗：卡萨帝20年 重塑价值锚点 对卡萨帝来说，为爱致远，则是20年里从未改变过的心路。 #经济史 #高端家电 #卡萨帝定义高端家电20年 #科技进化为爱致远 #卡萨帝思享荟 1.3万 卡萨帝20年 重塑价值锚点 对卡萨帝来说，为爱致远，则是20年里从未改变过的心路。 #经济史 #高端家电 #卡萨帝定义高端家电20年 #科技进化为爱致远 #卡萨帝思享荟" [ref=f1e310] [cursor=pointer]':
+                      - /url: /video/7656694657551699246
+                      - generic [ref=f1e311]:
+                        - 'img "破壁狗：卡萨帝20年 重塑价值锚点 对卡萨帝来说，为爱致远，则是20年里从未改变过的心路。 #经济史 #高端家电 #卡萨帝定义高端家电20年 #科技进化为爱致远 #卡萨帝思享荟" [ref=f1e314]'
+                        - generic [ref=f1e316]: 1.3万
+                      - paragraph [ref=f1e321]: "卡萨帝20年 重塑价值锚点 对卡萨帝来说，为爱致远，则是20年里从未改变过的心路。 #经济史 #高端家电 #卡萨帝定义高端家电20年 #科技进化为爱致远 #卡萨帝思享荟"
+                  - listitem [ref=f1e322]:
+                    - 'link "破壁狗：美国散户 怎么把华尔街打到大出血？ 信源： 1 Dumb Money: The GameStop Short Squeeze and the Ragtag Group of Amateur Traders That Brought Wall Street to Its Knees 作者 ben mizrich 2 综合纽约时报，华尔街日报，时代，商业内幕等媒体报道 #燃起来了大国重器 #财经 #破壁狗 4155 美国散户 怎么把华尔街打到大出血？ 信源： 1 Dumb Money: The GameStop Short Squeeze and the Ragtag Group of Amateur Traders That Brought Wall Street to Its Knees 作者 ben mizrich 2 综合纽约时报，华尔街日报，时代，商业内幕等媒体报道 #燃起来了大国重器 #财经 #破壁狗" [ref=f1e324] [cursor=pointer]':
+                      - /url: /video/7651230903523396915
+                      - generic [ref=f1e325]:
+                        - 'img "破壁狗：美国散户 怎么把华尔街打到大出血？ 信源： 1 Dumb Money: The GameStop Short Squeeze and the Ragtag Group of Amateur Traders That Brought Wall Street to Its Knees 作者 ben mizrich 2 综合纽约时报，华尔街日报，时代，商业内幕等媒体报道 #燃起来了大国重器 #财经 #破壁狗" [ref=f1e328]'
+                        - generic [ref=f1e330]: "4155"
+                      - paragraph [ref=f1e335]: "美国散户 怎么把华尔街打到大出血？ 信源： 1 Dumb Money: The GameStop Short Squeeze and the Ragtag Group of Amateur Traders That Brought Wall Street to Its Knees 作者 ben mizrich 2 综合纽约时报，华尔街日报，时代，商业内幕等媒体报道 #燃起来了大国重器 #财经 #破壁狗"
+                  - listitem [ref=f1e336]:
+                    - 'link "破壁狗：能源损耗的巨大黑洞，谁能来堵上？ #途虎养车618 #长江机油 #稀土 #能源 #中国制造 3129 能源损耗的巨大黑洞，谁能来堵上？ #途虎养车618 #长江机油 #稀土 #能源 #中国制造" [ref=f1e338] [cursor=pointer]':
+                      - /url: /video/7650343415732866344
+                      - generic [ref=f1e339]:
+                        - 'img "破壁狗：能源损耗的巨大黑洞，谁能来堵上？ #途虎养车618 #长江机油 #稀土 #能源 #中国制造" [ref=f1e342]'
+                        - generic [ref=f1e344]: "3129"
+                      - paragraph [ref=f1e349]: "能源损耗的巨大黑洞，谁能来堵上？ #途虎养车618 #长江机油 #稀土 #能源 #中国制造"
+                  - listitem [ref=f1e350]:
+                    - 'link "破壁狗：【抖音独家】全球化结束了吗？ 假设过去30年时间里，崛起的亚洲大国是印度，那么，美国同样会因为无法吸纳印度，选择放弃全球化。 #燃起来了大国重器 #全球化 #破壁狗 2.3万 【抖音独家】全球化结束了吗？ 假设过去30年时间里，崛起的亚洲大国是印度，那么，美国同样会因为无法吸纳印度，选择放弃全球化。 #燃起来了大国重器 #全球化 #破壁狗" [ref=f1e352] [cursor=pointer]':
+                      - /url: /video/7648909153804602658
+                      - generic [ref=f1e353]:
+                        - 'img "破壁狗：【抖音独家】全球化结束了吗？ 假设过去30年时间里，崛起的亚洲大国是印度，那么，美国同样会因为无法吸纳印度，选择放弃全球化。 #燃起来了大国重器 #全球化 #破壁狗" [ref=f1e356]'
+                        - generic [ref=f1e358]: 2.3万
+                      - paragraph [ref=f1e363]: "【抖音独家】全球化结束了吗？ 假设过去30年时间里，崛起的亚洲大国是印度，那么，美国同样会因为无法吸纳印度，选择放弃全球化。 #燃起来了大国重器 #全球化 #破壁狗"
+                  - listitem [ref=f1e364]:
+                    - link [ref=f1e366] [cursor=pointer]:
+                      - /url: /video/7643387024501804328
+                      - generic [ref=f1e367]:
+                        - img [ref=f1e370]
+                        - generic [ref=f1e372]: "8434"
+                      - paragraph [ref=f1e377]: "全球分析都错啦：用顶级论文定位美联储新主席 本文部分信源与注释 1）The Making of Hawks and Doves: Inflation Experiences on the FOMC 作者：Ulrike Malmendier, Stefan Nagel, Zhen Yan 形式：NBER Working Paper No. 23228；后发表于 Journal of Monetary Economics, Vol. 117, 2021 2）Michael D. Bordo & Klodiana Istrefi 作者：Michael D. Bordo, Klodiana Istrefi 期刊：Journal of Monetary Economics，2023 年发表 3）美联储官网 4）在美联储内部，绿皮书是经济预测，蓝皮书（Bluebook）是货币政策方案，棕皮书（Beige Book）是地区经济调查。 美联储在2010年已经将绿皮书和蓝皮书合并，现在统称为“青皮书”（Tealbook）， 5）Kevin Warsh 被特朗普提名与确认为美联储主席的报道 媒体：BBC、CNBC、CNN等 6）关于沃什对 QE、不满与辞职的公开言论 媒体：Financial Times、WSJ、各类访谈与 op-ed 汇编 7）鲍威尔任内标签变迁的媒体叙事 来源：主流财经媒体长期报道（WSJ、Bloomberg、FT 等），以及各类市场评论汇总。 8）特朗普第二任期政策诉求：降息压力、AI 生产力叙事 媒体：CNN Business、CNBC 等对 2026 年初特朗普公开施压降息、以及沃什在确认听证会上用「AI 带来生产力提升与通缩力量」论证降息正当性的报道。 9）沃什与雅诗兰黛家族、格陵兰岛 媒体：Financial Times、Politico、WSJ 等对其家庭关系与特朗普金主网络的报道； 10）美国 1970–1980 年代通胀与利率数据 FRED（Federal Reserve Economic Data）数据库； BLS（美国劳工统计局）的 CPI 官方数据。 #燃起来了大国重器 #沃什 #美联储 #零基础看懂财经"
+                  - listitem [ref=f1e378]:
+                    - 'link "破壁狗：4月月度精选作者榜单已就位！ 看看哪些创作者是你心中的“唯一真神”？好内容从不设限，只负责抵达人心。#这波精选作者我先关注了 #月度精选作者 Tag: 共创 9.5万 4月月度精选作者榜单已就位！ 看看哪些创作者是你心中的“唯一真神”？好内容从不设限，只负责抵达人心。#这波精选作者我先关注了 #月度精选作者" [ref=f1e380] [cursor=pointer]':
+                      - /url: /video/7641185416372178203
+                      - generic [ref=f1e381]:
+                        - 'img "破壁狗：4月月度精选作者榜单已就位！ 看看哪些创作者是你心中的“唯一真神”？好内容从不设限，只负责抵达人心。#这波精选作者我先关注了 #月度精选作者" [ref=f1e384]'
+                        - 'generic "Tag: 共创" [ref=f1e388]': 共创
+                        - generic [ref=f1e390]: 9.5万
+                      - paragraph [ref=f1e395]: "4月月度精选作者榜单已就位！ 看看哪些创作者是你心中的“唯一真神”？好内容从不设限，只负责抵达人心。#这波精选作者我先关注了 #月度精选作者"
+                  - listitem [ref=f1e396]:
+                    - link [ref=f1e398] [cursor=pointer]:
+                      - /url: /video/7640427485632548132
+                      - generic [ref=f1e399]:
+                        - img [ref=f1e402]
+                        - generic [ref=f1e404]: 2.7万
+                      - paragraph [ref=f1e409]: "怎么玩转美债 一天赚40亿美元【别看热闹，看钱2】 【别看热闹，看钱2】 39万亿美债是个巨型金融炸弹，不拆除它极度危险，但更危险的是，拆除它。 如果不拆除，未来某一天，它可能会把资本市场炸回到骑着毛驴赶集的年代。 如果拆除它，它现在立刻马上就会把资本市场和那只毛驴一起炸到火星上。 所以美国必须接着发新债，如果胆敢不继续，那么，全球流动性就会枯竭，资本主义就会立刻安排后事，吹拉弹唱，请大家再看一次加强版的08次贷危机。 是的，39万亿美债确实可能让美国垮掉，也可能让全世界垮掉，但不是用大多数人以为的那种方式。 信源列表： 美债规模、债务/GDP、利息负担 美国财政部债务数据 CBO 或财政部年度报告对利息支出的统计 美债在回购市场中的抵押品地位 美国金融研究办公室（OFR）关于美国回购市场结构的工作论文 BIS/FSB 关于\"collateral reuse\"和\"safe assets\"的章节 ECB/BIS 讨论全球抵押品池的论文 美国回购市场日均成交约 12–13 万亿美元 OFR 2025年关于 US Repo Market 的测算报告 美联储研究员的 FEDS Notes（$12 Trillion US Repo Market 那篇） 基差交易、开曼群岛对冲基金、1.85 万亿与 37% 美联储研究报告《The Cross-Border Trail of the Treasury Basis Trade》 国债现券–期货基差交易规模约 1.5 万亿美元 CFTC / 芝加哥联储/达拉斯联储关于 Treasury basis trade 的专题研究 美债买家排行 美国财政部 TIC 数据（Top Foreign Holders of U.S. Treasury Securities）。 250 万亿资产池 FSB 年度《Global Monitoring Report on Non‑Bank Financial Intermediation》 衍生品 846 万亿名义金额 BIS Quarterly Review 中的全球 OTC derivatives 统计表 AIG 与 CDS 美国政府问责局（GAO） 美联储/财政部报告 德债、JGB 作为竞争性抵押品 德国联邦财政部公告 日本央行（BoJ）的货币政策会议纪要 #燃起来了大国重器#零距离看懂财经#美债"
+                  - listitem [ref=f1e410]:
+                    - 'link "破壁狗：理财本质：怎样在金融系统里搭上便车 现代金融系统中，大多数金融产品是为“交易”设计的，而不是为“持有”设计的，而在利率下行的长周期里，频繁交易会吞噬掉投资者所有的收益。 #理财 2152 理财本质：怎样在金融系统里搭上便车 现代金融系统中，大多数金融产品是为“交易”设计的，而不是为“持有”设计的，而在利率下行的长周期里，频繁交易会吞噬掉投资者所有的收益。 #理财" [ref=f1e412] [cursor=pointer]':
+                      - /url: /video/7640023222087437620
+                      - generic [ref=f1e413]:
+                        - 'img "破壁狗：理财本质：怎样在金融系统里搭上便车 现代金融系统中，大多数金融产品是为“交易”设计的，而不是为“持有”设计的，而在利率下行的长周期里，频繁交易会吞噬掉投资者所有的收益。 #理财" [ref=f1e416]'
+                        - generic [ref=f1e418]: "2152"
+                      - paragraph [ref=f1e423]: "理财本质：怎样在金融系统里搭上便车 现代金融系统中，大多数金融产品是为“交易”设计的，而不是为“持有”设计的，而在利率下行的长周期里，频繁交易会吞噬掉投资者所有的收益。 #理财"
+                  - listitem [ref=f1e424]:
+                    - link [ref=f1e426] [cursor=pointer]:
+                      - /url: /video/7638146999908306216
+                      - generic [ref=f1e427]:
+                        - 'img "破壁狗：阿根廷赌局：为什么这个国家总是想自杀？ 【国家赌场4】2023年，被绝望的阿根廷人选为总统的米莱，是经济学家出身，芝加哥学派的忠实信徒，芝加哥学派的主张，简单归结就是，政府越小越好，最好小到可以溺死在浴缸里。 另一个芝加哥学派的忠实信徒，美国总统里根说过一句话，他说，英语里最可怕的九个单词是，我是政府派来帮你的。（I''m / from / the / Government / and / I''m / here / to / help） 所以，米莱的基本执政观点是，政府印钱是万恶之源，基本执政思路是，货币紧缩，不让政府印钱，抽掉那个自我毁灭体系的根基，而没有钱的政府，什么也做不了。 米莱会成功吗？阿根廷经济能跳出这个体系吗？ 部分信源列表 国际货币基金组织 (IMF) 阿根廷与英国的人均GDP对比（名义与PPP口径） 世界银行 (World Bank) 阿根廷贫困率及2026年经济复苏预测。 CEIC Data（全球宏观经济数据库） 阿根廷截至2025年底的公共债务总额（4551亿美元）及占GDP比重（78.4%）。 阿根廷2026年月度通胀率（降至3%左右）及历史恶性通胀曲线。 美国国家经济研究局 (NBER) “阿根廷人对美元上瘾是神经性条件反射”的学术定性，以及梅内姆1:1汇率绑定的历史教训。 《金融时报》 (Financial Times) 阿根廷民间持有超2500亿美元现金的规模，以及米莱“电锯改革”在2026年的最新进展与代价。 #燃起来了大国重器 #零距离看懂财经 #阿根廷经济 #破壁大狗" [ref=f1e430]'
+                        - generic [ref=f1e432]: 1.7万
+                      - paragraph [ref=f1e437]: "阿根廷赌局：为什么这个国家总是想自杀？ 【国家赌场4】2023年，被绝望的阿根廷人选为总统的米莱，是经济学家出身，芝加哥学派的忠实信徒，芝加哥学派的主张，简单归结就是，政府越小越好，最好小到可以溺死在浴缸里。 另一个芝加哥学派的忠实信徒，美国总统里根说过一句话，他说，英语里最可怕的九个单词是，我是政府派来帮你的。（I'm / from / the / Government / and / I'm / here / to / help） 所以，米莱的基本执政观点是，政府印钱是万恶之源，基本执政思路是，货币紧缩，不让政府印钱，抽掉那个自我毁灭体系的根基，而没有钱的政府，什么也做不了。 米莱会成功吗？阿根廷经济能跳出这个体系吗？ 部分信源列表 国际货币基金组织 (IMF) 阿根廷与英国的人均GDP对比（名义与PPP口径） 世界银行 (World Bank) 阿根廷贫困率及2026年经济复苏预测。 CEIC Data（全球宏观经济数据库） 阿根廷截至2025年底的公共债务总额（4551亿美元）及占GDP比重（78.4%）。 阿根廷2026年月度通胀率（降至3%左右）及历史恶性通胀曲线。 美国国家经济研究局 (NBER) “阿根廷人对美元上瘾是神经性条件反射”的学术定性，以及梅内姆1:1汇率绑定的历史教训。 《金融时报》 (Financial Times) 阿根廷民间持有超2500亿美元现金的规模，以及米莱“电锯改革”在2026年的最新进展与代价。 #燃起来了大国重器 #零距离看懂财经 #阿根廷经济 #破壁大狗"
+                  - listitem [ref=f1e438]:
+                    - 'link "破壁狗：日本赌局：日元加息 美股崩盘 全球泡沫大破灭？ 【国家赌场3】在过去30年里，在金融界，你不能随便提起日元加息这四个字，这就像是在一个满是炸药和人的房间里，你不需要真的拿出打火机点火，只要听到打火机这几个字，就会有很多人冲向出口，为夺到一条生路相互踩踏。 #燃起来了大国重器 #零距离看懂财经 #日元 1.7万 日本赌局：日元加息 美股崩盘 全球泡沫大破灭？ 【国家赌场3】在过去30年里，在金融界，你不能随便提起日元加息这四个字，这就像是在一个满是炸药和人的房间里，你不需要真的拿出打火机点火，只要听到打火机这几个字，就会有很多人冲向出口，为夺到一条生路相互踩踏。 #燃起来了大国重器 #零距离看懂财经 #日元" [ref=f1e440] [cursor=pointer]':
+                      - /url: /video/7635685825510001947
+                      - generic [ref=f1e441]:
+                        - 'img "破壁狗：日本赌局：日元加息 美股崩盘 全球泡沫大破灭？ 【国家赌场3】在过去30年里，在金融界，你不能随便提起日元加息这四个字，这就像是在一个满是炸药和人的房间里，你不需要真的拿出打火机点火，只要听到打火机这几个字，就会有很多人冲向出口，为夺到一条生路相互踩踏。 #燃起来了大国重器 #零距离看懂财经 #日元" [ref=f1e444]'
+                        - generic [ref=f1e446]: 1.7万
+                      - paragraph [ref=f1e451]: "日本赌局：日元加息 美股崩盘 全球泡沫大破灭？ 【国家赌场3】在过去30年里，在金融界，你不能随便提起日元加息这四个字，这就像是在一个满是炸药和人的房间里，你不需要真的拿出打火机点火，只要听到打火机这几个字，就会有很多人冲向出口，为夺到一条生路相互踩踏。 #燃起来了大国重器 #零距离看懂财经 #日元"
+                  - listitem [ref=f1e452]:
+                    - 'link "破壁狗：在车展上遇见麒麟 长城汽车送给孩子的汽车哲学课 #北京车展长城汽车开展研学活动 #长城汽车展台让五一变六一 #汽车文化从娃娃抓起 9347 在车展上遇见麒麟 长城汽车送给孩子的汽车哲学课 #北京车展长城汽车开展研学活动 #长城汽车展台让五一变六一 #汽车文化从娃娃抓起" [ref=f1e454] [cursor=pointer]':
+                      - /url: /video/7635295482872433929
+                      - generic [ref=f1e455]:
+                        - 'img "破壁狗：在车展上遇见麒麟 长城汽车送给孩子的汽车哲学课 #北京车展长城汽车开展研学活动 #长城汽车展台让五一变六一 #汽车文化从娃娃抓起" [ref=f1e458]'
+                        - generic [ref=f1e460]: "9347"
+                      - paragraph [ref=f1e465]: "在车展上遇见麒麟 长城汽车送给孩子的汽车哲学课 #北京车展长城汽车开展研学活动 #长城汽车展台让五一变六一 #汽车文化从娃娃抓起"
+                  - listitem [ref=f1e466]:
+                    - 'link "破壁狗：印度赌局：为什么要成为全球大国 就要先封印8亿国民 【国家赌场02】2020年前后，印度工业化进程宣告失败，被解释为，这是提前去工业化成功，这一年开始，印度一边每天给超过8亿贫民免费发放粮食，一边继续追逐自己的大国梦想。 2025年，印度GDP规模约4.18万亿美元，超越日本，成为全球第四大经济体，加上高经济增速，核武库，登月计划，庞大的军队，从硬指标来看，他们已经是全球大国。 所以这太悲壮太励志了，印度带着8亿连自己都养不活的贫民，完成了几代人的大国梦。 但事实正好相反，印度大国崛起的最大燃料，就是这些看上去是累赘的8亿穷人。 信源列表： 1 印度政府官方数据 2 联合国官方数据 3 彭博社公开报道 4 高盛公开数据 #燃起来大国重器 #印度 #零距离看懂财经 5.8万 印度赌局：为什么要成为全球大国 就要先封印8亿国民 【国家赌场02】2020年前后，印度工业化进程宣告失败，被解释为，这是提前去工业化成功，这一年开始，印度一边每天给超过8亿贫民免费发放粮食，一边继续追逐自己的大国梦想。 2025年，印度GDP规模约4.18万亿美元，超越日本，成为全球第四大经济体，加上高经济增速，核武库，登月计划，庞大的军队，从硬指标来看，他们已经是全球大国。 所以这太悲壮太励志了，印度带着8亿连自己都养不活的贫民，完成了几代人的大国梦。 但事实正好相反，印度大国崛起的最大燃料，就是这些看上去是累赘的8亿穷人。 信源列表： 1 印度政府官方数据 2 联合国官方数据 3 彭博社公开报道 4 高盛公开数据 #燃起来大国重器 #印度 #零距离看懂财经" [ref=f1e468] [cursor=pointer]':
+                      - /url: /video/7632357050642713883
+                      - generic [ref=f1e469]:
+                        - 'img "破壁狗：印度赌局：为什么要成为全球大国 就要先封印8亿国民 【国家赌场02】2020年前后，印度工业化进程宣告失败，被解释为，这是提前去工业化成功，这一年开始，印度一边每天给超过8亿贫民免费发放粮食，一边继续追逐自己的大国梦想。 2025年，印度GDP规模约4.18万亿美元，超越日本，成为全球第四大经济体，加上高经济增速，核武库，登月计划，庞大的军队，从硬指标来看，他们已经是全球大国。 所以这太悲壮太励志了，印度带着8亿连自己都养不活的贫民，完成了几代人的大国梦。 但事实正好相反，印度大国崛起的最大燃料，就是这些看上去是累赘的8亿穷人。 信源列表： 1 印度政府官方数据 2 联合国官方数据 3 彭博社公开报道 4 高盛公开数据 #燃起来大国重器 #印度 #零距离看懂财经" [ref=f1e472]'
+                        - generic [ref=f1e474]: 5.8万
+                      - paragraph [ref=f1e479]: "印度赌局：为什么要成为全球大国 就要先封印8亿国民 【国家赌场02】2020年前后，印度工业化进程宣告失败，被解释为，这是提前去工业化成功，这一年开始，印度一边每天给超过8亿贫民免费发放粮食，一边继续追逐自己的大国梦想。 2025年，印度GDP规模约4.18万亿美元，超越日本，成为全球第四大经济体，加上高经济增速，核武库，登月计划，庞大的军队，从硬指标来看，他们已经是全球大国。 所以这太悲壮太励志了，印度带着8亿连自己都养不活的贫民，完成了几代人的大国梦。 但事实正好相反，印度大国崛起的最大燃料，就是这些看上去是累赘的8亿穷人。 信源列表： 1 印度政府官方数据 2 联合国官方数据 3 彭博社公开报道 4 高盛公开数据 #燃起来大国重器 #印度 #零距离看懂财经"
+                  - listitem [ref=f1e480]:
+                    - 'link "破壁狗：韩国赌局：用5000万国民当做筹码【国家赌场01】 当代世界充满了不确定性，谁都没有一个储备好的，可以随时兑现的未来，每个国家现在都坐在赌桌边上，玩一个自己觉得有把握的概率游戏。 只是韩国的特别之处在于，在这个政府坐庄的赌场里，韩国的千万国民确实在赌桌上，但不是赌客，而是筹码本身。 信源列表： 韩国主流媒体报道 国际货币基金组织官方文件 国际清算银行官方资料 #燃起来了大国重器 #零距离看懂财经 #韩国经济 2.2万 韩国赌局：用5000万国民当做筹码【国家赌场01】 当代世界充满了不确定性，谁都没有一个储备好的，可以随时兑现的未来，每个国家现在都坐在赌桌边上，玩一个自己觉得有把握的概率游戏。 只是韩国的特别之处在于，在这个政府坐庄的赌场里，韩国的千万国民确实在赌桌上，但不是赌客，而是筹码本身。 信源列表： 韩国主流媒体报道 国际货币基金组织官方文件 国际清算银行官方资料 #燃起来了大国重器 #零距离看懂财经 #韩国经济" [ref=f1e482] [cursor=pointer]':
+                      - /url: /video/7629953869052775721
+                      - generic [ref=f1e483]:
+                        - 'img "破壁狗：韩国赌局：用5000万国民当做筹码【国家赌场01】 当代世界充满了不确定性，谁都没有一个储备好的，可以随时兑现的未来，每个国家现在都坐在赌桌边上，玩一个自己觉得有把握的概率游戏。 只是韩国的特别之处在于，在这个政府坐庄的赌场里，韩国的千万国民确实在赌桌上，但不是赌客，而是筹码本身。 信源列表： 韩国主流媒体报道 国际货币基金组织官方文件 国际清算银行官方资料 #燃起来了大国重器 #零距离看懂财经 #韩国经济" [ref=f1e486]'
+                        - generic [ref=f1e488]: 2.2万
+                      - paragraph [ref=f1e493]: "韩国赌局：用5000万国民当做筹码【国家赌场01】 当代世界充满了不确定性，谁都没有一个储备好的，可以随时兑现的未来，每个国家现在都坐在赌桌边上，玩一个自己觉得有把握的概率游戏。 只是韩国的特别之处在于，在这个政府坐庄的赌场里，韩国的千万国民确实在赌桌上，但不是赌客，而是筹码本身。 信源列表： 韩国主流媒体报道 国际货币基金组织官方文件 国际清算银行官方资料 #燃起来了大国重器 #零距离看懂财经 #韩国经济"
+                  - listitem [ref=f1e494]:
+                    - link [ref=f1e496] [cursor=pointer]:
+                      - /url: /video/7627464402446322982
+                      - generic [ref=f1e497]:
+                        - 'img "破壁狗：两个赢麻的懦夫在博弈 美伊停火时长将超出预期 【别看热闹，看钱01】2026年的中东战场上，一种诡异的形态正在形成，美国用枪指着伊朗的头，它随时可以轻松摧毁伊朗的经济生命线哈尔克岛，让伊朗陷入死局。 而伊朗用枪指着全球能源的头，它可以关掉甚至炸掉霍尔木兹海峡，全球经济陷入死局。 全球能源的枪指着美国的头，如果油价飙升，美国通胀爆炸，那么共和党会输掉11月中期选举，特朗普会输掉后面两年愉快的执政环境，而美国会输掉一切。 谁都不敢开枪，同时，谁也不敢放下枪，全球能源放下枪就意味着美国的疯狂失去了制约，美国放下枪就意味着霸权的终结，而伊朗放下枪就意味着政权的灭亡。 这种谁都不敢做任何改变，大家都被彻底锁死的困境，就是著名的纳什均衡。 特朗普为什么一而再、再而三地推迟打击哈尔克岛的时间，就是不敢陷入这该死的纳什均衡。 他需要拖时间，用什么形式不重要，停火也好，谈判也罢，总之，在没有找到纳什均衡的解法之前，战争烈度只会下降，不会升级。 这个时间，大概率比现在宣布的两周停火时间要更长。 信源列表： 央视新闻 际能源署 (IEA)： 全球天然气市场报告 标普全球普氏能源资讯 (S&P Global Platts) 美国国务院 / 战略与国际研究中心 (CSIS) 联合国条约汇编 (UN Treaty Collection) 约翰·冯·诺伊曼、约翰·纳什的相关博弈论经典著作 #燃起来了大国重器 #零距离看懂财经 #美伊谈判" [ref=f1e500]'
+                        - generic [ref=f1e502]: 1.8万
+                      - paragraph [ref=f1e507]: "两个赢麻的懦夫在博弈 美伊停火时长将超出预期 【别看热闹，看钱01】2026年的中东战场上，一种诡异的形态正在形成，美国用枪指着伊朗的头，它随时可以轻松摧毁伊朗的经济生命线哈尔克岛，让伊朗陷入死局。 而伊朗用枪指着全球能源的头，它可以关掉甚至炸掉霍尔木兹海峡，全球经济陷入死局。 全球能源的枪指着美国的头，如果油价飙升，美国通胀爆炸，那么共和党会输掉11月中期选举，特朗普会输掉后面两年愉快的执政环境，而美国会输掉一切。 谁都不敢开枪，同时，谁也不敢放下枪，全球能源放下枪就意味着美国的疯狂失去了制约，美国放下枪就意味着霸权的终结，而伊朗放下枪就意味着政权的灭亡。 这种谁都不敢做任何改变，大家都被彻底锁死的困境，就是著名的纳什均衡。 特朗普为什么一而再、再而三地推迟打击哈尔克岛的时间，就是不敢陷入这该死的纳什均衡。 他需要拖时间，用什么形式不重要，停火也好，谈判也罢，总之，在没有找到纳什均衡的解法之前，战争烈度只会下降，不会升级。 这个时间，大概率比现在宣布的两周停火时间要更长。 信源列表： 央视新闻 际能源署 (IEA)： 全球天然气市场报告 标普全球普氏能源资讯 (S&P Global Platts) 美国国务院 / 战略与国际研究中心 (CSIS) 联合国条约汇编 (UN Treaty Collection) 约翰·冯·诺伊曼、约翰·纳什的相关博弈论经典著作 #燃起来了大国重器 #零距离看懂财经 #美伊谈判"
+                  - listitem [ref=f1e508]:
+                    - 'link "破壁狗：39万亿美国国债 是帝国诅咒还是战争动机？ 【世界经济观察16】 2025年，美国巨额国债的利息，达到9700亿美元，超过了当年美国的国防开支，而对过去500年里所有帝国的研究表明，只要越过这个数字节点，每一个全球帝国都会陷入衰落。 这是当代地缘政治和宏观经济学界最著名的警告之一，也是当下美国主流媒体，智库和政治圈高频讨论的话题之一，它被称为弗格森点。 它重要是因为，只要你持有任何金融资产，住在任何一个与美元体系有关联的经济体里，我们在说的这件事就和你有关。 #燃起来了大国重器 #零距离看懂财经 #美国国债 #伊朗战争 2.3万 39万亿美国国债 是帝国诅咒还是战争动机？ 【世界经济观察16】 2025年，美国巨额国债的利息，达到9700亿美元，超过了当年美国的国防开支，而对过去500年里所有帝国的研究表明，只要越过这个数字节点，每一个全球帝国都会陷入衰落。 这是当代地缘政治和宏观经济学界最著名的警告之一，也是当下美国主流媒体，智库和政治圈高频讨论的话题之一，它被称为弗格森点。 它重要是因为，只要你持有任何金融资产，住在任何一个与美元体系有关联的经济体里，我们在说的这件事就和你有关。 #燃起来了大国重器 #零距离看懂财经 #美国国债 #伊朗战争" [ref=f1e510] [cursor=pointer]':
+                      - /url: /video/7624715498780953897
+                      - generic [ref=f1e511]:
+                        - 'img "破壁狗：39万亿美国国债 是帝国诅咒还是战争动机？ 【世界经济观察16】 2025年，美国巨额国债的利息，达到9700亿美元，超过了当年美国的国防开支，而对过去500年里所有帝国的研究表明，只要越过这个数字节点，每一个全球帝国都会陷入衰落。 这是当代地缘政治和宏观经济学界最著名的警告之一，也是当下美国主流媒体，智库和政治圈高频讨论的话题之一，它被称为弗格森点。 它重要是因为，只要你持有任何金融资产，住在任何一个与美元体系有关联的经济体里，我们在说的这件事就和你有关。 #燃起来了大国重器 #零距离看懂财经 #美国国债 #伊朗战争" [ref=f1e514]'
+                        - generic [ref=f1e516]: 2.3万
+                      - paragraph [ref=f1e521]: "39万亿美国国债 是帝国诅咒还是战争动机？ 【世界经济观察16】 2025年，美国巨额国债的利息，达到9700亿美元，超过了当年美国的国防开支，而对过去500年里所有帝国的研究表明，只要越过这个数字节点，每一个全球帝国都会陷入衰落。 这是当代地缘政治和宏观经济学界最著名的警告之一，也是当下美国主流媒体，智库和政治圈高频讨论的话题之一，它被称为弗格森点。 它重要是因为，只要你持有任何金融资产，住在任何一个与美元体系有关联的经济体里，我们在说的这件事就和你有关。 #燃起来了大国重器 #零距离看懂财经 #美国国债 #伊朗战争"
+                  - listitem [ref=f1e522]:
+                    - 'link "破壁狗：全球失业真相：始于30年前 终于AI降临 【世界经济观察15】如果我告诉你，今天一个人失业，并不是因为他不行，也不仅仅是因为AI的技术冲击，而是因为在AI出现前30年，全职工作就已经在持续消失，而且是一去不复返。 你信吗？ 如果我还能证明，全职工作从来就不是普遍现象，只在中美等少数国家的特定时期，大规模出现过，总体上这是一个绝对的例外，现在，这个例外正在关闭中。 对大部分人来说，外包，打零工，多份兼职才是未来的常态。 你会不会信呢？ 如果我又想说服你，AI时代将全面到来，可人类为什么要和AI 比谁更能干活呢？ #燃起来了大国重器 #零距离看懂财经 #就业 #AI 9922 全球失业真相：始于30年前 终于AI降临 【世界经济观察15】如果我告诉你，今天一个人失业，并不是因为他不行，也不仅仅是因为AI的技术冲击，而是因为在AI出现前30年，全职工作就已经在持续消失，而且是一去不复返。 你信吗？ 如果我还能证明，全职工作从来就不是普遍现象，只在中美等少数国家的特定时期，大规模出现过，总体上这是一个绝对的例外，现在，这个例外正在关闭中。 对大部分人来说，外包，打零工，多份兼职才是未来的常态。 你会不会信呢？ 如果我又想说服你，AI时代将全面到来，可人类为什么要和AI 比谁更能干活呢？ #燃起来了大国重器 #零距离看懂财经 #就业 #AI" [ref=f1e524] [cursor=pointer]':
+                      - /url: /video/7622312590328204582
+                      - generic [ref=f1e525]:
+                        - 'img "破壁狗：全球失业真相：始于30年前 终于AI降临 【世界经济观察15】如果我告诉你，今天一个人失业，并不是因为他不行，也不仅仅是因为AI的技术冲击，而是因为在AI出现前30年，全职工作就已经在持续消失，而且是一去不复返。 你信吗？ 如果我还能证明，全职工作从来就不是普遍现象，只在中美等少数国家的特定时期，大规模出现过，总体上这是一个绝对的例外，现在，这个例外正在关闭中。 对大部分人来说，外包，打零工，多份兼职才是未来的常态。 你会不会信呢？ 如果我又想说服你，AI时代将全面到来，可人类为什么要和AI 比谁更能干活呢？ #燃起来了大国重器 #零距离看懂财经 #就业 #AI" [ref=f1e528]'
+                        - generic [ref=f1e530]: "9922"
+                      - paragraph [ref=f1e535]: "全球失业真相：始于30年前 终于AI降临 【世界经济观察15】如果我告诉你，今天一个人失业，并不是因为他不行，也不仅仅是因为AI的技术冲击，而是因为在AI出现前30年，全职工作就已经在持续消失，而且是一去不复返。 你信吗？ 如果我还能证明，全职工作从来就不是普遍现象，只在中美等少数国家的特定时期，大规模出现过，总体上这是一个绝对的例外，现在，这个例外正在关闭中。 对大部分人来说，外包，打零工，多份兼职才是未来的常态。 你会不会信呢？ 如果我又想说服你，AI时代将全面到来，可人类为什么要和AI 比谁更能干活呢？ #燃起来了大国重器 #零距离看懂财经 #就业 #AI"
+                  - listitem [ref=f1e536]:
+                    - 'link "破壁狗：我叫一声乐奇，你敢应吗？ #乐奇AI眼镜 #Rokid乐奇 #AI #下一代计算平台 1075 我叫一声乐奇，你敢应吗？ #乐奇AI眼镜 #Rokid乐奇 #AI #下一代计算平台" [ref=f1e538] [cursor=pointer]':
+                      - /url: /video/7618421994794667264
+                      - generic [ref=f1e539]:
+                        - 'img "破壁狗：我叫一声乐奇，你敢应吗？ #乐奇AI眼镜 #Rokid乐奇 #AI #下一代计算平台" [ref=f1e542]'
+                        - generic [ref=f1e544]: "1075"
+                      - paragraph [ref=f1e549]: "我叫一声乐奇，你敢应吗？ #乐奇AI眼镜 #Rokid乐奇 #AI #下一代计算平台"
+                  - listitem [ref=f1e550]:
+                    - 'link "破壁狗：穿皮衣的资本主义：四大巨头和英伟达的万亿美元战争 【世界经济观察14】 英伟达的官方财报里，藏着一个商业奇迹，只要四个客户，就能养活一家市值将近5万亿美元的公司。 四位金主，微软、谷歌、亚马逊、Meta，贡献了英伟达接近一半的营收。 而在实现这个商业奇迹的过程中，英伟达展示出的最强大的技术，不是GPU上，而是PUA。 #燃起来了大国重器 #零距离看懂财经 #英伟达 #破壁狗 8045 穿皮衣的资本主义：四大巨头和英伟达的万亿美元战争 【世界经济观察14】 英伟达的官方财报里，藏着一个商业奇迹，只要四个客户，就能养活一家市值将近5万亿美元的公司。 四位金主，微软、谷歌、亚马逊、Meta，贡献了英伟达接近一半的营收。 而在实现这个商业奇迹的过程中，英伟达展示出的最强大的技术，不是GPU上，而是PUA。 #燃起来了大国重器 #零距离看懂财经 #英伟达 #破壁狗" [ref=f1e552] [cursor=pointer]':
+                      - /url: /video/7611814085126081838
+                      - generic [ref=f1e553]:
+                        - 'img "破壁狗：穿皮衣的资本主义：四大巨头和英伟达的万亿美元战争 【世界经济观察14】 英伟达的官方财报里，藏着一个商业奇迹，只要四个客户，就能养活一家市值将近5万亿美元的公司。 四位金主，微软、谷歌、亚马逊、Meta，贡献了英伟达接近一半的营收。 而在实现这个商业奇迹的过程中，英伟达展示出的最强大的技术，不是GPU上，而是PUA。 #燃起来了大国重器 #零距离看懂财经 #英伟达 #破壁狗" [ref=f1e556]'
+                        - generic [ref=f1e558]: "8045"
+                      - paragraph [ref=f1e563]: "穿皮衣的资本主义：四大巨头和英伟达的万亿美元战争 【世界经济观察14】 英伟达的官方财报里，藏着一个商业奇迹，只要四个客户，就能养活一家市值将近5万亿美元的公司。 四位金主，微软、谷歌、亚马逊、Meta，贡献了英伟达接近一半的营收。 而在实现这个商业奇迹的过程中，英伟达展示出的最强大的技术，不是GPU上，而是PUA。 #燃起来了大国重器 #零距离看懂财经 #英伟达 #破壁狗"
+                - generic [ref=f1e282]:
+                  - generic [ref=f1e564]: 登录后查看更多作品
+                  - button "立即登录" [ref=f1e565] [cursor=pointer]
+        - contentinfo [ref=f1e285]:
+          - generic [ref=f1e286]:
+            - generic [ref=f1e567]:
+              - link "广告投放" [ref=f1e569] [cursor=pointer]:
+                - /url: https://www.oceanengine.com/resource/douyin
+              - link "用户服务协议" [ref=f1e571] [cursor=pointer]:
+                - /url: https://www.douyin.com/agreements/?id=6773906068725565448
+              - link "隐私政策" [ref=f1e573] [cursor=pointer]:
+                - /url: https://www.douyin.com/agreements/?id=6773901168964798477
+              - link "账号找回" [ref=f1e575] [cursor=pointer]:
+                - /url: https://www.douyin.com/recovery_account/
+              - link "联系我们" [ref=f1e577] [cursor=pointer]:
+                - /url: https://www.douyin.com/aboutus/
+              - link "加入我们" [ref=f1e579] [cursor=pointer]:
+                - /url: https://www.douyin.com/aboutus/
+              - link "营业执照" [ref=f1e581] [cursor=pointer]:
+                - /url: https://www.douyin.com/business_license/
+              - link "友情链接" [ref=f1e583] [cursor=pointer]:
+                - /url: https://www.douyin.com/friend_links
+              - link "站点地图" [ref=f1e585] [cursor=pointer]:
+                - /url: https://www.douyin.com/htmlmap/hotauthor_0_1
+              - link "下载抖音" [ref=f1e587] [cursor=pointer]:
+                - /url: https://www.douyin.com/downloadpage/pc
+              - link "抖音电商" [ref=f1e589] [cursor=pointer]:
+                - /url: https://mix.jinritemai.com/falcon/mix_page/index.html
+            - generic [ref=f1e590]:
+              - link "网络谣言曝光台 ｜" [ref=f1e592] [cursor=pointer]:
+                - /url: https://www.piyao.org.cn/yybgt/index.htm
+              - link "网上有害信息举报" [ref=f1e594] [cursor=pointer]:
+                - /url: https://www.12377.cn/
+              - generic [ref=f1e595]: ｜ 违法和不良信息举报：400-140-2108 feedback@douyin.com ｜ 算法推荐专项举报：sfjubao@bytedance.com | 体育饭圈专项举报：tyfq@bytedance.com
+            - generic [ref=f1e596]:
+              - link "京ICP备16016397号-3" [ref=f1e598] [cursor=pointer]:
+                - /url: https://beian.miit.gov.cn/
+              - generic [ref=f1e599]: ｜ 广播电视节目制作经营许可证 （京）字第11313号
+              - generic [ref=f1e600]: ｜ 增值电信业务经营许可证 京B2-20170846
+              - generic [ref=f1e601]: ｜ 网络文化经营许可证 京网文〔2025〕0181-061号 ｜
+              - generic [ref=f1e602]:
+                - img "icon" [ref=f1e603]
+                - link "京公网安备 11000002002046号" [ref=f1e604] [cursor=pointer]:
+                  - /url: http://www.beian.gov.cn/portal/registerSystemInfo
+              - generic [ref=f1e605]: ｜ 互联网宗教信息服务许可证 京（2025）0000017
+            - generic [ref=f1e606]:
+              - generic [ref=f1e608]: 热门：
+              - link "抖音二次元" [ref=f1e610] [cursor=pointer]:
+                - /url: https://www.douyin.com/jingxuan/acg
+              - link "抖音官网" [ref=f1e612] [cursor=pointer]:
+                - /url: https://www.douyin.com/jingxuan
+              - link "仿古建筑施工" [ref=f1e614] [cursor=pointer]:
+                - /url: https://www.douyin.com/user/MS4wLjABAAAArB9ctL8U7LvV5KAYUY4V2Lt5Qk9qZ4yDBrZAVWehHdM
+              - link "2026级新生群。来自@群聊・华东交通大学2026级新生群： 华东交通大学投档线已出！学弟学妹们还没进群的，赶紧关注进群啦～#华东交通大学#华东交通大学新生群" [ref=f1e616] [cursor=pointer]:
+                - /url: https://www.douyin.com/note/7664432031146005578
+              - link "辽宁是新课标几卷" [ref=f1e618] [cursor=pointer]:
+                - /url: https://www.douyin.com/topic/7509858837323892773
+              - link "高考防狗叫" [ref=f1e620] [cursor=pointer]:
+                - /url: https://www.douyin.com/shipin/7509895503211956233
+              - link "天津什么时候能查分" [ref=f1e622] [cursor=pointer]:
+                - /url: https://www.douyin.com/search/%E5%A4%A9%E6%B4%A5%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E8%83%BD%E6%9F%A5%E5%88%86
+              - link "金银价格直线拉升" [ref=f1e624] [cursor=pointer]:
+                - /url: https://www.douyin.com/video/7623241437085240582?source=Baiduspider
+              - 'link "#一口气看完系列 #文荒推荐 #配享太庙 #拯救书荒 #末世小说" [ref=f1e626] [cursor=pointer]':
+                - /url: https://www.douyin.com/video/7402150660587670811?source=Baiduspider
+              - link "四年前的视频，了解一下广西高铁发展史" [ref=f1e628] [cursor=pointer]:
+                - /url: https://www.douyin.com/video/7413289787039223091?source=Baiduspider
+              - 'link "【官方正品】半亩花田花酵特护净澈净润洁面慕斯清洁黑头粉刺ST#洁面慕斯 #半亩花田 #清洁护肤 #护肤好物 #去黑头" [ref=f1e630] [cursor=pointer]':
+                - /url: https://www.douyin.com/video/7578715513988123939?source=Baiduspider-sdc
+              - link "姐妹们晚上好.今天我来给亲们分享一下变美的小方子用一段时间你们看有啥效果.真的很好管用。" [ref=f1e632] [cursor=pointer]:
+                - /url: https://www.douyin.com/video/7474205104799829257?source=Baiduspider
+              - 'link "#小学一年级语文 汉语拼音第五课《g k h》（1）#拼音 #知识分享" [ref=f1e634] [cursor=pointer]':
+                - /url: https://www.douyin.com/video/7148763028681428238?source=Baiduspider
+              - 'link "最后一条我吹的其实也有点误差😂#萨克斯演奏 #萨克斯#萨克斯教学#乐器#节奏型" [ref=f1e636] [cursor=pointer]':
+                - /url: https://www.douyin.com/video/7522105122936130850?source=Baiduspider-sdc
+  - article [ref=f1e642]:
+    - generic [ref=f1e645]:
+      - generic [ref=f1e646]: 登录后免费畅享高清视频
+      - generic [ref=f1e652]:
+        - generic [ref=f1e655]:
+          - generic [ref=f1e656] [cursor=pointer]: 扫码登录
+          - generic [ref=f1e661]:
+            - generic [ref=f1e662]:
+              - generic [ref=f1e663] [cursor=pointer]: 如何扫码
+              - img "二维码" [ref=f1e665]
+            - paragraph [ref=f1e696]:
+              - paragraph [ref=f1e697]: 打开「抖音APP」点击左上角
+              - paragraph [ref=f1e704]: 扫一扫
+        - generic [ref=f1e707]:
+          - generic [ref=f1e708] [cursor=pointer]:
+            - generic [ref=f1e709]: 验证码登录
+            - generic [ref=f1e712]: 密码登录
+          - generic [ref=f1e716]:
+            - generic [ref=f1e718]:
+              - combobox "国家/地区" [ref=f1e721]: "+86"
+              - textbox "请输入手机号" [ref=f1e725]
+            - generic [ref=f1e727]:
+              - textbox "请输入验证码" [ref=f1e729]
+              - generic [ref=f1e730]: 获取验证码
+            - generic [ref=f1e732]: 登录
+            - generic "登录即代表同意用户协议和隐私政策" [ref=f1e735]:
+              - text: 登录即代表同意
+              - link "用户协议" [ref=f1e736] [cursor=pointer]:
+                - /url: https://www.douyin.com/agreements/?id=6773906068725565448
+              - text: 和
+              - link "隐私政策" [ref=f1e737] [cursor=pointer]:
+                - /url: https://www.douyin.com/agreements/?id=6773901168964798477

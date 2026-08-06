@@ -1,0 +1,93 @@
+- generic [active] [ref=f1e1]:
+  - button "开启读屏标签" [ref=f1e2]
+  - generic: 读屏标签已关闭
+  - generic [ref=f1e4]:
+    - generic [ref=f1e6]:
+      - link [ref=f1e7] [cursor=pointer]:
+        - /url: //www.douyin.com/jingxuan
+      - generic [ref=f1e15]:
+        - link "精选" [ref=f1e19] [cursor=pointer]:
+          - /url: https://www.douyin.com/jingxuan?from_nav=1
+        - link "推荐" [ref=f1e26] [cursor=pointer]:
+          - /url: https://www.douyin.com/?recommend=1&from_nav=1
+        - link "AI抖音" [ref=f1e33] [cursor=pointer]:
+          - /url: https://www.douyin.com/aisearch?from_nav=1
+        - link "关注" [ref=f1e41] [cursor=pointer]:
+          - /url: https://www.douyin.com/follow?from_nav=1
+        - link "朋友" [ref=f1e48] [cursor=pointer]:
+          - /url: https://www.douyin.com/friend?from_nav=1
+        - link "我的" [ref=f1e55] [cursor=pointer]:
+          - /url: https://www.douyin.com/user/self?from_nav=1
+        - link "直播" [ref=f1e63] [cursor=pointer]:
+          - /url: https://live.douyin.com/?from_nav=1
+        - link "放映厅" [ref=f1e70] [cursor=pointer]:
+          - /url: https://www.douyin.com/vs?from_nav=1
+        - link "短剧" [ref=f1e77] [cursor=pointer]:
+          - /url: https://www.douyin.com/series?from_nav=1
+        - link "小游戏" [ref=f1e84] [cursor=pointer]:
+          - /url: https://www.douyin.com/microgame?from_nav=1
+    - generic [ref=f1e103]:
+      - banner [ref=f1e106]:
+        - generic [ref=f1e108]:
+          - generic [ref=f1e112]:
+            - textbox "搜索你感兴趣的内容" [ref=f1e114]
+            - button "搜索" [ref=f1e116] [cursor=pointer]
+          - generic [ref=f1e123]:
+            - paragraph [ref=f1e132] [cursor=pointer]: 更多
+            - generic [ref=f1e133]: 壁纸
+            - list [ref=f1e142]:
+              - paragraph [ref=f1e152] [cursor=pointer]: 通知
+            - list [ref=f1e153]:
+              - paragraph [ref=f1e160] [cursor=pointer]: 消息
+            - paragraph [ref=f1e169] [cursor=pointer]: 投稿
+            - generic [ref=f1e170]: 登录
+      - generic [ref=f1e181]:
+        - generic [ref=f1e192]:
+          - generic [ref=f1e193]:
+            - listitem [ref=f1e195] [cursor=pointer]:
+              - img "破壁狗头像" [ref=f1e196]
+            - generic [ref=f1e197]:
+              - generic [ref=f1e198]:
+                - heading "破壁狗" [level=1] [ref=f1e199]
+                - generic [ref=f1e206]: 2026年4月精选作者
+              - generic [ref=f1e209]:
+                - generic [ref=f1e210] [cursor=pointer]: 关注
+                - generic [ref=f1e212] [cursor=pointer]: 粉丝
+                - generic [ref=f1e214]: 获赞
+              - paragraph [ref=f1e216]:
+                - generic [ref=f1e217]: 抖音号：20950233034
+                - generic [ref=f1e218]: IP属地：浙江
+              - generic [ref=f1e219]: 财经博主，关注资本、技术和权力的博弈
+            - generic [ref=f1e225]:
+              - button [ref=f1e228] [cursor=pointer]
+              - generic [ref=f1e229]:
+                - button "私信" [ref=f1e230] [cursor=pointer]
+                - button "关注" [ref=f1e232] [cursor=pointer]
+          - generic [ref=f1e236]:
+            - generic [ref=f1e240]:
+              - tablist [ref=f1e241]:
+                - tab [selected] [ref=f1e242]:
+                  - heading "作品 137" [level=2] [ref=f1e244] [cursor=pointer]:
+                    - generic [ref=f1e245]: 作品
+                    - generic [ref=f1e246]: "137"
+                - tab "推荐" [ref=f1e247] [cursor=pointer]
+                - tab "喜欢" [ref=f1e250] [cursor=pointer]
+              - generic:
+                - tabpanel "作品 137"
+            - generic [ref=f1e257]:
+              - generic [ref=f1e260]:
+                - generic [ref=f1e261]:
+                  - tablist [ref=f1e262]:
+                    - tab "作品" [selected] [ref=f1e263]
+                    - tab "合集" [ref=f1e266] [cursor=pointer]
+                    - tab "短剧" [ref=f1e269] [cursor=pointer]
+                  - generic:
+                    - tabpanel "作品"
+                - generic [ref=f1e272]:
+                  - generic [ref=f1e273]:
+                    - generic [ref=f1e274]: 搜索 Ta 的作品
+                    - textbox "搜索 Ta 的作品" [ref=f1e277]
+                  - generic [ref=f1e279] [cursor=pointer]: 日期筛选
+              - generic [ref=f1e281]:
+                - list
+        - contentinfo [ref=f1e285]
