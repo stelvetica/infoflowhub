@@ -111,13 +111,13 @@ def _validate_auth_profile_cookie(
             "is_available": False,
             "status_level": "warn",
             "status_text": "未登录",
-            "hint": f"请先在常用 Chrome 中登录 {label}，抓取时自动复制。",
+            "hint": f"请先在常用 Chrome 中登录 {label}，抓取时自动复制。如已登录仍显示未登录，请确认已关闭 Chrome ABE 并重启。",
         }
     return {
         "is_available": True,
         "status_level": "ok",
         "status_text": "可用",
-        "hint": "登录态从常用 Chrome 复制（单设备限制，不在副本登录）。抓取前需关 Chrome。",
+        "hint": "登录态从常用 Chrome 复制（需已关闭 Chrome ABE）。抓取前需关 Chrome，抓完自动重开。",
     }
 
 
@@ -184,13 +184,13 @@ def validate_alphapai_auth() -> dict[str, object]:
             "is_available": False,
             "status_level": "warn",
             "status_text": "未登录",
-            "hint": "请在常用 Chrome 中登录蓝宝书（alphapai-web.rabyte.cn），抓取时自动复制。",
+            "hint": "请在常用 Chrome 中登录蓝宝书（alphapai-web.rabyte.cn），抓取时自动复制。如已登录仍未生效，请确认已关闭 Chrome ABE 并重启。",
         }
     return {
         "is_available": True,
         "status_level": "ok",
         "status_text": "可用",
-        "hint": "蓝宝书登录态从常用 Chrome 复制（单设备限制，不在副本登录）。抓取前需关 Chrome。",
+        "hint": "蓝宝书登录态从常用 Chrome 复制（单设备限制，不在副本登录）。需已关闭 Chrome ABE。抓取前关 Chrome，抓完自动重开。",
     }
 
 
