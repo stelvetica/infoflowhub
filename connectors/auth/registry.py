@@ -87,7 +87,9 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         login_method="复制常用Chrome(单设备限制)",
         renew_label="在常用 Chrome 登录蓝宝书",
     ),
-    # 方式3：扫码登录共享 profile（B站 cookie v20 加密，走独立认证文件扫码）
+    # 方式3：B站特殊——复用登录态拿 cookie，再直接调 API 抓取（不走浏览器）
+    # 从常用 Chrome 或共享 profile 读出 SESSDATA/bili_jct/DedeUserID，持久化为
+    # 本地认证文件，抓取时用该 cookie 直接请求 api.bilibili.com（HTTP），性能高。
     "bilibili_main": AuthRegistration(
         auth_key="bilibili_main",
         platform="bilibili",
@@ -95,9 +97,9 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         storage_ref="本地认证文件 bilibili_main.json",
         renew_strategy="scan_qr_sync",
         display_name="B站",
-        description="订阅 B站动态 + laterhub 稍后看。走独立认证文件扫码，不复制 Chrome 登录态。",
-        login_method="扫码登录(独立认证)",
-        renew_label="运行 login_profiles.py bilibili 后点同步",
+        description="订阅 B站动态 + 稍后看。复用登录态取 cookie 后直接调 API 抓取（不走浏览器），比浏览器抓取更快。",
+        login_method="复用登录态取Cookie",
+        renew_label="在常用 Chrome 登录 B站后点同步",
     ),
     # 方式4：扫码公众号
     "wechat_mp_main": AuthRegistration(
