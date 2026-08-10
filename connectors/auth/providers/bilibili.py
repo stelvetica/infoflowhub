@@ -197,6 +197,47 @@ def export_bilibili_cookie_from_chrome() -> str:
     return cookie
 
 
+def export_bilibili_cookie_from_live_chrome() -> str:
+    """用 bb-browser 从『正在运行的真实 Chrome』实时读 B站 cookie 并持久化。
+
+    bb-browser 直连用户日常 Chrome（复用它已登录的 B站会话），无需扫码、无需
+    复制 profile、无需关 Chrome。与复制方案一致仍需关闭 ABE。
+
+    返回拼好的 cookie 串；B站登录态三字段缺失或 nav 校验失败时抛 RuntimeError。
+    """
+    from connectors.auth.providers.bb_browser import export_cookies_from_live_chrome
+
+    cookies = export_cookies_from_live_chrome(
+        (".bilibili.com",),
+        open_url=BILIBILI_HOME_URL,
+    )
+    cookie_map = {}
+    for item in cookies:
+        host = str(item.get("domain") or "")
+        name = str(item.get("name") or "")
+        value = str(item.get("value") or "")
+        if name in BILIBILI_COOKIE_KEYS and ".bilibili.com" in host and value:
+            cookie_map[name] = value
+
+    missing = [k for k in BILIBILI_COOKIE_KEYS if k not in cookie_map]
+    if missing:
+        raise RuntimeError(
+            f"真实 Chrome 未读到完整 B站登录态，缺失 {missing}。"
+            f"请确认日常 Chrome 已登录 B站（且已关闭 ABE）后重试。"
+        )
+
+    cookie = "; ".join(f"{k}={cookie_map[k]}" for k in BILIBILI_COOKIE_KEYS)
+
+    nav = _query_nav(cookie)
+    data = nav.get("data") or {}
+    nickname = str(data.get("uname") or "")
+    mid = str(data.get("mid") or "")
+
+    _persist_cookie(cookie, nickname=nickname, mid=mid)
+    _log(f"已从真实 Chrome 同步 B站登录态（账号={nickname or '未知'} mid={mid or '未知'}）。")
+    return cookie
+
+
 def validate_bilibili_auth() -> dict[str, object]:
     cookie = get_bilibili_cookie()
     if not cookie:

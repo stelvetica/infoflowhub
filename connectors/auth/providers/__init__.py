@@ -1,9 +1,14 @@
 from connectors.auth.providers.bilibili import (
     BILIBILI_AUTH_PATH,
     export_bilibili_cookie_from_chrome,
+    export_bilibili_cookie_from_live_chrome,
     get_bilibili_cookie,
     get_bilibili_headers,
     validate_bilibili_auth,
+)
+from connectors.auth.providers.bb_browser import (
+    export_cookies_from_live_chrome,
+    validate_daemon,
 )
 from connectors.auth.providers.browser_profiles import (
     ALPHAPAI_RUNNER_DIR,
@@ -31,6 +36,8 @@ __all__ = [
     "BILIBILI_AUTH_PATH",
     "WECHAT_AUTH_PATH",
     "export_bilibili_cookie_from_chrome",
+    "export_bilibili_cookie_from_live_chrome",
+    "export_cookies_from_live_chrome",
     "get_bilibili_cookie",
     "get_bilibili_headers",
     "get_context_path",
@@ -40,6 +47,7 @@ __all__ = [
     "save_wechat_credentials",
     "validate_alphapai_auth",
     "validate_bilibili_auth",
+    "validate_daemon",
     "validate_douyin_auth",
     "validate_jiuyangongshe_auth",
     "validate_wechat_auth",
