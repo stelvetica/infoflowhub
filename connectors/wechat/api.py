@@ -136,6 +136,10 @@ def parse_wechat_publish_list(payload: dict) -> tuple[list[dict], str]:
         error_msg = str(base_resp.get("err_msg") or f"ret={ret}").strip()
         if "login" in error_msg.lower() or ret == 200003:
             return [], "微信公众号登录态已失效，请更新 WECHAT_TOKEN / WECHAT_COOKIE 后重试。"
+        if ret == 200013:
+            # 2026-07-30 起微信已关闭 appmsgpublish 文章列表接口，对一切请求统一返回
+            # 200013 freq control（重登/换IP/加参数均无效，属服务端接口下线，非限频）。
+            return [], "微信公众号文章列表接口已被微信下线（200013），本渠道无法继续抓取，请改用其他渠道。"
         return [], f"微信公众号接口返回异常: {error_msg}"
 
     publish_page = payload.get("publish_page", {})
