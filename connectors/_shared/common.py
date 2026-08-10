@@ -77,6 +77,13 @@ def validate_douyin_login_prerequisite(source: dict) -> str:
 def resolve_web_target(source: dict) -> WebSourceTarget | None:
     site_url = (source.get("site_url") or "").strip()
     feed_url = (source.get("feed_url") or "").strip()
+    if feed_url.startswith("weread://") or site_url.startswith("weread://"):
+        raw = feed_url if feed_url.startswith("weread://") else site_url
+        rest = raw[len("weread://"):]
+        uid = rest.split("@", 1)[0] if "@" in rest else rest
+        uid = uid.strip().strip("/")
+        if uid:
+            return WebSourceTarget(site="wechat", uid=uid, page_url=f"wechat://{uid}")
     if feed_url.startswith("wechat://mp/") or site_url.startswith("wechat://mp/"):
         raw = feed_url if feed_url.startswith("wechat://mp/") else site_url
         uid = raw.split("wechat://mp/", 1)[1].strip().strip("/")
