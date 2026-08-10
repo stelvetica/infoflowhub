@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
+import json
+import urllib.parse
+import urllib.request
+from datetime import datetime, timedelta
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
-from connectors._shared.common import result_error
+from connectors._shared.common import parse_published_datetime, result_error
 from connectors.wechat.api import fetch_wechat_articles, parse_wechat_publish_list
 from connectors.wechat.auth import validate_wechat_auth_prerequisite
 from connectors.wechat.renew import ensure_wechat_auth_fresh_for_fetch
@@ -15,7 +18,109 @@ def _format_timestamp(value: int) -> str:
     return datetime.fromtimestamp(value).strftime("%Y/%m/%d %H:%M")
 
 
+# 与 connectors/rss/fetch.py 的 trim_entries 保持同一约束（≥10 篇且覆盖 3 天）。
+# 因 feed 经 web_fetch 间接引 rss.fetch 会循环导入，这里内联等价实现，不复刻依赖。
+MIN_SOURCE_ENTRIES = 10
+MIN_SOURCE_DAYS = 3
+
+
+def _trim_entries(entries: list[FeedEntry]) -> list[FeedEntry]:
+    if not entries:
+        return entries
+    sorted_entries = sorted(
+        entries,
+        key=lambda item: parse_published_datetime(item.published) or datetime.min,
+        reverse=True,
+    )
+    threshold = datetime.now() - timedelta(days=MIN_SOURCE_DAYS)
+    selected: list[FeedEntry] = []
+    reached_min_count = False
+    reached_min_days = False
+    for item in sorted_entries:
+        selected.append(item)
+        published_dt = parse_published_datetime(item.published)
+        if len(selected) >= MIN_SOURCE_ENTRIES:
+            reached_min_count = True
+        if published_dt and published_dt <= threshold:
+            reached_min_days = True
+        if reached_min_count and reached_min_days:
+            break
+    return selected if selected else sorted_entries
+
+
+# 轻量模式：通过外部工具(wechat-mp-tools 微信读书)的 /api/articles/list/<fakeid>
+# 直取文章元数据（标题/链接/摘要/时间），不下载正文。URL 形式：weread://<fakeid>@<host>
+def _parse_weread_url(source: dict) -> tuple[str, str]:
+    """解析 weread://<fakeid>@<host> 形式，返回 (host, fakeid)；格式不符返回 ("","")。"""
+    for value in (str(source.get("feed_url") or ""), str(source.get("site_url") or "")):
+        if not value.startswith("weread://"):
+            continue
+        rest = value[len("weread://"):]
+        if "@" in rest:
+            fakeid, host = rest.split("@", 1)
+            return host.strip(), fakeid.strip()
+        return rest.strip(), ""
+    return "", ""
+
+
+def fetch_wechat_feed_via_tool(source: dict, limit: int = 30) -> FeedFetchResult:
+    """走外部工具轻量 API，仅取标题/链接/摘要元数据，复用 trim_entries 截断（≥10篇且覆盖3天）。"""
+    host, fakeid = _parse_weread_url(source)
+    if not host or not fakeid:
+        return result_error(source, "微信公众号轻量源缺少工具地址或 fakeid，请检查 weread:// 配置。")
+    url = f"http://{host}/api/articles/list/{urllib.parse.quote(fakeid)}?count={max(int(limit), 10)}"
+    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    # 微信读书接口偶发抖动/限频会返回空列表，做轻量重试提升稳定性
+    articles: list = []
+    last_error = ""
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                payload = json.loads(response.read().decode("utf-8", errors="ignore"))
+            articles = payload.get("articles", []) if isinstance(payload, dict) else []
+            if isinstance(articles, list) and articles:
+                break
+            last_error = "微信公众号轻量接口返回空，该号在微信读书可能暂无收录文章。"
+        except Exception as exc:
+            last_error = f"微信公众号轻量抓取失败(工具不可达?): {exc}"
+        if attempt < 2:
+            import time
+            time.sleep(1.5)
+    if not isinstance(articles, list) or not articles:
+        return result_error(source, last_error or "微信公众号轻量接口返回空，该号在微信读书可能暂无收录文章。")
+    entries: list[FeedEntry] = []
+    for article in articles:
+        title = str(article.get("title") or "").strip()
+        link = str(article.get("link") or "").strip()
+        if not title or not link:
+            continue
+        published = _format_timestamp(int(article.get("update_time") or 0))
+        summary = str(article.get("digest") or "").strip()
+        entries.append(
+            FeedEntry(
+                source_id=source["id"],
+                source_name=source["name"],
+                title=title,
+                link=link,
+                published=published,
+                summary=summary,
+            )
+        )
+    trimmed = _trim_entries(entries)
+    return FeedFetchResult(
+        source_id=source["id"],
+        source_name=source["name"],
+        feed_url=source["feed_url"],
+        ok=True,
+        status=200,
+        entries=trimmed,
+        error="",
+    )
+
+
 def fetch_wechat_feed(source: dict, limit: int = 12) -> FeedFetchResult:
+    if _parse_weread_url(source)[1]:
+        return fetch_wechat_feed_via_tool(source, limit=limit)
     ensure_wechat_auth_fresh_for_fetch()
     auth_error = validate_wechat_auth_prerequisite(source)
     if auth_error:
