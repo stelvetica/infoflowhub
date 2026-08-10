@@ -85,6 +85,23 @@ def _daemon_status() -> dict[str, Any]:
     return payload
 
 
+def get_cdp_endpoint() -> str:
+    """确保 bb-browser daemon 连上真实 Chrome，返回其 CDP 调试端口。
+
+    现有 DOM 抓取器（X/YouTube/抖音/小黑盒/蓝宝书）依赖 playwright page 对象。
+    playwright 可 connect_over_cdp 直连 bb 连上的真实 Chrome，复用其登录态，
+    替代原"复制 profile + 起副本"方案，抓取逻辑零改动。
+
+    返回形如 http://127.0.0.1:9222 的 CDP 端点。
+    """
+    status = _daemon_status()
+    host = str(status.get("cdpHost") or "127.0.0.1")
+    port = int(status.get("cdpPort") or 0)
+    if not status.get("running") or not status.get("cdpConnected") or port <= 0:
+        raise RuntimeError("bb-browser 未连上真实 Chrome，无法获取 CDP 端点")
+    return f"http://{host}:{port}"
+
+
 def validate_daemon() -> dict[str, Any]:
     """检查 bb-browser daemon 是否运行、CDP 是否已连上真实 Chrome。
 

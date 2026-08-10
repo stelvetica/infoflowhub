@@ -856,3 +856,105 @@ class CopyRunnerSession:
         return False
 
 
+class LiveChromeSession:
+    """经 bb-browser 直连『正在运行的真实 Chrome』的 CDP 抓取会话。
+
+    替代 CopyRunnerSession：不关 Chrome、不复制 profile、不重登。bb-browser
+    daemon 已连上用户日常 Chrome，playwright connect_over_cdp 直连其 CDP 端点，
+    复用它所有站点的登录态（cookie 按域名天然隔离）。抓取逻辑（接收 page 对象
+    的 fetch_*_with_page）零改动，仅换登录态来源。
+
+    接口与 CopyRunnerSession 对齐（start/acquire_page/acquire_page_by_url/
+    restart/shutdown/__enter__/__exit__），可无缝替换调用方。
+
+    前提：本机已装 bb-browser（npm i -g）、已关 ABE、日常 Chrome 运行并已登录各站。
+    """
+
+    def __init__(
+        self,
+        *,
+        cdp_endpoint: str | None = None,
+        start_url: str = "about:blank",
+        headless: bool = True,
+        extra_args: list[str] | None = None,
+    ) -> None:
+        self.cdp_endpoint = cdp_endpoint
+        self.start_url = start_url
+        self.headless = headless
+        self.extra_args = extra_args or []
+        self._playwright = None
+        self._browser = None
+        self._started = False
+
+    def _resolve_cdp_endpoint(self) -> str:
+        if self.cdp_endpoint:
+            return self.cdp_endpoint
+        from connectors.auth.providers.bb_browser import get_cdp_endpoint
+
+        return get_cdp_endpoint()
+
+    def start(self) -> None:
+        if self._started:
+            return
+        endpoint = self._resolve_cdp_endpoint()
+        from playwright.sync_api import sync_playwright
+
+        self._playwright = sync_playwright().start()
+        self._browser = self._playwright.chromium.connect_over_cdp(endpoint)
+        self._started = True
+
+    def acquire_page(self):
+        if not self._started or self._browser is None:
+            raise RuntimeError("LiveChromeSession 未启动，请先调用 start()")
+        context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
+        return context.new_page()
+
+    def acquire_page_by_url(self, url: str, *, wait_until: str = "domcontentloaded", timeout_ms: int = 30000):
+        if not self._started or self._browser is None:
+            raise RuntimeError("LiveChromeSession 未启动，请先调用 start()")
+        context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
+        from urllib.parse import urlparse
+
+        host = urlparse(url).hostname or ""
+        for candidate in context.pages:
+            try:
+                candidate_host = urlparse(str(candidate.url or "")).hostname or ""
+            except Exception:
+                candidate_host = ""
+            if host and candidate_host == host:
+                return candidate
+        page = context.new_page()
+        page.goto(url, wait_until=wait_until, timeout=timeout_ms)
+        return page
+
+    def restart(self) -> None:
+        # 直连真实 Chrome：登录态失效时重连一次（cdp 端点不变），不删任何东西。
+        self.shutdown()
+        self.start()
+
+    def shutdown(self, *, _reopen_chrome: bool = True) -> None:
+        # 只关闭 playwright 对真实 Chrome 的 CDP 连接，不动用户浏览器本身。
+        if self._browser is not None:
+            try:
+                self._browser.close()
+            except Exception:
+                pass
+            self._browser = None
+        if self._playwright is not None:
+            try:
+                self._playwright.stop()
+            except Exception:
+                pass
+            self._playwright = None
+        self._started = False
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.shutdown()
+        return False
+
+
+

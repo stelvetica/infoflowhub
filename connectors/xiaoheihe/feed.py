@@ -6,8 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.laterhub.config import DEBUG_DIR
-from connectors._shared.chrome_runner import CopyRunnerSession
-from connectors._shared.common import USER_AGENT
+from connectors._shared.chrome_runner import LiveChromeSession
 
 
 XIAOHEIHE_HOME_URL = "https://www.xiaoheihe.cn/"
@@ -128,19 +127,11 @@ def _fetch_favour_via_api(page) -> list[dict[str, Any]]:
 
 def fetch_xiaoheihe_favorites(
     env_path: str | Path | None = None,
-    session: CopyRunnerSession | None = None,
+    session: LiveChromeSession | None = None,
 ) -> list[dict[str, Any]]:
     own_session = session is None
     if own_session:
-        from connectors.auth.providers.browser_profiles import LATERHUB_RUNNER_DIR, _default_chrome_profile_dir
-        session = CopyRunnerSession(
-            runner_dir=LATERHUB_RUNNER_DIR,
-            debug_port=LATERHUB_RUNNER_DEBUG_PORT,
-            source_profile_dir=_default_chrome_profile_dir(),
-            start_url="about:blank",
-            headless=True,
-            extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh;q=0.9,en;q=0.8"],
-        )
+        session = LiveChromeSession(start_url="about:blank")
         session.start()
 
     items: list[dict[str, Any]] = []
