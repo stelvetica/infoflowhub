@@ -37,7 +37,10 @@ DEFAULT_PROFILE_DIRS_TO_COPY = (
     "WebStorage",
     "Code Cache",
 )
-DEFAULT_REBUILD_INTERVAL_SECONDS = 24 * 60 * 60
+DEFAULT_REBUILD_INTERVAL_SECONDS = 3 * 24 * 60 * 60
+
+# 抓取期间会关掉用户常用 Chrome，抓完重开时默认带上 InfoFlowHub 控制台链接。
+INFOFLOW_WEB_URL = "http://127.0.0.1:18421/"
 
 
 WINDOWS_BROWSER_PATHS = {
@@ -289,14 +292,15 @@ def _stop_chrome_for_profile_copy() -> None:
 def _reopen_user_chrome() -> None:
     """抓取结束后重开用户常用 Chrome（profile 复制时被关掉的）。
 
-    ponytail: 不带 URL 直接启动，Chrome 会恢复上次会话或显示新标签页。
+    带 InfoFlowHub 控制台链接打开；若 web 服务未起，浏览器会显示无法连接，
+    但 Chrome 窗口本身恢复。ponytail: 直接带 URL 启动，Chrome 会打开该页；
     天花板：无法恢复用户抓取前的精确窗口/标签状态；若用户本就无 Chrome
     在跑（_chrome_was_running=False），不会调用此函数。
     """
     try:
         _, chrome_executable = _resolve_default_browser_executable()
         subprocess.Popen(
-            [chrome_executable],
+            [chrome_executable, INFOFLOW_WEB_URL],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
@@ -854,107 +858,5 @@ class CopyRunnerSession:
     def __exit__(self, exc_type, exc, tb):
         self.shutdown()
         return False
-
-
-class LiveChromeSession:
-    """经 bb-browser 直连『正在运行的真实 Chrome』的 CDP 抓取会话。
-
-    替代 CopyRunnerSession：不关 Chrome、不复制 profile、不重登。bb-browser
-    daemon 已连上用户日常 Chrome，playwright connect_over_cdp 直连其 CDP 端点，
-    复用它所有站点的登录态（cookie 按域名天然隔离）。抓取逻辑（接收 page 对象
-    的 fetch_*_with_page）零改动，仅换登录态来源。
-
-    接口与 CopyRunnerSession 对齐（start/acquire_page/acquire_page_by_url/
-    restart/shutdown/__enter__/__exit__），可无缝替换调用方。
-
-    前提：本机已装 bb-browser（npm i -g）、已关 ABE、日常 Chrome 运行并已登录各站。
-    """
-
-    def __init__(
-        self,
-        *,
-        cdp_endpoint: str | None = None,
-        start_url: str = "about:blank",
-        headless: bool = True,
-        extra_args: list[str] | None = None,
-    ) -> None:
-        self.cdp_endpoint = cdp_endpoint
-        self.start_url = start_url
-        self.headless = headless
-        self.extra_args = extra_args or []
-        self._playwright = None
-        self._browser = None
-        self._started = False
-
-    def _resolve_cdp_endpoint(self) -> str:
-        if self.cdp_endpoint:
-            return self.cdp_endpoint
-        from connectors.auth.providers.bb_browser import get_cdp_endpoint
-
-        return get_cdp_endpoint()
-
-    def start(self) -> None:
-        if self._started:
-            return
-        endpoint = self._resolve_cdp_endpoint()
-        from playwright.sync_api import sync_playwright
-
-        self._playwright = sync_playwright().start()
-        self._browser = self._playwright.chromium.connect_over_cdp(endpoint)
-        self._started = True
-
-    def acquire_page(self):
-        if not self._started or self._browser is None:
-            raise RuntimeError("LiveChromeSession 未启动，请先调用 start()")
-        context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
-        return context.new_page()
-
-    def acquire_page_by_url(self, url: str, *, wait_until: str = "domcontentloaded", timeout_ms: int = 30000):
-        if not self._started or self._browser is None:
-            raise RuntimeError("LiveChromeSession 未启动，请先调用 start()")
-        context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
-        from urllib.parse import urlparse
-
-        host = urlparse(url).hostname or ""
-        for candidate in context.pages:
-            try:
-                candidate_host = urlparse(str(candidate.url or "")).hostname or ""
-            except Exception:
-                candidate_host = ""
-            if host and candidate_host == host:
-                return candidate
-        page = context.new_page()
-        page.goto(url, wait_until=wait_until, timeout=timeout_ms)
-        return page
-
-    def restart(self) -> None:
-        # 直连真实 Chrome：登录态失效时重连一次（cdp 端点不变），不删任何东西。
-        self.shutdown()
-        self.start()
-
-    def shutdown(self, *, _reopen_chrome: bool = True) -> None:
-        # 只关闭 playwright 对真实 Chrome 的 CDP 连接，不动用户浏览器本身。
-        if self._browser is not None:
-            try:
-                self._browser.close()
-            except Exception:
-                pass
-            self._browser = None
-        if self._playwright is not None:
-            try:
-                self._playwright.stop()
-            except Exception:
-                pass
-            self._playwright = None
-        self._started = False
-
-    def __enter__(self):
-        self.start()
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        self.shutdown()
-        return False
-
 
 

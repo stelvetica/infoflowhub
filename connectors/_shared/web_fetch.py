@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from apps.subscriptions.models import FeedFetchResult
-from connectors._shared.chrome_runner import LiveChromeSession
+from connectors._shared.chrome_runner import CopyRunnerSession, SharedRunnerSession
 from connectors._shared.common import (
+    USER_AGENT,
     is_transient_fetch_error,
     resolve_web_target,
     result_error,
@@ -12,6 +14,7 @@ from connectors._shared.common import (
     validate_x_login_prerequisite,
 )
 from connectors.alphapai import fetch_alphapai_with_page
+from connectors.alphapai.browser import ALPHAPAI_TARGET_URL
 from connectors.bilibili import fetch_bilibili_dynamic_feed
 from connectors.douyin import fetch_douyin_subscription_with_page
 from connectors.jiuyangongshe import fetch_jiuyangongshe_with_page
@@ -20,6 +23,7 @@ from connectors.x import fetch_x_with_page
 from connectors.youtube import fetch_youtube_with_page
 
 WEB_RETRY_DELAYS = (0.0, 2.0)
+WEB_RUNNER_DEBUG_PORT = 9223
 
 _SHARED_RUNNER_SITES = {"x", "youtube", "douyin", "alphapai"}
 
@@ -31,6 +35,17 @@ def _needs_profile_rebuild(result: FeedFetchResult) -> bool:
     return "登录态失效" in error_text or "登录" in error_text or "login" in error_text
 
 
+def _shared_runner_extra_args() -> list[str]:
+    # 共享 runner 只起一次，统一用一个兼顾中英文的 Accept-Language
+    return [f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh;q=0.9,en;q=0.8"]
+
+
+def _shared_runner_source_profile_dir(site: str) -> Path:
+    """所有浏览器站点统一复制常用 Chrome Default profile 登录态（cookie 按域名隔离）。"""
+    from connectors.auth.providers.browser_profiles import _default_chrome_profile_dir
+    return _default_chrome_profile_dir()
+
+
 def _preflight_login_check(source: dict, site: str) -> str:
     if site == "x":
         return validate_x_login_prerequisite(source)
@@ -40,7 +55,7 @@ def _preflight_login_check(source: dict, site: str) -> str:
 
 
 def _fetch_via_shared_runner(
-    session: LiveChromeSession,
+    session: CopyRunnerSession,
     source: dict,
     fetch_fn,
     *,
@@ -72,11 +87,11 @@ def _fetch_via_shared_runner(
             pass
 
 
-def _fetch_alphapai_via_session(session: LiveChromeSession, source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
+def _fetch_alphapai_via_session(session: CopyRunnerSession, source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
     return _fetch_via_shared_runner(session, source, fetch_alphapai_with_page, limit=limit, timeout_ms=timeout_ms, use_url_tab=True)
 
 
-def _fetch_one_via_session(session: LiveChromeSession, source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
+def _fetch_one_via_session(session: CopyRunnerSession, source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
     """在已启动的复制副本 session 上抓单个源（含蓝宝书）。"""
     target = resolve_web_target(source)
     if not target:
@@ -117,14 +132,22 @@ def _needs_shared_runner(source: dict) -> bool:
     return bool(target and target.site in _SHARED_RUNNER_SITES)
 
 
-def _make_session_for(source: dict) -> LiveChromeSession:
-    """订阅抓取走 LiveChromeSession：经 bb-browser 直连真实 Chrome 登录态。
+def _make_session_for(source: dict) -> CopyRunnerSession:
+    """订阅抓取统一走 CopyRunnerSession：复制常用 Chrome Default profile 登录态到副本。
 
-    各站点（X/YouTube/抖音/蓝宝书）共用同一真实 Chrome，cookie 按域名隔离天然
-    可用。替代原 CopyRunnerSession（关 Chrome + 复制 profile）：不关 Chrome、
-    不复制、不重登，仍需已关 ABE 且日常 Chrome 运行。
+    各站点（X/YouTube/抖音/蓝宝书）共用同一常用 Chrome 来源，cookie 按域名隔离天然可用。
+    headless 无头抓取，副本独立运行不影响你常用浏览器。
     """
-    return LiveChromeSession(start_url="about:blank")
+    from connectors.auth.providers.browser_profiles import WEB_RUNNER_DIR
+
+    return CopyRunnerSession(
+        runner_dir=WEB_RUNNER_DIR,
+        debug_port=WEB_RUNNER_DEBUG_PORT,
+        source_profile_dir=_shared_runner_source_profile_dir(""),
+        start_url="about:blank",
+        headless=True,
+        extra_args=_shared_runner_extra_args(),
+    )
 
 
 def fetch_web_source(source: dict) -> FeedFetchResult:
@@ -161,7 +184,7 @@ def fetch_web_many(
     sources: list[dict],
     limit: int = 12,
     timeout_ms: int = 60000,
-    session: LiveChromeSession | None = None,
+    session: CopyRunnerSession | None = None,
 ) -> list[FeedFetchResult]:
     """批量抓取。所有浏览器站点共用一个复制副本 session（单一常用 Chrome 登录态来源）。"""
     if not sources:
