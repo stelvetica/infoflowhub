@@ -24,7 +24,7 @@ from apps.subscriptions.rss_db import (
 from apps.subscriptions.source_ids import canonicalize_source_id, legacy_source_ids, merge_source_health_rows
 from connectors._shared.common import parse_published_datetime, resolve_web_target
 from connectors.auth import list_auth_statuses, resolve_auth
-from connectors.wechat.auth import get_wechat_auth_status
+from web.services import weread_login
 from infra.text_normalizer import normalize_text_lines, normalize_utf8_obj, normalize_utf8_text
 from infra.utf8_json import dump_json_utf8, load_json_utf8
 from web.services.utils import (
@@ -828,7 +828,8 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     source_filter = query.get("source_filter", "")
     sort = query.get("sort", "name")
     direction = query.get("dir", "asc")
-    wechat_auth = normalize_utf8_obj(get_wechat_auth_status())
+    wechat_auth = normalize_utf8_obj(weread_login.get_login_status())
+    wechat_auth["should_highlight_renew"] = bool(wechat_auth.get("is_expired") or wechat_auth.get("is_expiring_soon"))
     wechat_login_url = f"/wechat-login?next={quote('/?view=settings', safe='')}"
     wechat_entries_login_url = f"/wechat-login?next={quote('/', safe='')}"
     auth_assets = []
@@ -850,11 +851,11 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             is_expiring_soon = bool(wechat_auth.get("is_expiring_soon"))
             nickname = normalize_utf8_text(wechat_auth.get("nickname"))
             if is_expired:
-                hint = "本地认证文件中的公众号登录态已过期，请点击重新扫码。"
+                hint = "微信读书登录态已过期或外部工具未运行，请点击重新扫码。"
             elif is_expiring_soon:
-                hint = f"距离过期还剩 {expire_summary}，建议重新扫码。"
+                hint = f"微信读书登录态距离过期还剩 {expire_summary}，建议重新扫码。"
             elif expire_at_text:
-                hint = f"当前登录态可用，预计到期时间 {expire_at_text}。"
+                hint = f"微信读书登录态可用，预计到期时间 {expire_at_text}。"
         elif descriptor.auth_key == "bilibili_main":
             renew_action_url = "/actions/bilibili-login/sync"
             renew_action_label = "同步登录态"

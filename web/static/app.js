@@ -488,74 +488,80 @@
       }
     };
 
-    const completeLogin = async () => {
-      setStatus("已扫码，正在完成登录...");
-      const res = await fetch("/actions/wechat-login/complete", { method: "POST" });
-      const data = await res.json();
-      if (data.success) {
-        setStatus(`登录成功：${data.data.nickname || "公众号"}`);
-        window.setTimeout(() => {
-          window.location.href = "/?view=settings";
-        }, 1200);
+    const renderQrcode = (scanUrl) => {
+      if (!qr) return;
+      qr.innerHTML = "";
+      if (!scanUrl) {
+        qr.innerHTML = "正在加载二维码...";
         return;
       }
-      setStatus(`登录失败：${data.error || "未知错误"}`);
+      const img = document.createElement("img");
+      img.alt = "微信读书登录二维码";
+      img.style.maxWidth = "220px";
+      img.style.maxHeight = "220px";
+      img.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(scanUrl)}`;
+      qr.appendChild(img);
+    };
+
+    const handleSuccess = (data) => {
+      stopPolling();
+      const nickname = data.nickname || data.account_info?.nickname || "微信读书";
+      setStatus(`✅ 登录成功：${nickname}`);
+      const nextUrl = root.dataset.nextUrl || "/?view=settings";
+      window.setTimeout(() => {
+        window.location.href = nextUrl;
+      }, 1200);
     };
 
     const poll = async () => {
       try {
-        const res = await fetch("/actions/wechat-login/scan");
+        const res = await fetch("/actions/weread-login/status");
         const data = await res.json();
-        if (data.base_resp && data.base_resp.ret !== 0) {
-          setStatus("状态检查失败，请刷新二维码后重试。");
+        if (data.login_state && data.login_state.status === "failed") {
+          stopPolling();
+          setStatus(`登录失败：${data.login_state.message || "未知错误"}，请点击「刷新二维码」重试。`);
           return;
         }
-        const scanStatus = Number(data.status || 0);
-        if (scanStatus === 1) {
-          stopPolling();
-          await completeLogin();
+        if (data.logged_in && !data.login_state.qrcode) {
+          handleSuccess(data);
           return;
         }
-        if (scanStatus === 4 || scanStatus === 6) {
-          setStatus("已扫码，请在手机上确认登录。");
-        } else if (scanStatus === 2) {
-          stopPolling();
-          setStatus("二维码已过期，请刷新二维码。");
-          return;
-        } else if (scanStatus === 3) {
-          stopPolling();
-          setStatus("扫码失败，请刷新二维码后重试。");
-          return;
+        if (data.login_state && data.login_state.status === "scanning" && data.login_state.qrcode) {
+          renderQrcode(data.login_state.qrcode);
+          setStatus("请用微信读书 App 扫码，并在手机上确认登录。");
         } else {
-          setStatus("请用微信扫码。");
+          setStatus(data.message || "请用微信读书 App 扫码。");
         }
       } catch {
-        setStatus("状态检查失败，请稍后重试。");
+        setStatus("状态检查失败，请确认外部工具（127.0.0.1:5300）已启动后重试。");
       }
-      wechatLogin.timer = window.setTimeout(poll, 1800);
+      wechatLogin.timer = window.setTimeout(poll, 2000);
     };
 
     const loadQrcode = async () => {
       stopPolling();
       setStatus("正在准备二维码...");
       if (qr) qr.innerHTML = "正在加载二维码...";
-      await fetch("/actions/wechat-login/start", { method: "POST" });
-      const img = document.createElement("img");
-      img.alt = "微信登录二维码";
-      img.style.maxWidth = "220px";
-      img.style.maxHeight = "220px";
-      img.onload = () => {
-        if (qr) {
-          qr.innerHTML = "";
-          qr.appendChild(img);
+      try {
+        await fetch("/actions/weread-login/start", { method: "POST" });
+        const res = await fetch("/actions/weread-login/status");
+        const data = await res.json();
+        if (data.login_state && data.login_state.status === "scanning" && data.login_state.qrcode) {
+          renderQrcode(data.login_state.qrcode);
+          setStatus("请用微信读书 App 扫码，并在手机上确认登录。");
+        } else if (data.logged_in) {
+          handleSuccess(data);
+          return;
+        } else if (data.login_state && data.login_state.status === "failed") {
+          setStatus(`登录失败：${data.login_state.message || "未知错误"}。`);
+          return;
+        } else {
+          setStatus(data.message || "请用微信读书 App 扫码。");
         }
-        setStatus("请用微信扫码。");
-        wechatLogin.timer = window.setTimeout(poll, 1800);
-      };
-      img.onerror = () => {
-        setStatus("二维码加载失败，请刷新后重试。");
-      };
-      img.src = `/actions/wechat-login/qrcode?rnd=${Math.random()}`;
+        wechatLogin.timer = window.setTimeout(poll, 2000);
+      } catch {
+        setStatus("启动登录失败，请确认外部工具（127.0.0.1:5300）已启动。");
+      }
     };
 
     refresh?.addEventListener("click", loadQrcode);
