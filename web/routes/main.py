@@ -15,6 +15,7 @@ from web.services import weread_login
 from web.services.views import (
     build_entries_state_params,
     build_laterhub_state_params,
+    build_news_state_params,
     delete_source,
     format_success_sources_text,
     get_laterhub_actionable_ids,
@@ -39,34 +40,51 @@ templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / 
 BASE_DIR = Path(__file__).resolve().parents[2]
 ALPHAPAI_MARKDOWN_DIR = BASE_DIR / "data" / "alphapai_markdown"
 ENTRIES_STATE_COOKIE = "ifh_entries_state_v1"
+NEWS_STATE_COOKIE = "ifh_news_state_v1"
 
 
 def query_dict(request: Request) -> dict[str, str]:
     return {key: value for key, value in request.query_params.items()}
 
 
-def load_entries_state(request: Request) -> dict[str, str]:
+def _load_state(request: Request, cookie_key: str, builder) -> dict[str, str]:
     params = query_dict(request)
-    cookie_value = request.cookies.get(ENTRIES_STATE_COOKIE, "")
+    cookie_value = request.cookies.get(cookie_key, "")
     cookie_params: dict[str, str] = {}
     if cookie_value:
         from urllib.parse import parse_qsl
 
         cookie_params = {key: value for key, value in parse_qsl(cookie_value, keep_blank_values=True)}
     merged = {**cookie_params, **params}
-    return build_entries_state_params(merged)
+    return builder(merged)
 
 
-def persist_entries_state(response: Response, state: dict[str, str]) -> None:
+def _persist_state(response: Response, cookie_key: str, state: dict[str, str]) -> None:
     value = urlencode({key: value for key, value in state.items() if value != ""})
     response.set_cookie(
-        ENTRIES_STATE_COOKIE,
+        cookie_key,
         value=value,
         httponly=False,
         samesite="lax",
         max_age=180 * 24 * 60 * 60,
         path="/",
     )
+
+
+def load_entries_state(request: Request) -> dict[str, str]:
+    return _load_state(request, ENTRIES_STATE_COOKIE, build_entries_state_params)
+
+
+def persist_entries_state(response: Response, state: dict[str, str]) -> None:
+    _persist_state(response, ENTRIES_STATE_COOKIE, state)
+
+
+def load_news_state(request: Request) -> dict[str, str]:
+    return _load_state(request, NEWS_STATE_COOKIE, build_news_state_params)
+
+
+def persist_news_state(response: Response, state: dict[str, str]) -> None:
+    _persist_state(response, NEWS_STATE_COOKIE, state)
 
 
 def merge_url(params: dict[str, str], **extra: str) -> str:
@@ -86,10 +104,12 @@ def source_url(params: dict[str, str], **extra: str) -> str:
 def render_main(request: Request, params: dict[str, str]):
     view = params.get("view", "entries")
     entries_params = load_entries_state(request)
+    news_params = load_news_state(request)
     if view != "settings":
         entries_params.setdefault("entries_unread_only", "1")
+        news_params.setdefault("news_unread_only", "1")
     entries = get_entries_view(entries_params)
-    news = get_news_view()
+    news = get_news_view(news_params)
     laterhub = get_laterhub_view(params)
     laterhub_params = build_laterhub_state_params(params)
     nav_only = view != "settings"
@@ -107,6 +127,7 @@ def render_main(request: Request, params: dict[str, str]):
             "view": view,
             "entries": entries,
             "news": news,
+            "news_params": news_params,
             "laterhub": laterhub,
             "laterhub_params": laterhub_params,
             "settings": settings,
@@ -122,6 +143,7 @@ def render_main(request: Request, params: dict[str, str]):
 async def home(request: Request):
     response = render_main(request, query_dict(request))
     persist_entries_state(response, load_entries_state(request))
+    persist_news_state(response, load_news_state(request))
     return response
 
 
@@ -130,6 +152,14 @@ async def entries_fragment(request: Request):
     params = load_entries_state(request)
     response = templates.TemplateResponse(request, "partials/entries_table.html", {"entries": get_entries_view(params), "params": params})
     persist_entries_state(response, params)
+    return response
+
+
+@router.get("/fragments/news", response_class=HTMLResponse)
+async def news_fragment(request: Request):
+    params = load_news_state(request)
+    response = templates.TemplateResponse(request, "partials/news_table.html", {"news": get_news_view(params), "news_params": params, "params": params})
+    persist_news_state(response, params)
     return response
 
 

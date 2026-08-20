@@ -1,12 +1,31 @@
 (() => {
   const STORAGE_KEY = "infoflowhub:read-links:v3";
-  const ENTRIES_COOKIE_KEY = "ifh_entries_state_v1";
   const LATERHUB_WIDTH_KEY = "infoflowhub:laterhub-width";
-  const unreadFilter = {
-    unreadOnly: true,
-    button: null,
-    lastSyncSignature: "",
-  };
+  // 每个订阅面板(主订阅区/新闻卡片)独立的交互配置与未读态。
+  const panels = [
+    {
+      kind: "entries",
+      formSel: ".entries-header-form",
+      panelSel: "#entries-panel",
+      slotSel: "#entries-unread-slot",
+      fragmentUrl: "/fragments/entries",
+      prefix: "entries",
+      unreadOnly: true,
+      button: null,
+      lastSyncSignature: "",
+    },
+    {
+      kind: "news",
+      formSel: ".news-header-form",
+      panelSel: "#news-panel",
+      slotSel: "#news-unread-slot",
+      fragmentUrl: "/fragments/news",
+      prefix: "news",
+      unreadOnly: true,
+      button: null,
+      lastSyncSignature: "",
+    },
+  ];
   const wechatLogin = {
     timer: null,
   };
@@ -110,48 +129,48 @@
       .filter(Boolean);
   }
 
-  function getEntriesFragment() {
-    return document.querySelector("[data-entries-fragment]");
+  function getPanelFragment(panel) {
+    return document.querySelector(`[data-${panel.kind}-fragment]`);
   }
 
-  function syncEntriesUnreadFields() {
-    const form = document.querySelector(".entries-header-form");
+  function syncPanelFields(panel) {
+    const form = document.querySelector(panel.formSel);
     if (!form) return;
 
-    let unreadInput = form.querySelector('input[name="entries_unread_only"]');
+    let unreadInput = form.querySelector(`input[name="${panel.prefix}_unread_only"]`);
     if (!unreadInput) {
       unreadInput = document.createElement("input");
       unreadInput.type = "hidden";
-      unreadInput.name = "entries_unread_only";
+      unreadInput.name = `${panel.prefix}_unread_only`;
       form.appendChild(unreadInput);
     }
-    unreadInput.value = unreadFilter.unreadOnly ? "1" : "";
+    unreadInput.value = panel.unreadOnly ? "1" : "";
 
-    let readKeysInput = form.querySelector('input[name="entries_read_keys"]');
+    let readKeysInput = form.querySelector(`input[name="${panel.prefix}_read_keys"]`);
     if (!readKeysInput) {
       readKeysInput = document.createElement("input");
       readKeysInput.type = "hidden";
-      readKeysInput.name = "entries_read_keys";
+      readKeysInput.name = `${panel.prefix}_read_keys`;
       form.appendChild(readKeysInput);
     }
     readKeysInput.value = getReadKeys().join(",");
     const cookieParams = new URLSearchParams();
-    const pageValue = getEntriesFragment()?.dataset.page || "1";
-    cookieParams.set("entries_unread_only", unreadInput.value || "");
-    cookieParams.set("entries_read_keys", readKeysInput.value || "");
-    cookieParams.set("entries_q", form.querySelector('input[name="entries_q"]')?.value || "");
-    cookieParams.set("entries_sort", form.querySelector('input[name="entries_sort"]')?.value || "sort_time");
-    cookieParams.set("entries_dir", form.querySelector('input[name="entries_dir"]')?.value || "desc");
-    cookieParams.set("entries_page", pageValue);
-    setCookie(ENTRIES_COOKIE_KEY, cookieParams.toString());
+    const pageValue = getPanelFragment(panel)?.dataset.page || "1";
+    cookieParams.set(`${panel.prefix}_unread_only`, unreadInput.value || "");
+    cookieParams.set(`${panel.prefix}_read_keys`, readKeysInput.value || "");
+    cookieParams.set(`${panel.prefix}_q`, form.querySelector(`input[name="${panel.prefix}_q"]`)?.value || "");
+    cookieParams.set(`${panel.prefix}_sort`, form.querySelector(`input[name="${panel.prefix}_sort"]`)?.value || "sort_time");
+    cookieParams.set(`${panel.prefix}_dir`, form.querySelector(`input[name="${panel.prefix}_dir"]`)?.value || "desc");
+    cookieParams.set(`${panel.prefix}_page`, pageValue);
+    setCookie(`ifh_${panel.kind}_state_v1`, cookieParams.toString());
   }
 
-  function refreshEntriesPanel(extraParams = {}) {
+  function refreshPanel(panel, extraParams = {}) {
     if (!window.htmx) return;
-    const form = document.querySelector(".entries-header-form");
+    const form = document.querySelector(panel.formSel);
     if (!form) return;
 
-    syncEntriesUnreadFields();
+    syncPanelFields(panel);
     const params = new URLSearchParams();
     const formData = new FormData(form);
     formData.forEach((value, key) => {
@@ -159,9 +178,9 @@
       if (text) params.set(key, text);
     });
 
-    const meta = getEntriesFragment();
-    if (meta?.dataset.page && !Object.prototype.hasOwnProperty.call(extraParams, "entries_page")) {
-      params.set("entries_page", meta.dataset.page);
+    const meta = getPanelFragment(panel);
+    if (meta?.dataset.page && !Object.prototype.hasOwnProperty.call(extraParams, `${panel.prefix}_page`)) {
+      params.set(`${panel.prefix}_page`, meta.dataset.page);
     }
 
     Object.entries(extraParams).forEach(([key, value]) => {
@@ -173,8 +192,8 @@
       }
     });
 
-    window.htmx.ajax("GET", `/fragments/entries?${params.toString()}`, {
-      target: "#entries-panel",
+    window.htmx.ajax("GET", `${panel.fragmentUrl}?${params.toString()}`, {
+      target: panel.panelSel,
       swap: "innerHTML",
     });
   }
@@ -257,6 +276,8 @@
       });
       const currentReadState = Boolean(explicitStorageKey ? readLinks[explicitStorageKey] : readLinks[href]);
       setEntryReadState(anchor, currentReadState);
+      const kindNode = anchor.closest("[data-panel-kind]");
+      const panel = panels.find((p) => p.kind === (kindNode?.dataset?.panelKind || "")) || panels[0];
       anchor.onclick = () => {
         const next = loadReadLinks();
         if (explicitStorageKey) {
@@ -269,16 +290,16 @@
         }
         saveReadLinks(next);
         setEntryReadState(anchor, true);
-        syncEntriesUnreadFields();
+        syncPanelFields(panel);
         syncReadStateToServer(explicitReadKey || readLinkKey(href)).then(() => {
-          if (unreadFilter.unreadOnly) {
-            refreshEntriesPanel();
+          if (panel.unreadOnly) {
+            refreshPanel(panel);
           }
         });
-        if (unreadFilter.unreadOnly) {
+        if (panel.unreadOnly) {
           return;
         }
-        renderUnreadToggle();
+        renderUnreadToggle(panel);
       };
     });
     if (changed) {
@@ -286,50 +307,51 @@
     }
   }
 
-  function renderUnreadToggle() {
-    const { button, unreadOnly } = unreadFilter;
+  function renderUnreadToggle(panel) {
+    if (!panel) return;
+    const { button, unreadOnly } = panel;
     if (button) {
       button.textContent = unreadOnly ? "默认未读" : "显示全部";
       button.classList.toggle("active-filter", unreadOnly);
     }
-    syncEntriesUnreadFields();
+    syncPanelFields(panel);
   }
 
-  function setupUnreadToggle() {
-    const slot = document.getElementById("entries-unread-slot");
+  function setupUnreadToggle(panel) {
+    const slot = document.getElementById(panel.slotSel.replace("#", ""));
     if (!slot) return;
-    const meta = getEntriesFragment();
+    const meta = getPanelFragment(panel);
     if (meta) {
-      unreadFilter.unreadOnly = (meta.dataset.unreadOnly || "0") === "1";
+      panel.unreadOnly = (meta.dataset.unreadOnly || "0") === "1";
     }
-    let button = unreadFilter.button;
+    let button = panel.button;
     if (!button) {
       button = document.createElement("button");
       button.type = "button";
       button.className = "btn ghost active-filter";
       button.onclick = () => {
-        unreadFilter.unreadOnly = !unreadFilter.unreadOnly;
-        renderUnreadToggle();
-        refreshEntriesPanel({ entries_page: "1" });
+        panel.unreadOnly = !panel.unreadOnly;
+        renderUnreadToggle(panel);
+        refreshPanel(panel, { [`${panel.prefix}_page`]: "1" });
       };
-      unreadFilter.button = button;
+      panel.button = button;
     }
     if (slot.firstChild !== button) {
       slot.innerHTML = "";
       slot.appendChild(button);
     }
-    renderUnreadToggle();
+    renderUnreadToggle(panel);
     const currentReadKeys = getReadKeys().join(",");
     if (!meta) return;
     const currentPage = meta.dataset.page || "1";
     const renderedSignature = `${currentPage}|${meta.dataset.unreadOnly || "0"}|${meta.dataset.readKeys || ""}`;
-    const targetSignature = `${currentPage}|${unreadFilter.unreadOnly ? "1" : "0"}|${currentReadKeys}`;
-    if (renderedSignature !== targetSignature && unreadFilter.lastSyncSignature !== targetSignature) {
-      unreadFilter.lastSyncSignature = targetSignature;
-      refreshEntriesPanel({ entries_page: currentPage });
+    const targetSignature = `${currentPage}|${panel.unreadOnly ? "1" : "0"}|${currentReadKeys}`;
+    if (renderedSignature !== targetSignature && panel.lastSyncSignature !== targetSignature) {
+      panel.lastSyncSignature = targetSignature;
+      refreshPanel(panel, { [`${panel.prefix}_page`]: currentPage });
       return;
     }
-    unreadFilter.lastSyncSignature = targetSignature;
+    panel.lastSyncSignature = targetSignature;
   }
 
   function clearModal() {
@@ -597,18 +619,20 @@
       stopFetchPolling();
       return;
     }
-    // 抓取完成:刷新运行状态面板与条目列表
+    // 抓取完成:刷新运行状态面板与各订阅面板
     stopFetchPolling();
-    const panel = document.querySelector("#runtime-status-panel");
+    const statusPanel = document.querySelector("#runtime-status-panel");
     const params = window.location.search || "";
-    if (panel) {
+    if (statusPanel) {
       window.htmx?.ajax("GET", `/fragments/runtime-status${params}`, {
         target: "#runtime-status-panel",
         swap: "innerHTML",
       });
     }
-    refreshEntriesPanel();
-    renderUnreadToggle();
+    panels.forEach((panel) => {
+      refreshPanel(panel);
+      renderUnreadToggle(panel);
+    });
   }
 
   function startFetchPolling() {
@@ -619,7 +643,7 @@
 
   function init() {
     applyReadState();
-    setupUnreadToggle();
+    panels.forEach((panel) => setupUnreadToggle(panel));
     setupLaterhubResizer();
     setupLaterhubOpenedTracking();
     setupWechatLogin();

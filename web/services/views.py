@@ -686,12 +686,78 @@ def build_entries_state_params(query: Mapping[str, Any], *, page: int | None = N
     }
 
 
-def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
-    # 条目列表不展示登录态，跳过 auth 校验避免主界面首载阻塞
+def build_news_state_params(query: Mapping[str, Any], *, page: int | None = None) -> dict[str, str]:
+    safe_page = page if page is not None else max(int(str(query.get("news_page", "1") or "1")), 1)
+    unread_only = query.get("news_unread_only")
+    return {
+        "news_q": str(query.get("news_q", "") or ""),
+        "news_sort": str(query.get("news_sort") or "sort_time"),
+        "news_dir": str(query.get("news_dir") or "desc"),
+        "news_unread_only": "1" if unread_only is None else str(unread_only),
+        "news_read_keys": str(query.get("news_read_keys", "") or ""),
+        "news_page": str(max(safe_page, 1)),
+    }
+
+
+def _build_entry_row(item: dict[str, Any], current_name_map: dict[str, str], current_site_map: dict[str, str]) -> dict[str, Any]:
+    """把一条原始条目构建为可渲染行(链接规范化/alphapai markdown/read_key/时间)。"""
+    current_name = current_name_map.get(item["source_id"], "").strip()
+    display_source_name = current_name or normalize_utf8_text(item.get("source_name")) or ""
+    display_time_raw = item.get("published_at") or item.get("published") or item.get("created_at") or ""
+    sort_time = to_sortable_time(display_time_raw)
+    source_site_url = current_site_map.get(item["source_id"], "").strip()
+    link = normalize_entry_link(item.get("link") or "", source_site_url)
+    markdown_path = str(item.get("markdown_path") or "").strip()
+    if item["source_id"] == "alphapai" and markdown_path:
+        link = f"/alphapai/markdown/{quote(markdown_path, safe='')}"
+    entry_read_key = read_entry_key(item["source_id"], link, str(item.get("title") or ""))
+    return {
+        **item,
+        "title": normalize_utf8_text(item.get("title")),
+        "summary": normalize_utf8_text(item.get("summary")),
+        "link": link,
+        "markdown_path": markdown_path,
+        "read_key": entry_read_key,
+        "has_link": bool(link),
+        "source_name": display_source_name,
+        "display_time": format_datetime(display_time_raw),
+        "sort_time": sort_time,
+    }
+
+
+def _iter_entry_rows(
+    *,
+    source_ids_filter: set[str] | None,
+    keyword: str,
+    unread_only: bool,
+    effective_read_keys: set[str],
+    load_limit: int,
+) -> list[dict[str, Any]]:
+    """按来源过滤/关键字/未读态过滤并构建全部可见行,不排序。"""
     current_sources = normalize_sources(include_auth=False)
     enabled_ids = {item["id"] for item in current_sources if item.get("enabled")}
     current_name_map = {item["id"]: str(item.get("name") or "").strip() for item in current_sources}
     current_site_map = {item["id"]: str(item.get("site_url") or "").strip() for item in current_sources}
+    rows = []
+    for item in _load_entries(load_limit):
+        if item["source_id"] not in enabled_ids:
+            continue
+        if source_ids_filter is not None and item["source_id"] not in source_ids_filter:
+            continue
+        if keyword and not any(keyword in normalize_text(str(item.get(field) or "")) for field in ("source_name", "title", "summary")):
+            continue
+        row = _build_entry_row(item, current_name_map, current_site_map)
+        if unread_only and (row["sort_time"] < ENTRIES_READ_CUTOFF or row["read_key"] in effective_read_keys):
+            continue
+        rows.append(row)
+    return rows
+
+
+ENTRIES_LOAD_LIMIT = 500
+
+
+def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
+    # 条目列表不展示登录态，跳过 auth 校验避免主界面首载阻塞
     keyword = normalize_text(query.get("entries_q", ""))
     unread_only = query.get("entries_unread_only", "0") == "1"
     read_keys = {item for item in split_tags(query.get("entries_read_keys", "")) if item}
@@ -700,38 +766,13 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
     sort = query.get("entries_sort") or "sort_time"
     direction = query.get("entries_dir") or "desc"
     page = max(int(query.get("entries_page", "1") or "1"), 1)
-    rows = []
-    for item in _load_entries(500):
-        if item["source_id"] not in enabled_ids:
-            continue
-        if keyword and not any(keyword in normalize_text(str(item.get(field) or "")) for field in ("source_name", "title", "summary")):
-            continue
-        current_name = current_name_map.get(item["source_id"], "").strip()
-        display_source_name = current_name or normalize_utf8_text(item.get("source_name")) or ""
-        display_time_raw = item.get("published_at") or item.get("published") or item.get("created_at") or ""
-        sort_time = to_sortable_time(display_time_raw)
-        source_site_url = current_site_map.get(item["source_id"], "").strip()
-        link = normalize_entry_link(item.get("link") or "", source_site_url)
-        markdown_path = str(item.get("markdown_path") or "").strip()
-        if item["source_id"] == "alphapai" and markdown_path:
-            link = f"/alphapai/markdown/{quote(markdown_path, safe='')}"
-        entry_read_key = read_entry_key(item["source_id"], link, str(item.get("title") or ""))
-        if unread_only and (sort_time < ENTRIES_READ_CUTOFF or entry_read_key in effective_read_keys):
-            continue
-        rows.append(
-            {
-                **item,
-                "title": normalize_utf8_text(item.get("title")),
-                "summary": normalize_utf8_text(item.get("summary")),
-                "link": link,
-                "markdown_path": markdown_path,
-                "read_key": entry_read_key,
-                "has_link": bool(link),
-                "source_name": display_source_name,
-                "display_time": format_datetime(display_time_raw),
-                "sort_time": sort_time,
-            }
-        )
+    rows = _iter_entry_rows(
+        source_ids_filter=None,
+        keyword=keyword,
+        unread_only=unread_only,
+        effective_read_keys=effective_read_keys,
+        load_limit=ENTRIES_LOAD_LIMIT,
+    )
     rows.sort(key=cmp_to_key(lambda a, b: compare_value(a.get(sort), b.get(sort), direction)))
     total = len(rows)
     total_pages = max((total + ENTRIES_PAGE_SIZE - 1) // ENTRIES_PAGE_SIZE, 1)
@@ -753,47 +794,51 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
 
 
 NEWS_PREFIX = "资讯"
-NEWS_LIMIT = 5
+NEWS_PAGE_SIZE = 5
+NEWS_LOAD_LIMIT = 500
 
 
-def get_news_view() -> dict[str, Any]:
-    """新闻卡片:只展示名称以"资讯"为前缀的启用源,最近 5 条。"""
+def get_news_view(query: dict[str, str]) -> dict[str, Any]:
+    """新闻卡片:小一号订阅区,只展示名称以"资讯"为前缀的启用源,每页 5 条。"""
     current_sources = normalize_sources(include_auth=False)
     enabled_ids = {item["id"] for item in current_sources if item.get("enabled")}
-    current_name_map = {item["id"]: str(item.get("name") or "").strip() for item in current_sources}
-    current_site_map = {item["id"]: str(item.get("site_url") or "").strip() for item in current_sources}
     news_ids = {
-        source_id
-        for source_id, name in current_name_map.items()
-        if source_id in enabled_ids and name.startswith(NEWS_PREFIX)
+        item["id"]
+        for item in current_sources
+        if item["id"] in enabled_ids and str(item.get("name") or "").strip().startswith(NEWS_PREFIX)
     }
-    rows = []
-    for item in _load_entries(NEWS_LIMIT * 5):
-        if item["source_id"] not in news_ids:
-            continue
-        current_name = current_name_map.get(item["source_id"], "").strip()
-        display_source_name = current_name or normalize_utf8_text(item.get("source_name")) or ""
-        display_time_raw = item.get("published_at") or item.get("published") or item.get("created_at") or ""
-        source_site_url = current_site_map.get(item["source_id"], "").strip()
-        link = normalize_entry_link(item.get("link") or "", source_site_url)
-        markdown_path = str(item.get("markdown_path") or "").strip()
-        if item["source_id"] == "alphapai" and markdown_path:
-            link = f"/alphapai/markdown/{quote(markdown_path, safe='')}"
-        rows.append(
-            {
-                **item,
-                "title": normalize_utf8_text(item.get("title")),
-                "link": link,
-                "has_link": bool(link),
-                "source_name": display_source_name,
-                "display_time": format_datetime(display_time_raw),
-                "sort_time": to_sortable_time(display_time_raw),
-            }
-        )
-        if len(rows) >= NEWS_LIMIT:
-            break
-    rows.sort(key=cmp_to_key(lambda a, b: compare_value(a.get("sort_time"), b.get("sort_time"), "desc")))
-    return {"rows": rows[:NEWS_LIMIT]}
+    keyword = normalize_text(query.get("news_q", ""))
+    unread_only = query.get("news_unread_only", "0") == "1"
+    read_keys = {item for item in split_tags(query.get("news_read_keys", "")) if item}
+    persisted_read_keys = list_read_entry_keys()
+    effective_read_keys = read_keys | persisted_read_keys
+    sort = query.get("news_sort") or "sort_time"
+    direction = query.get("news_dir") or "desc"
+    page = max(int(query.get("news_page", "1") or "1"), 1)
+    rows = _iter_entry_rows(
+        source_ids_filter=news_ids,
+        keyword=keyword,
+        unread_only=unread_only,
+        effective_read_keys=effective_read_keys,
+        load_limit=NEWS_LOAD_LIMIT,
+    )
+    rows.sort(key=cmp_to_key(lambda a, b: compare_value(a.get(sort), b.get(sort), direction)))
+    total = len(rows)
+    total_pages = max((total + NEWS_PAGE_SIZE - 1) // NEWS_PAGE_SIZE, 1)
+    safe_page = min(page, total_pages)
+    page_rows = rows[(safe_page - 1) * NEWS_PAGE_SIZE : safe_page * NEWS_PAGE_SIZE]
+    return {
+        "rows": page_rows,
+        "sort": sort,
+        "dir": direction,
+        "q": query.get("news_q", ""),
+        "page": safe_page,
+        "page_size": NEWS_PAGE_SIZE,
+        "total_pages": total_pages,
+        "filtered_total": total,
+        "unread_only": unread_only,
+        "read_keys_text": ",".join(sorted(effective_read_keys)),
+    }
 
 
 def mark_entry_read_state(read_key: str) -> bool:
