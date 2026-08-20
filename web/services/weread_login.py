@@ -19,12 +19,25 @@ run_in_threadpool 包装，避免阻塞事件循环。
 
 from __future__ import annotations
 
+import json
+import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict
+import threading
 
 import httpx
 
 from apps.subscriptions.rss_config import load_settings
+
+# 外部工具不可达哨兵做磁盘持久化：外部工具是否在跑是慢变状态，进程重启后
+# 冷首访也可能命中上次探测结果，避免每次冷启动都付 4s 探测超时。
+_UNAVAILABLE_MARKER = Path(__file__).resolve().parents[2] / "runtime" / "weread_login_unavailable.json"
+# 外部工具是否在跑是低频变化的手动启停状态。不可达哨兵放长持久化 TTL,
+# 让日常冷启动设置页也能命中,避免每次冷起都付约 4s 的探测超时。
+# 某次真实探测可达时哨兵会被覆盖清除,恢复实时。
+_UNAVAILABLE_PERSIST_TTL = 3600.0
+_cache_lock = threading.Lock()
 
 
 def _tool_base_url() -> str:
@@ -65,19 +78,92 @@ def _fmt_expire_time(seconds: int) -> str:
     return datetime.fromtimestamp(int(seconds)).strftime("%Y/%m/%d %H:%M")
 
 
-def get_login_status() -> Dict[str, Any]:
+_LOGIN_STATUS_UNAVAILABLE_CACHE: tuple[float, Dict[str, Any]] | None = None
+# 外部工具不可达时会阻塞到超时（约 8s×2 次请求）。AVent 仅在该场景下生效，
+# 缓存"不可达"哨兵，TTL 内页面渲染直接复用，避免每次渲染都慢好几秒。
+_LOGIN_STATUS_UNAVAILABLE_TTL = 10.0
+
+
+def _load_persisted_unavailable() -> tuple[float, Dict[str, Any]] | None:
+    """恢复上次持久化的不可达哨兵(跨进程冷启动命中)。"""
+    try:
+        data = json.loads(_UNAVAILABLE_MARKER.read_text(encoding="utf-8"))
+        ts = float(data.get("timestamp") or 0)
+        payload = data.get("payload")
+        if ts and isinstance(payload, dict):
+            return (ts, payload)
+    except Exception:
+        pass
+    return None
+
+
+def _persist_unavailable(payload: Dict[str, Any]) -> None:
+    try:
+        _UNAVAILABLE_MARKER.parent.mkdir(parents=True, exist_ok=True)
+        _UNAVAILABLE_MARKER.write_text(
+            json.dumps({"timestamp": time.time(), "payload": payload}),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def get_login_status_cached() -> Dict[str, Any]:
+    """主界面用的非阻塞读取：有上次"不可达"缓存则立刻返回，无缓存则返回默认态。
+
+    微信续期按钮态是次要提示，不该用它阻塞页面首载（外部工具不可达时会超时）。
+    """
+    if _LOGIN_STATUS_UNAVAILABLE_CACHE is not None:
+        return _LOGIN_STATUS_UNAVAILABLE_CACHE[1]
+    return {
+        "is_available": False,
+        "is_expired": False,
+        "is_expiring_soon": False,
+        "remaining_text": "",
+        "expire_time_text": "",
+        "nickname": "",
+        "status_text": "",
+        "login_state": {},
+        "logged_in": False,
+        "message": "",
+        "last_error": "",
+    }
+
+
+def get_login_status(*, cache_unavailable: bool = False) -> Dict[str, Any]:
     """
     归一化外部工具登录状态为兼容 views.py wechat_auth 结构 + 扫码状态。
 
     返回字段（对齐 connectors/wechat/auth.py 的 get_wechat_auth_status）：
       is_available / is_expired / is_expiring_soon / remaining_text /
       expire_time_text / nickname / status_text / login_state / logged_in / message
+
+    视图渲染路径（views.py）传 cache_unavailable=True：仅当外部工具不可达时缓存
+    结果，工具可达时始终实时请求（避免扫码登录后读到旧状态）。扫码轮询路由保持
+    默认，保证每 2 秒轮询拿到最新扫码状态。
     """
-    status = _request("GET", "/api/auth/status")
+    global _LOGIN_STATUS_UNAVAILABLE_CACHE
+    now = time.time()
+
+    if cache_unavailable and _LOGIN_STATUS_UNAVAILABLE_CACHE is not None:
+        if (now - _LOGIN_STATUS_UNAVAILABLE_CACHE[0]) < _LOGIN_STATUS_UNAVAILABLE_TTL:
+            return _LOGIN_STATUS_UNAVAILABLE_CACHE[1]
+
+    # 冷启动(缓存空)时,先尝试命中持久化的不可达哨兵,避免付探测超时。
+    # 磁盘哨兵已用 300s TTL 校验新鲜度,水合进内存时应以"此刻"为时间戳,
+    # 否则旧的写入时间会立刻被 10s 内存 TTL 判失效,导致仍去真探测。
+    if cache_unavailable and _LOGIN_STATUS_UNAVAILABLE_CACHE is None:
+        with _cache_lock:
+            persisted = _load_persisted_unavailable()
+        if persisted is not None and (now - persisted[0]) < _UNAVAILABLE_PERSIST_TTL:
+            _LOGIN_STATUS_UNAVAILABLE_CACHE = (now, persisted[1])
+            return persisted[1]
+
+    result = _request("GET", "/api/auth/status")
     pool = _request("GET", "/api/account-pool")
 
-    if status is None:
-        return {
+    if result is None:
+        payload = {
             "is_available": False,
             "is_expired": True,
             "is_expiring_soon": False,
@@ -89,6 +175,12 @@ def get_login_status() -> Dict[str, Any]:
             "logged_in": False,
             "message": "外部工具未运行（127.0.0.1:5300 不可达）",
         }
+        # 外部工具不可达时，views 路径缓存该哨兵，TTL 内复用，避免每个页面渲染都阻塞超时
+        if cache_unavailable:
+            _LOGIN_STATUS_UNAVAILABLE_CACHE = (now, payload)
+            with _cache_lock:
+                _persist_unavailable(payload)
+        return payload
 
     # 账号池：取第一个 active 账号（微信读书 token 载体）
     account = None
@@ -112,7 +204,7 @@ def get_login_status() -> Dict[str, Any]:
     is_expired = bool(status.get("logged_in")) is False or expired or not account
     is_expiring_soon = bool(remaining) and remaining <= 24 * 3600 and not is_expired
 
-    return {
+    result = {
         "is_available": logged_in,
         "is_expired": is_expired,
         "is_expiring_soon": is_expiring_soon,
@@ -125,6 +217,7 @@ def get_login_status() -> Dict[str, Any]:
         "message": login_state.get("message") or status_text,
         "last_error": last_error,
     }
+    return result
 
 
 def start_login() -> Dict[str, Any]:

@@ -37,11 +37,20 @@ CREATE TABLE IF NOT EXISTS rss_entry_reads (
 """
 
 
+_SCHEMA_READY_PATHS: set[str] = set()
+
+
 def get_connection() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.executescript(SCHEMA)
-    ensure_schema(conn)
+    # ensure_schema 含逐次全表去重维护(自连接 DELETE + 索引重建),对已就绪的库
+    # 每次连接重跑是纯浪费(每次刷新 0.4s/连接)。首次就绪后进程内跳过维护段,
+    # 结构缺列/缺索引时仍由内部 IF NOT EXISTS / ADD COLUMN 兜底补齐。
+    # 按 DB 路径记录就绪态,避免测试替换 DB_PATH 后跳对真实库的维护。
+    if str(DB_PATH) not in _SCHEMA_READY_PATHS:
+        ensure_schema(conn)
+        _SCHEMA_READY_PATHS.add(str(DB_PATH))
     return conn
 
 

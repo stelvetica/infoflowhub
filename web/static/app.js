@@ -10,6 +10,10 @@
   const wechatLogin = {
     timer: null,
   };
+  const fetchNow = {
+    timer: null,
+    pollCount: 0,
+  };
 
   function loadReadLinks() {
     try {
@@ -568,6 +572,51 @@
     await loadQrcode();
   }
 
+  function stopFetchPolling() {
+    if (fetchNow.timer) {
+      window.clearTimeout(fetchNow.timer);
+      fetchNow.timer = null;
+    }
+  }
+
+  async function pollFetchStatus() {
+    try {
+      const res = await fetch("/fragments/fetch-status");
+      const data = await res.json();
+      if (data.running || data.fetch_state === "running") {
+        // 仍在抓取:最多轮询 5 分钟,继续等待
+        fetchNow.pollCount += 1;
+        if (fetchNow.pollCount <= 150) {
+          fetchNow.timer = window.setTimeout(pollFetchStatus, 2000);
+        } else {
+          stopFetchPolling();
+        }
+        return;
+      }
+    } catch {
+      stopFetchPolling();
+      return;
+    }
+    // 抓取完成:刷新运行状态面板与条目列表
+    stopFetchPolling();
+    const panel = document.querySelector("#runtime-status-panel");
+    const params = window.location.search || "";
+    if (panel) {
+      window.htmx?.ajax("GET", `/fragments/runtime-status${params}`, {
+        target: "#runtime-status-panel",
+        swap: "innerHTML",
+      });
+    }
+    refreshEntriesPanel();
+    renderUnreadToggle();
+  }
+
+  function startFetchPolling() {
+    stopFetchPolling();
+    fetchNow.pollCount = 0;
+    fetchNow.timer = window.setTimeout(pollFetchStatus, 1500);
+  }
+
   function init() {
     applyReadState();
     setupUnreadToggle();
@@ -598,6 +647,10 @@
     if (button.dataset.originalText) {
       button.textContent = button.dataset.originalText;
       button.disabled = false;
+    }
+    // 立即抓取:后台执行后轮询状态,完成时自动刷新面板与条目
+    if (button.dataset.originalText && button.dataset.originalText.includes("抓取")) {
+      startFetchPolling();
     }
   });
 

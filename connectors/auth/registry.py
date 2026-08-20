@@ -164,11 +164,11 @@ def validate_auth(auth_key: str) -> AuthDescriptor:
 
 
 _AUTH_STATUS_CACHE: tuple[float, list[AuthDescriptor]] | None = None
-_AUTH_STATUS_CACHE_TTL = 10.0
+_AUTH_STATUS_CACHE_TTL = 60.0
 
 
 def list_auth_statuses() -> list[AuthDescriptor]:
-    """带 10 秒短时缓存。一次设置页渲染会多次调用，避免重复读 SQLite。"""
+    """带 60 秒短时缓存。一次设置页渲染会多次调用，避免重复读 SQLite / Chrome Cookies。"""
     global _AUTH_STATUS_CACHE
     import time as _time
 

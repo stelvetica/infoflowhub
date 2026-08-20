@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 
@@ -65,6 +66,21 @@ def _validate_profile_dir(base_dir: Path, requirement: str, hint: str) -> dict[s
     }
 
 
+def _cookies_db_readable(path: Path) -> bool:
+    """Chrome 运行时会排他锁定 profile 的 Cookies SQLite，读打开会失败。
+
+    用 O_RDONLY 探一次(瞬时，被锁立即失败)，避免让 sqlite3 对一个注定失败的
+    锁定文件死等约 1.45s(实测 timeout 设再小也无济于事)。返回 False 即视为
+    被 Chrome 独占，直接走"未精确校验，按可用处理"的降级分支。
+    """
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+        os.close(fd)
+        return True
+    except OSError:
+        return False
+
+
 def _validate_auth_profile_cookie(
     host_keyword: str,
     label: str,
@@ -86,6 +102,9 @@ def _validate_auth_profile_cookie(
             "status_text": "未登录",
             "hint": f"请先在常用 Chrome 中登录 {label}，抓取时自动复制登录态。",
         }
+    # Chrome 运行时锁定 Cookies，读打不开；此时挖不到登录态信息、也降级为"可用"。
+    if not _cookies_db_readable(cookies):
+        return {"is_available": True, "status_level": "ok", "status_text": "可用", "hint": "常用 Chrome 运行中，未精确校验登录态；抓取走复制副本，不受影响。"}
     try:
         import sqlite3
 
@@ -167,6 +186,9 @@ def validate_alphapai_auth() -> dict[str, object]:
             "status_text": "未登录",
             "hint": "请先在常用 Chrome 中登录蓝宝书（alphapai-web.rabyte.cn），抓取时自动复制登录态。",
         }
+    # Chrome 运行时锁定 Cookies，直接降级，避免 sqlite 死等 1.45s
+    if not _cookies_db_readable(cookies):
+        return {"is_available": True, "status_level": "ok", "status_text": "可用", "hint": "常用 Chrome 运行中，未精确校验登录态；抓取走复制副本，不受影响。"}
     try:
         import sqlite3
 

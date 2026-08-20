@@ -269,9 +269,11 @@ def load_source_catalog() -> list[dict[str, Any]]:
     return sources
 
 
-def normalize_sources() -> list[dict[str, Any]]:
-    # 预算一次 auth 状态，避免每个源重复调 list_auth_statuses（N×M 重复验证）
-    descriptors = {d.auth_key: d for d in list_auth_statuses()}
+def normalize_sources(*, include_auth: bool = True) -> list[dict[str, Any]]:
+    # 预算一次 auth 状态，避免每个源重复调 list_auth_statuses（N×M 重复验证）。
+    # include_auth=False 跳过 auth 校验（慢，外部/Chrome 依赖），供主界面等不展示
+    # 登录态的路径避免首载阻塞。
+    descriptors = {d.auth_key: d for d in list_auth_statuses()} if include_auth else {}
     normalized: list[dict[str, Any]] = []
     for item in load_source_catalog():
         source = dict(item)
@@ -685,7 +687,8 @@ def build_entries_state_params(query: Mapping[str, Any], *, page: int | None = N
 
 
 def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
-    current_sources = normalize_sources()
+    # 条目列表不展示登录态，跳过 auth 校验避免主界面首载阻塞
+    current_sources = normalize_sources(include_auth=False)
     enabled_ids = {item["id"] for item in current_sources if item.get("enabled")}
     current_name_map = {item["id"]: str(item.get("name") or "").strip() for item in current_sources}
     current_site_map = {item["id"]: str(item.get("site_url") or "").strip() for item in current_sources}
@@ -811,6 +814,29 @@ def get_laterhub_actionable_ids(query: dict[str, str]) -> list[int]:
     return [int(item["id"]) for item in rows if not item["is_finished"]]
 
 
+def get_nav_settings() -> dict[str, Any]:
+    """主界面(entries view)用的轻量设置切片。
+
+    只取主界面需要的字段（运行状态的成功源数、微信读书续期按钮态），
+    避免每次加载主界面都跑 get_settings_view 的全量源统计（慢）。
+    """
+    status = load_status()
+    status["success_sources_text"] = format_success_sources_text(status)
+    status["last_run_inserted_entries"] = int(status.get("last_inserted_entries") or 0)
+    last_error = normalize_text_lines(status.get("last_error"))
+    status["last_error"] = last_error
+    error_timestamp = str(status.get("last_run_at") or status.get("current_run_started_at") or "")
+    status["error_log_text"] = f"{error_timestamp} {last_error}".strip() if last_error else ""
+    # 主界面用非阻塞的缓存读取，避免外部工具不可达时阻塞页面首载
+    wechat_auth = normalize_utf8_obj(weread_login.get_login_status_cached())
+    wechat_auth["should_highlight_renew"] = bool(wechat_auth.get("is_expired") or wechat_auth.get("is_expiring_soon"))
+    return {
+        "status": status,
+        "wechat_auth": wechat_auth,
+        "wechat_entries_login_url": f"/wechat-login?next={quote('/', safe='')}",
+    }
+
+
 def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     migrate_legacy_source_ids()
     status = load_status()
@@ -828,7 +854,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     source_filter = query.get("source_filter", "")
     sort = query.get("sort", "name")
     direction = query.get("dir", "asc")
-    wechat_auth = normalize_utf8_obj(weread_login.get_login_status())
+    wechat_auth = normalize_utf8_obj(weread_login.get_login_status(cache_unavailable=True))
     wechat_auth["should_highlight_renew"] = bool(wechat_auth.get("is_expired") or wechat_auth.get("is_expiring_soon"))
     wechat_login_url = f"/wechat-login?next={quote('/?view=settings', safe='')}"
     wechat_entries_login_url = f"/wechat-login?next={quote('/', safe='')}"

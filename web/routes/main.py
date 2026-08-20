@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -20,7 +21,9 @@ from web.services.views import (
     get_entries_view,
     get_laterhub_summary,
     get_laterhub_view,
+    get_nav_settings,
     get_settings_view,
+    load_status,
     mark_entry_read_state,
     mark_laterhub_opened,
     mark_laterhub_finished,
@@ -87,8 +90,14 @@ def render_main(request: Request, params: dict[str, str]):
     entries = get_entries_view(entries_params)
     laterhub = get_laterhub_view(params)
     laterhub_params = build_laterhub_state_params(params)
-    settings = get_settings_view(params)
+    nav_only = view != "settings"
+    # 主界面不展示源统计，走轻量设置切片，避免每次加载都跑全量统计(慢)
+    settings = get_nav_settings() if nav_only else get_settings_view(params)
     success_sources_text = settings["status"]["success_sources_text"]
+    # source_lookup 仅设置页的源编辑弹窗使用；主界面不展示登录态，跳过 auth 校验避免首载阻塞
+    source_lookup = (
+        {} if nav_only else {item["id"]: item for item in normalize_sources()}
+    )
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -99,8 +108,9 @@ def render_main(request: Request, params: dict[str, str]):
             "laterhub_params": laterhub_params,
             "settings": settings,
             "success_sources_text": success_sources_text,
-            "params": entries_params if view != "settings" else params,
-            "source_lookup": {item["id"]: item for item in normalize_sources()},
+            "nav_only": nav_only,
+            "params": entries_params if nav_only else params,
+            "source_lookup": source_lookup,
         },
     )
 
@@ -142,7 +152,9 @@ async def laterhub_fragment(request: Request):
 @router.get("/fragments/runtime-status", response_class=HTMLResponse)
 async def runtime_status_fragment(request: Request):
     params = query_dict(request)
-    return templates.TemplateResponse(request, "partials/runtime_status.html", {"settings": get_settings_view(params), "params": params})
+    nav_only = params.get("view", "") != "settings"
+    settings = get_nav_settings() if nav_only else get_settings_view(params)
+    return templates.TemplateResponse(request, "partials/runtime_status.html", {"settings": settings, "params": params, "nav_only": nav_only})
 
 
 @router.get("/fragments/sources", response_class=HTMLResponse)
@@ -254,11 +266,37 @@ async def bilibili_login_sync(request: Request):
     return templates.TemplateResponse(request, "partials/auth_assets_panel.html", {"settings": get_settings_view(params), "params": params})
 
 
+_FETCH_BG_LOCK = threading.Lock()
+
+
+def _fetch_now_background() -> None:
+    """后台执行抓取。fetch_now 内部更新状态文件(fetch_state: running/success/error)。"""
+    try:
+        with _FETCH_BG_LOCK:
+            fetch_now()
+    except Exception:
+        pass
+
+
+@router.get("/fragments/fetch-status", response_class=JSONResponse)
+async def fetch_status_fragment():
+    """前端轮询抓取状态:返回 fetch_state / 后台是否执行中。"""
+    return JSONResponse({
+        "fetch_state": load_status().get("fetch_state", "idle"),
+        "running": _FETCH_BG_LOCK.locked(),
+    })
+
+
 @router.post("/actions/fetch-now", response_class=HTMLResponse)
 async def fetch_now_action(request: Request):
-    await run_in_threadpool(fetch_now)
+    # 若已有后台抓取在跑,不叠加新任务,仅刷新状态面板即时返回
+    if not _FETCH_BG_LOCK.locked():
+        worker = threading.Thread(target=_fetch_now_background, name="fetch-now-bg", daemon=True)
+        worker.start()
     params = query_dict(request)
-    return templates.TemplateResponse(request, "partials/runtime_status.html", {"settings": get_settings_view(params), "params": params})
+    nav_only = params.get("view", "") != "settings"
+    settings = get_nav_settings() if nav_only else get_settings_view(params)
+    return templates.TemplateResponse(request, "partials/runtime_status.html", {"settings": settings, "params": params, "nav_only": nav_only})
 
 
 @router.post("/actions/laterhub/fetch-now", response_class=HTMLResponse)
