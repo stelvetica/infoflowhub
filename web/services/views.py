@@ -752,6 +752,50 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
     }
 
 
+NEWS_PREFIX = "资讯"
+NEWS_LIMIT = 5
+
+
+def get_news_view() -> dict[str, Any]:
+    """新闻卡片:只展示名称以"资讯"为前缀的启用源,最近 5 条。"""
+    current_sources = normalize_sources(include_auth=False)
+    enabled_ids = {item["id"] for item in current_sources if item.get("enabled")}
+    current_name_map = {item["id"]: str(item.get("name") or "").strip() for item in current_sources}
+    current_site_map = {item["id"]: str(item.get("site_url") or "").strip() for item in current_sources}
+    news_ids = {
+        source_id
+        for source_id, name in current_name_map.items()
+        if source_id in enabled_ids and name.startswith(NEWS_PREFIX)
+    }
+    rows = []
+    for item in _load_entries(NEWS_LIMIT * 5):
+        if item["source_id"] not in news_ids:
+            continue
+        current_name = current_name_map.get(item["source_id"], "").strip()
+        display_source_name = current_name or normalize_utf8_text(item.get("source_name")) or ""
+        display_time_raw = item.get("published_at") or item.get("published") or item.get("created_at") or ""
+        source_site_url = current_site_map.get(item["source_id"], "").strip()
+        link = normalize_entry_link(item.get("link") or "", source_site_url)
+        markdown_path = str(item.get("markdown_path") or "").strip()
+        if item["source_id"] == "alphapai" and markdown_path:
+            link = f"/alphapai/markdown/{quote(markdown_path, safe='')}"
+        rows.append(
+            {
+                **item,
+                "title": normalize_utf8_text(item.get("title")),
+                "link": link,
+                "has_link": bool(link),
+                "source_name": display_source_name,
+                "display_time": format_datetime(display_time_raw),
+                "sort_time": to_sortable_time(display_time_raw),
+            }
+        )
+        if len(rows) >= NEWS_LIMIT:
+            break
+    rows.sort(key=cmp_to_key(lambda a, b: compare_value(a.get("sort_time"), b.get("sort_time"), "desc")))
+    return {"rows": rows[:NEWS_LIMIT]}
+
+
 def mark_entry_read_state(read_key: str) -> bool:
     return mark_entry_read(read_key)
 

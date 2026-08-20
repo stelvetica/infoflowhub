@@ -22,6 +22,7 @@ from web.services.views import (
     get_laterhub_summary,
     get_laterhub_view,
     get_nav_settings,
+    get_news_view,
     get_settings_view,
     load_status,
     mark_entry_read_state,
@@ -88,6 +89,7 @@ def render_main(request: Request, params: dict[str, str]):
     if view != "settings":
         entries_params.setdefault("entries_unread_only", "1")
     entries = get_entries_view(entries_params)
+    news = get_news_view()
     laterhub = get_laterhub_view(params)
     laterhub_params = build_laterhub_state_params(params)
     nav_only = view != "settings"
@@ -104,6 +106,7 @@ def render_main(request: Request, params: dict[str, str]):
         {
             "view": view,
             "entries": entries,
+            "news": news,
             "laterhub": laterhub,
             "laterhub_params": laterhub_params,
             "settings": settings,
