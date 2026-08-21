@@ -35,13 +35,18 @@ button, input, select, textarea { font: inherit; }
 .settings-link { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.88); box-shadow: var(--shadow); transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease; flex: 0 0 42px; }
 .settings-link:hover, .settings-link.active { border-color: var(--accent); background: var(--accent-soft); transform: rotate(12deg); }
 .stack { display: grid; gap: 16px; margin: 0 auto; width: 100%; max-width: min(1600px, 100%); }
-.news-card { margin: 0 auto 20px; width: 100%; max-width: min(1600px, 100%); padding-bottom: 16px; }
-.news-panel-title { margin-bottom: 8px; }
-.news-header-panel-title { margin-bottom: 6px; }
-.news-header-form { justify-content: flex-end; }
-.news-search-group { margin-left: auto; }
+.news-card { margin: 0 auto 18px; width: 100%; max-width: min(1600px, 100%); padding-bottom: 12px; }
+.news-panel-title { margin-bottom: 6px; }
+.news-header-form { justify-content: space-between; flex: 1; }
+.news-heading { font-size: 0.85em; font-weight: 600; margin: 0; white-space: nowrap; color: var(--muted); }
+.input-compact { height: 28px; padding-top: 2px; padding-bottom: 2px; font-size: 0.85em; }
+.btn-compact { height: 28px; padding-top: 2px; padding-bottom: 2px; font-size: 0.85em; }
+.news-card #news-unread-slot .btn.ghost { height: 28px; padding-top: 2px; padding-bottom: 2px; font-size: 0.85em; }
 .news-card .entries-table { font-size: 0.85em; }
-.news-card .entries-table td { padding-top: 3px; padding-bottom: 3px; }
+.news-card .entries-table td { padding-top: 2px; padding-bottom: 2px; }
+.news-card .entries-table th a.sort { font-size: 0.95em; }
+.news-card .pagination .subtle { font-size: 0.85em; }
+.news-card .pagination .btn.ghost { height: 26px; padding-top: 1px; padding-bottom: 1px; font-size: 0.85em; }
 .split-shell { --splitter-size: 20px; --laterhub-min: 320px; --laterhub-width: 36%; display: grid; grid-template-columns: minmax(0, 1fr) var(--splitter-size) minmax(var(--laterhub-min), var(--laterhub-width)); gap: 0; align-items: stretch; margin: 0 auto; width: 100%; max-width: min(1600px, 100%); min-height: calc(100vh - 98px); }
 .split-pane { min-width: 0; }
 .split-pane-main { padding-right: 8px; }

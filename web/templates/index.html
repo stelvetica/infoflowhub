@@ -45,17 +45,13 @@
       </div>
     {% else %}
       <section class="card news-card">
-        <div class="panel-title news-panel-title">
-          <h3>新闻</h3>
-        </div>
-        <div class="panel-title news-header-panel-title">
-          <form class="toolbar toolbar-inline toolbar-inline-spread news-header-form" hx-get="/fragments/news" hx-target="#news-panel" hx-swap="innerHTML">
+        <div class="panel-title news-panel-title news-header-panel-title">
+          <h3 class="news-heading">新闻</h3>
+          <form class="toolbar toolbar-inline news-header-form" hx-get="/fragments/news" hx-target="#news-panel" hx-swap="innerHTML">
             <input type="hidden" name="news_sort" value="{{ news.sort }}">
             <input type="hidden" name="news_dir" value="{{ news.dir }}">
-            <div class="toolbar toolbar-inline news-search-group">
-              <input class="input" name="news_q" value="{{ news.q }}" placeholder="搜索资讯标题、来源">
-              <button class="btn" type="submit">搜索</button>
-            </div>
+            <input class="input input-compact" name="news_q" value="{{ news.q }}" placeholder="搜索资讯标题、来源">
+            <button class="btn btn-compact" type="submit">搜索</button>
             <div id="news-unread-slot" class="entries-unread-slot"></div>
           </form>
         </div>

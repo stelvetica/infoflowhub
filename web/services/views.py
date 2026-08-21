@@ -52,6 +52,7 @@ LATERHUB_LOG_PATH = RUNTIME_DIR / "logs" / "laterhub.log"
 
 DELETED_SITE_URLS = {"https://www.huxiu.com/member/2321131.html"}
 ENTRIES_PAGE_SIZE = 20
+NEWS_PREFIX = "资讯"
 LATERHUB_PAGE_SIZE = 10
 ENTRIES_READ_CUTOFF = datetime(2026, 5, 1).timestamp()
 ABSOLUTE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
@@ -728,6 +729,7 @@ def _build_entry_row(item: dict[str, Any], current_name_map: dict[str, str], cur
 def _iter_entry_rows(
     *,
     source_ids_filter: set[str] | None,
+    excluded_prefixes: tuple[str, ...] = (),
     keyword: str,
     unread_only: bool,
     effective_read_keys: set[str],
@@ -738,9 +740,16 @@ def _iter_entry_rows(
     enabled_ids = {item["id"] for item in current_sources if item.get("enabled")}
     current_name_map = {item["id"]: str(item.get("name") or "").strip() for item in current_sources}
     current_site_map = {item["id"]: str(item.get("site_url") or "").strip() for item in current_sources}
+    excluded_ids = {
+        source_id
+        for source_id, name in current_name_map.items()
+        if name and any(name.startswith(prefix) for prefix in excluded_prefixes)
+    }
     rows = []
     for item in _load_entries(load_limit):
         if item["source_id"] not in enabled_ids:
+            continue
+        if item["source_id"] in excluded_ids:
             continue
         if source_ids_filter is not None and item["source_id"] not in source_ids_filter:
             continue
@@ -768,6 +777,7 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
     page = max(int(query.get("entries_page", "1") or "1"), 1)
     rows = _iter_entry_rows(
         source_ids_filter=None,
+        excluded_prefixes=(NEWS_PREFIX,),
         keyword=keyword,
         unread_only=unread_only,
         effective_read_keys=effective_read_keys,
@@ -793,7 +803,6 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
     }
 
 
-NEWS_PREFIX = "资讯"
 NEWS_PAGE_SIZE = 5
 NEWS_LOAD_LIMIT = 500
 
