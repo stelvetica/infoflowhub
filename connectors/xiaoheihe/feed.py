@@ -71,9 +71,13 @@ def _fetch_favour_via_api(page) -> list[dict[str, Any]]:
     page.on("request", _capture)
     page.evaluate(r"""
         async (apiPath) => {
+            const withTimeout = (promise, ms) => Promise.race([
+                promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error("hbRequest timeout")), ms)),
+            ]);
             const app = document.querySelector('#app');
             const req = app.__vue_app__.config.globalProperties.$hbRequest;
-            const resp = await req(apiPath, {}, {method: "GET"});
+            const resp = await withTimeout(req(apiPath, {}, {method: "GET"}), 15000);
             return (resp.data || resp).status;
         }
     """, FAVOUR_API_PATH)
@@ -94,7 +98,10 @@ def _fetch_favour_via_api(page) -> list[dict[str, Any]]:
                 for (const [k, v] of Object.entries(args.sign)) u.searchParams.set(k, v);
                 u.searchParams.set("limit", String(args.pageSize));
                 u.searchParams.set("offset", String(i * args.pageSize));
-                const resp = await fetch(u.toString(), {credentials: "include"});
+                const resp = await fetch(u.toString(), {
+                    credentials: "include",
+                    signal: AbortSignal.timeout(15000),
+                });
                 const data = await resp.json();
                 if (i === 0) {
                     if (data.status !== "ok") {
@@ -158,9 +165,13 @@ def fetch_xiaoheihe_favorites(
         login_ok = page.evaluate(r"""
         async () => {
             try {
+                const withTimeout = (promise, ms) => Promise.race([
+                    promise,
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("restore_login timeout")), ms)),
+                ]);
                 const app = document.querySelector('#app');
                 const req = app.__vue_app__.config.globalProperties.$hbRequest;
-                const resp = await req("/account/restore_login", {}, {method: "GET"});
+                const resp = await withTimeout(req("/account/restore_login", {}, {method: "GET"}), 15000);
                 const data = resp.data || resp;
                 return data.status === "ok";
             } catch(e) { return false; }

@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -160,9 +162,69 @@ class LaterhubRunSummary:
     push_enabled: bool = ENABLE_FEISHU_PUSH
 
 
+# 各源抓取超时（秒）。浏览器源（抖音/小黑盒）CDP 假死时 playwright 内部超时可能失效，
+# 超过此上限直接杀该源 runner 浏览器解卡，避免卡死整轮并拖垮后续轮次。
+SOURCE_FETCH_TIMEOUT_SECONDS = 180
+
+
+def _source_debug_port(label: str) -> int | None:
+    if label == "抖音收藏":
+        from connectors.douyin.favorites import LATERHUB_RUNNER_DEBUG_PORT
+        return LATERHUB_RUNNER_DEBUG_PORT
+    if label == "小黑盒收藏":
+        from connectors.xiaoheihe.feed import LATERHUB_RUNNER_DEBUG_PORT
+        return LATERHUB_RUNNER_DEBUG_PORT
+    return None
+
+
 def _save_items(db: DBManager, items: list[dict[str, Any]]) -> None:
     for item in items:
         db.upsert_link(LinkRecord(url=item["url"], title=item["title"], source=item["source"], tags=item.get("tags")))
+
+
+def _terminate_source_session(label: str) -> None:
+    """超时兜底：杀掉该源 runner 浏览器进程（按 user-data-dir 匹配，不碰用户 Chrome）。"""
+    port = _source_debug_port(label)
+    if not port:
+        return
+    from connectors._shared.chrome_runner import _reopen_user_chrome, close_debug_browser
+    from connectors.auth.providers.browser_profiles import LATERHUB_RUNNER_DIR
+
+    close_debug_browser(LATERHUB_RUNNER_DIR, port)
+    # 复制 profile 流程会先关用户 Chrome，超时后其 worker 线程无法走正常 shutdown 重开，
+    # 这里直接恢复用户 Chrome（若用户本就开着，重开也只是多一个 InfoHub 标签页，无害）。
+    _reopen_user_chrome()
+
+
+def _run_fetcher_with_timeout(label: str, fetcher, session=None) -> list[dict[str, Any]]:
+    """守护线程执行 fetcher，超时则杀浏览器并抛错。
+
+    daemon 线程即使卡死也不阻塞进程退出；超时后主线程不再等待，
+    卡死的 worker 在浏览器进程被杀后自行抛错退出。
+    """
+    from queue import Empty, Queue
+
+    result_queue: "Queue[tuple[str, object]]" = Queue(maxsize=1)
+
+    def _worker() -> None:
+        try:
+            fetched = fetcher(ENV_PATH, session=session) if session is not None else fetcher(ENV_PATH)
+            result_queue.put(("ok", fetched))
+        except BaseException as exc:  # noqa: BLE001
+            result_queue.put(("err", exc))
+
+    worker = threading.Thread(target=_worker, name=f"fetch-{label}", daemon=True)
+    worker.start()
+    try:
+        kind, payload = result_queue.get(timeout=SOURCE_FETCH_TIMEOUT_SECONDS)
+    except Empty as exc:
+        _terminate_source_session(label)
+        raise RuntimeError(
+            f"抓取超过 {SOURCE_FETCH_TIMEOUT_SECONDS}s 未完成，已强制关闭浏览器并跳过本轮"
+        ) from exc
+    if kind == "err":
+        raise payload  # type: ignore[misc]
+    return payload  # type: ignore[return-value]
 
 
 def _fetch_source(*, enabled: bool, label: str, fetcher, db: DBManager, session=None) -> bool:
@@ -170,7 +232,7 @@ def _fetch_source(*, enabled: bool, label: str, fetcher, db: DBManager, session=
         return False
     log_line(f"[3/6] 开始抓取{label}")
     try:
-        fetched = fetcher(ENV_PATH, session=session) if session is not None else fetcher(ENV_PATH)
+        fetched = _run_fetcher_with_timeout(label, fetcher, session)
         _save_items(db, fetched)
         log_line(f"[3/6] {label}抓取完成，新增/更新 {len(fetched)} 条")
     except Exception as exc:  # noqa: BLE001
