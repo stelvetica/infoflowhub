@@ -354,6 +354,19 @@
     panel.lastSyncSignature = targetSignature;
   }
 
+  function setupLaterhubTagsToggle() {
+    const btn = document.querySelector(".laterhub-tags-toggle-btn");
+    const chips = document.getElementById("laterhub-chips");
+    if (!btn || !chips || btn.dataset.ready === "1") return;
+    btn.dataset.ready = "1";
+    btn.addEventListener("click", () => {
+      const willOpen = chips.hidden;
+      chips.hidden = !willOpen;
+      btn.setAttribute("aria-expanded", String(willOpen));
+      btn.classList.toggle("open", willOpen);
+    });
+  }
+
   function clearModal() {
     const root = document.getElementById("modal-root");
     if (root) root.innerHTML = "";
@@ -659,6 +672,7 @@
     panels.forEach((panel) => setupUnreadToggle(panel));
     setupLaterhubResizer();
     setupLaterhubOpenedTracking();
+    setupLaterhubTagsToggle();
     setupWechatLogin();
   }
 
