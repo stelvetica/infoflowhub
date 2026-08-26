@@ -4,7 +4,7 @@
 
 {% block body %}
 <div class="shell">
-  <main class="main">
+    <main class="main" id="main-content">
     <header class="topbar">
       <div class="brand brand-centered">
         <h1>InfoFlowHub</h1>
@@ -21,7 +21,7 @@
         </div>
         <section class="card">
           <div class="panel-title">
-            <h3>稍后处理运行日志</h3>
+            <h2>稍后处理运行日志</h2>
           </div>
           <pre class="codebox compact codebox-scroll">{{ settings.laterhub_log_text or '-' }}</pre>
         </section>
@@ -29,13 +29,13 @@
         <section class="card">
           <div class="panel-title">
             <div class="panel-title-inline">
-              <h3>订阅设置</h3>
+              <h2>订阅设置</h2>
               <form hx-post="/actions/fetch-now?{{ params|urlencode }}" hx-target="#runtime-status-panel" hx-swap="innerHTML">
                 <button class="btn" type="submit">立即抓取</button>
               </form>
             </div>
           </div>
-          <div id="runtime-status-panel">
+          <div id="runtime-status-panel" aria-live="polite">
             {% include "partials/runtime_status.html" %}
           </div>
           <div id="sources-panel">
@@ -46,11 +46,11 @@
     {% else %}
       <section class="card news-card">
         <div class="panel-title news-panel-title news-header-panel-title">
-          <h3 class="news-heading">新闻</h3>
+          <h2 class="news-heading">新闻</h2>
           <form class="toolbar toolbar-inline news-header-form" hx-get="/fragments/news" hx-target="#news-panel" hx-swap="innerHTML">
             <input type="hidden" name="news_sort" value="{{ news.sort }}">
             <input type="hidden" name="news_dir" value="{{ news.dir }}">
-            <input class="input input-compact" name="news_q" value="{{ news.q }}" placeholder="搜索资讯标题、来源">
+            <input class="input input-compact" type="search" name="news_q" value="{{ news.q }}" placeholder="搜索资讯标题、来源…" aria-label="搜索新闻" autocomplete="off">
             <button class="btn btn-compact" type="submit">搜索</button>
             <div id="news-unread-slot" class="entries-unread-slot"></div>
           </form>
@@ -64,11 +64,11 @@
         <section class="card pane-card pane-card-left">
           <div class="panel-title panel-title-settings-nowrap">
               <div class="panel-title-inline">
-                <h3 class="panel-heading-nowrap">订阅内容</h3>
+                <h2 class="panel-heading-nowrap">订阅内容</h2>
                 <form hx-post="/actions/fetch-now?{{ params|urlencode }}" hx-target="#runtime-status-panel" hx-swap="innerHTML">
                   <button class="btn" type="submit">立即抓取</button>
                 </form>
-                <div id="runtime-status-panel">
+                <div id="runtime-status-panel" aria-live="polite">
                   {% include "partials/runtime_status.html" %}
                 </div>
                 <a
@@ -88,7 +88,7 @@
                 <input type="hidden" name="laterhub_sort" value="{{ laterhub.sort }}">
                 <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
                 <div class="toolbar toolbar-inline entries-search-group">
-                  <input class="input" name="entries_q" value="{{ entries.q }}" placeholder="搜索标题、来源">
+                  <input class="input" type="search" name="entries_q" value="{{ entries.q }}" placeholder="搜索标题、来源…" aria-label="搜索订阅内容" autocomplete="off">
                   <button class="btn" type="submit">搜索</button>
                 </div>
                 <div id="entries-unread-slot" class="entries-unread-slot"></div>
@@ -99,7 +99,7 @@
             </div>
           </section>
         </section>
-        <div class="split-resizer" data-split-resizer aria-label="调整稍后处理宽度" role="separator" aria-orientation="vertical"></div>
+        <div class="split-resizer" data-split-resizer aria-label="调整稍后处理宽度" role="separator" aria-orientation="vertical" tabindex="0" aria-valuemin="320" aria-valuemax="720"></div>
         <aside class="split-pane split-pane-side">
           <div id="laterhub-panel">
             {% include "partials/laterhub_panel.html" %}

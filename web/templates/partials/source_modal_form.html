@@ -1,7 +1,7 @@
 <div class="modal-backdrop" role="presentation" onclick="window.infoflowhub.closeModal(event)">
   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="source-modal-title" onclick="event.stopPropagation()">
     <div class="modal-header">
-      <h3 id="source-modal-title">{{ '编辑订阅源' if draft.id else '新增订阅源' }}</h3>
+      <h2 id="source-modal-title">{{ '编辑订阅源' if draft.id else '新增订阅源' }}</h2>
       <button class="btn ghost" type="button" onclick="window.infoflowhub.clearModal()">关闭</button>
     </div>
     <form action="/actions/source/save?source_q={{ params.get('source_q', '') }}&source_filter={{ params.get('source_filter', '') }}&sort={{ params.get('sort', 'name') }}&dir={{ params.get('dir', 'asc') }}" method="post" class="form-grid modal-form-grid">

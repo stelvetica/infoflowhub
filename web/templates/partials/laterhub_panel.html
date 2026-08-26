@@ -2,7 +2,7 @@
   <section class="card pane-card pane-card-right">
     <div class="panel-title">
       <div class="panel-title-inline laterhub-title-row">
-        <h3>稍后处理</h3>
+        <h2>稍后处理</h2>
         <form hx-post="/actions/laterhub/fetch-now?{{ params|urlencode }}" hx-target="#laterhub-panel" hx-swap="innerHTML">
           <button class="btn" type="submit">抓取</button>
         </form>
@@ -16,7 +16,7 @@
         <input type="hidden" name="laterhub_filter_finished" value="{{ laterhub.filter_finished }}">
         <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
         <input type="hidden" name="laterhub_page" value="1">
-        <input class="input laterhub-search-input" name="laterhub_q" value="{{ laterhub.q }}" placeholder="搜索标题或标签">
+        <input class="input laterhub-search-input" type="search" name="laterhub_q" value="{{ laterhub.q }}" placeholder="搜索标题或标签…" aria-label="搜索稍后处理条目" autocomplete="off">
         <button class="btn" type="submit">搜索</button>
         <a class="btn laterhub-clear-btn" href="/?entries_q={{ params.get('entries_q', '') }}&entries_sort={{ params.get('entries_sort', '') }}&entries_dir={{ params.get('entries_dir', '') }}">清空</a>
       </form>
@@ -43,7 +43,7 @@
         </div>
         <div class="laterhub-filter-row">
           <span class="laterhub-filter-label">状态</span>
-          <select class="select laterhub-status-select laterhub-status-select-small" name="laterhub_filter_finished" onchange="this.form.requestSubmit()">
+          <select class="select laterhub-status-select laterhub-status-select-small" name="laterhub_filter_finished" aria-label="按状态筛选" onchange="this.form.requestSubmit()">
             <option value="" {% if laterhub.filter_finished == '' %}selected{% endif %}>全部</option>
             <option value="1" {% if laterhub.filter_finished == '1' %}selected{% endif %}>已完成</option>
             <option value="opened" {% if laterhub.filter_finished == 'opened' %}selected{% endif %}>已打开</option>

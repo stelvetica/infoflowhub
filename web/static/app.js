@@ -421,6 +421,7 @@
       if (window.innerWidth <= 1100) return;
       const nextWidth = clampWidth(width);
       shell.style.setProperty("--laterhub-width", `${nextWidth}px`);
+      resizer.setAttribute("aria-valuenow", String(nextWidth));
       if (persist) {
         window.localStorage.setItem(LATERHUB_WIDTH_KEY, String(nextWidth));
       }
@@ -491,6 +492,16 @@
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerCancel);
 
+    // 键盘替代:聚焦分割条后用左右方向键调整宽度(±24px/步)
+    resizer.addEventListener("keydown", (event) => {
+      const step = event.key === "ArrowLeft" ? -24 : event.key === "ArrowRight" ? 24 : 0;
+      if (!step) return;
+      event.preventDefault();
+      const side = shell.querySelector(".split-pane-side");
+      const current = side ? side.getBoundingClientRect().width : 0;
+      applyWidth(current + step);
+    });
+
     window.addEventListener("resize", restoreWidth);
     restoreWidth();
   }
@@ -518,11 +529,13 @@
       if (!qr) return;
       qr.innerHTML = "";
       if (!scanUrl) {
-        qr.innerHTML = "正在加载二维码...";
+        qr.innerHTML = "正在加载二维码…";
         return;
       }
       const img = document.createElement("img");
       img.alt = "微信读书登录二维码";
+      img.width = 220;
+      img.height = 220;
       img.style.maxWidth = "220px";
       img.style.maxHeight = "220px";
       img.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(scanUrl)}`;
@@ -566,8 +579,8 @@
 
     const loadQrcode = async () => {
       stopPolling();
-      setStatus("正在准备二维码...");
-      if (qr) qr.innerHTML = "正在加载二维码...";
+      setStatus("正在准备二维码…");
+      if (qr) qr.innerHTML = "正在加载二维码…";
       try {
         await fetch("/actions/weread-login/start", { method: "POST" });
         const res = await fetch("/actions/weread-login/status");
@@ -658,7 +671,7 @@
       button.dataset.originalText = button.textContent || "";
     }
     if (button.dataset.originalText.includes("抓取")) {
-      button.textContent = "抓取中...";
+      button.textContent = "抓取中…";
       button.disabled = true;
     }
   });
@@ -676,6 +689,15 @@
     if (button.dataset.originalText && button.dataset.originalText.includes("抓取")) {
       startFetchPolling();
     }
+  });
+
+  // 模态框:Esc 关闭,打开后焦点移入首个输入框
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") clearModal();
+  });
+  document.body.addEventListener("htmx:afterSwap", () => {
+    const field = document.querySelector(".modal-card input:not([type='hidden']), .modal-card select, .modal-card textarea");
+    if (field instanceof HTMLElement) field.focus();
   });
 
   window.infoflowhub = { clearModal, closeModal };
