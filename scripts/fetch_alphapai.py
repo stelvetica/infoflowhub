@@ -18,7 +18,7 @@ def main() -> int:
         print("未找到 alphapai 订阅源配置")
         return 1
 
-    outcome = run_source_fetch([source], timeout=120)
+    outcome = run_source_fetch([source], timeout=120, persist_global=False)
     if outcome.fatal_error:
         print(json.dumps({"ok": False, "error": outcome.fatal_error}, ensure_ascii=False, indent=2))
         return 1

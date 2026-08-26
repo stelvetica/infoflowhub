@@ -47,7 +47,7 @@ def fetch_enabled(source_id: str = "") -> int:
         _safe_print("当前没有命中的启用订阅源")
         return 0
 
-    outcome = run_source_fetch(sources, settings=settings, timeout=20)
+    outcome = run_source_fetch(sources, settings=settings, timeout=20, persist_global=not source_id)
     if outcome.fatal_error:
         _safe_print(f"FAIL runtime: {outcome.fatal_error}")
         return 1

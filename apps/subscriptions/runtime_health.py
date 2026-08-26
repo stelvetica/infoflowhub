@@ -126,11 +126,19 @@ def run_source_fetch(
     settings: dict | None = None,
     timeout: int = 45,
     session=None,
+    persist_global: bool = True,
 ) -> FetchRunOutcome:
+    """执行一批源抓取。
+
+    persist_global=False 时仅更新各源级健康(health)与条目,不覆写全局
+    subscriptions_status——单源抓取(如 alpha派 资讯源)不应把全站
+    "成功源数 X/Y" 统计污染成 1/1。
+    """
     status = load_status()
-    status["fetch_state"] = "running"
-    status["current_run_started_at"] = now_text()
-    save_status(status)
+    if persist_global:
+        status["fetch_state"] = "running"
+        status["current_run_started_at"] = now_text()
+        save_status(status)
 
     outcome = FetchRunOutcome()
     total_sources = len(sources)
@@ -152,29 +160,31 @@ def run_source_fetch(
                 outcome.inserted_total += inserted
                 outcome.inserted_by_source[result.source_id] = inserted
 
-            status = load_status()
-            run_success = is_successful_run(outcome.success_sources, len(outcome.failures))
-            status["fetch_state"] = "success" if run_success else "error"
-            status["last_run_at"] = now_text()
-            status["last_success_at"] = status["last_run_at"] if run_success else status.get("last_success_at", "")
-            status["last_total_sources"] = total_sources
-            status["last_success_sources"] = outcome.success_sources
-            status["last_inserted_entries"] = outcome.inserted_total
-            status["last_error"] = " | ".join((outcome.failures + outcome.warnings)[:10])
-            save_status(status)
+            if persist_global:
+                status = load_status()
+                run_success = is_successful_run(outcome.success_sources, len(outcome.failures))
+                status["fetch_state"] = "success" if run_success else "error"
+                status["last_run_at"] = now_text()
+                status["last_success_at"] = status["last_run_at"] if run_success else status.get("last_success_at", "")
+                status["last_total_sources"] = total_sources
+                status["last_success_sources"] = outcome.success_sources
+                status["last_inserted_entries"] = outcome.inserted_total
+                status["last_error"] = " | ".join((outcome.failures + outcome.warnings)[:10])
+                save_status(status)
             outcome.status = status
             return outcome
         except Exception as exc:
-            status = load_status()
-            status["fetch_state"] = "error"
-            status["last_run_at"] = now_text()
-            status["last_total_sources"] = total_sources
-            status["last_success_sources"] = 0
-            status["last_inserted_entries"] = 0
-            status["last_error"] = clean_health_error(str(exc))
-            save_status(status)
+            if persist_global:
+                status = load_status()
+                status["fetch_state"] = "error"
+                status["last_run_at"] = now_text()
+                status["last_total_sources"] = total_sources
+                status["last_success_sources"] = 0
+                status["last_inserted_entries"] = 0
+                status["last_error"] = clean_health_error(str(exc))
+                save_status(status)
             outcome.status = status
-            outcome.fatal_error = status["last_error"]
+            outcome.fatal_error = clean_health_error(str(exc))
             return outcome
         finally:
             status = load_status()
