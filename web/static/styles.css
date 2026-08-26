@@ -52,6 +52,8 @@
 }
 
 * { box-sizing: border-box; }
+/* hidden 属性必须生效:任何显式 display 规则都不应覆盖它 */
+[hidden] { display: none !important; }
 html {
   -webkit-tap-highlight-color: transparent;
 }
