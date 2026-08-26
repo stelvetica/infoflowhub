@@ -165,7 +165,8 @@ button, input, select, textarea { font: inherit; }
 /* 新闻卡片(小号条带) */
 .news-card { margin: 0 auto 12px; width: 100%; max-width: min(1600px, 100%); padding-bottom: var(--sp-3); }
 .news-panel-title { margin-bottom: var(--sp-2); }
-.news-header-form { justify-content: space-between; flex: 1; }
+.news-header-form { justify-content: flex-end; }
+.news-header-form .input { width: clamp(200px, 22vw, 320px); max-width: 100%; }
 .panel-title h2.news-heading { font-size: var(--fs-sm); font-weight: 600; margin: 0; white-space: nowrap; color: var(--muted); }
 .news-card .entries-table td { padding-top: 3px; padding-bottom: 3px; }
 .news-card .pagination .subtle, .news-card .entries-table th a.sort { font-size: var(--fs-xs); }
@@ -252,7 +253,7 @@ button, input, select, textarea { font: inherit; }
 .entries-header-form-right { justify-content: flex-end; flex: 1; }
 .entries-header-form .input, .entries-header-form .btn,
 .entries-unread-slot .btn, .news-header-form .input, .news-header-form .btn { font-size: var(--fs-sm); }
-.entries-header-form .input { min-width: 0; width: clamp(150px, 24vw, 240px); }
+.entries-header-form .input { min-width: 0; width: clamp(160px, 20vw, 260px); }
 .entries-search-group { margin-left: auto; }
 .entries-unread-slot { display: flex; align-items: center; }
 .entries-fetch-progress { gap: 6px; padding: 6px 10px; }
@@ -388,7 +389,7 @@ td { font-size: var(--fs-sm); }
    ============================================================ */
 .laterhub-form-stack { display: grid; gap: var(--sp-2); }
 .laterhub-top-row { align-items: center; justify-content: flex-start; margin-left: auto; }
-.laterhub-search-input { min-width: 0; width: 160px; flex: 0 0 160px; }
+.laterhub-search-input { min-width: 0; width: 140px; flex: 0 0 140px; }
 .laterhub-clear-btn { font-size: var(--fs-xs); white-space: nowrap; }
 .laterhub-status-select { width: 92px; }
 .laterhub-status-select-small { width: 92px; padding-top: 6px; padding-bottom: 6px; }
