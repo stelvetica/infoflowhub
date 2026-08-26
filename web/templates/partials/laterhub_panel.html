@@ -30,13 +30,16 @@
       <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
       <input type="hidden" name="laterhub_page" value="1">
       <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
-      <div class="chips laterhub-chips">
-        <button class="chip {% if not laterhub.selected_tags %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="">全部标签</button>
-        {% for tag in laterhub.all_tags %}
-          {% set active = tag in laterhub.selected_tags %}
-          <button class="chip {% if active %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="{{ '' if active else tag }}">{{ tag }}</button>
-        {% endfor %}
-      </div>
+      <details class="laterhub-tags-toggle">
+        <summary class="chip {% if laterhub.selected_tags %}active{% endif %}"><span>标签</span>{% if laterhub.selected_tags %}<span class="laterhub-tags-count">{{ laterhub.selected_tags|length }}</span>{% endif %}</summary>
+        <div class="chips laterhub-chips">
+          <button class="chip {% if not laterhub.selected_tags %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="">全部标签</button>
+          {% for tag in laterhub.all_tags %}
+            {% set active = tag in laterhub.selected_tags %}
+            <button class="chip {% if active %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="{{ '' if active else tag }}">{{ tag }}</button>
+          {% endfor %}
+        </div>
+      </details>
       <div class="laterhub-footer-row laterhub-footer-row-bottom">
         <div class="laterhub-summary-inline laterhub-summary-tight laterhub-summary-small laterhub-summary-merged">
           <div class="inline-metric"><span class="label">筛选后条目</span><strong>{{ laterhub.filtered_total }}</strong></div>
