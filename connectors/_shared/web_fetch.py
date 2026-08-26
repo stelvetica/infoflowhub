@@ -20,12 +20,13 @@ from connectors.douyin import fetch_douyin_subscription_with_page
 from connectors.jiuyangongshe import fetch_jiuyangongshe_with_page
 from connectors.wechat import fetch_wechat_feed
 from connectors.x import fetch_x_with_page
+from connectors.xiaoheihe import fetch_xiaoheihe_profile_with_page
 from connectors.youtube import fetch_youtube_with_page
 
 WEB_RETRY_DELAYS = (0.0, 2.0)
 WEB_RUNNER_DEBUG_PORT = 9223
 
-_SHARED_RUNNER_SITES = {"x", "youtube", "douyin", "alphapai"}
+_SHARED_RUNNER_SITES = {"x", "youtube", "douyin", "alphapai", "xiaoheihe"}
 
 
 def _needs_profile_rebuild(result: FeedFetchResult) -> bool:
@@ -109,7 +110,7 @@ def _fetch_one_via_session(session: CopyRunnerSession, source: dict, *, limit: i
     if target.site == "jiuyangongshe":
         return fetch_jiuyangongshe_with_page(None, source, limit=limit, timeout_ms=timeout_ms)
 
-    if target.site in {"x", "youtube", "douyin"}:
+    if target.site in {"x", "youtube", "douyin", "xiaoheihe"}:
         login_error = _preflight_login_check(source, target.site)
         if login_error:
             return result_error(source, login_error)
@@ -117,6 +118,7 @@ def _fetch_one_via_session(session: CopyRunnerSession, source: dict, *, limit: i
             "x": fetch_x_with_page,
             "youtube": fetch_youtube_with_page,
             "douyin": fetch_douyin_subscription_with_page,
+            "xiaoheihe": fetch_xiaoheihe_profile_with_page,
         }[target.site]
         return _fetch_via_shared_runner(session, source, fetch_fn, limit=limit, timeout_ms=timeout_ms)
 

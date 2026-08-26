@@ -151,6 +151,21 @@
       "fallback_mode": "web"
     },
     {
+      "id": "xiaoheihe_cuojuehuanjue",
+      "name": "技术 周报 错觉幻视",
+      "group": "",
+      "feed_url": "https://www.xiaoheihe.cn/app/user/profile/51993878",
+      "site_url": "https://www.xiaoheihe.cn/app/user/profile/51993878",
+      "provider": "web",
+      "fetch_via": "web",
+      "kind": "web",
+      "enabled": true,
+      "note": "小黑盒用户主页帖子，复用 CopyRunnerSession 复制常用 Chrome 登录态抓取",
+      "channel": "xiaoheihe",
+      "auth_key": "xiaoheihe_main",
+      "fallback_mode": "none"
+    },
+    {
       "id": "阮一峰周刊",
       "name": "技术 阮一峰周刊",
       "group": "",

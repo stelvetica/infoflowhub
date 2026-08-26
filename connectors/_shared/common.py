@@ -134,6 +134,10 @@ def resolve_web_target(source: dict) -> WebSourceTarget | None:
     if match:
         uid = match.group(1)
         return WebSourceTarget(site="jiuyangongshe", uid=uid, page_url=f"https://www.jiuyangongshe.com/u/{uid}")
+    match = re.search(r"xiaoheihe\.cn/app/user/profile/(\d+)", site_url)
+    if match:
+        uid = match.group(1)
+        return WebSourceTarget(site="xiaoheihe", uid=uid, page_url=f"https://www.xiaoheihe.cn/app/user/profile/{uid}")
     return None
 
 
