@@ -158,7 +158,10 @@
     const pageValue = getPanelFragment(panel)?.dataset.page || "1";
     cookieParams.set(`${panel.prefix}_unread_only`, unreadInput.value || "");
     cookieParams.set(`${panel.prefix}_read_keys`, readKeysInput.value || "");
-    cookieParams.set(`${panel.prefix}_q`, form.querySelector(`input[name="${panel.prefix}_q"]`)?.value || "");
+    // 关键字统一来自顶栏全局搜索框(设置页无全局框时回退表单字段)
+    const globalInput = document.getElementById("global-search");
+    const keyword = globalInput?.value ?? form.querySelector(`input[name="${panel.prefix}_q"]`)?.value ?? "";
+    cookieParams.set(`${panel.prefix}_q`, keyword);
     cookieParams.set(`${panel.prefix}_sort`, form.querySelector(`input[name="${panel.prefix}_sort"]`)?.value || "sort_time");
     cookieParams.set(`${panel.prefix}_dir`, form.querySelector(`input[name="${panel.prefix}_dir"]`)?.value || "desc");
     cookieParams.set(`${panel.prefix}_page`, pageValue);
@@ -364,6 +367,28 @@
       chips.hidden = !willOpen;
       btn.setAttribute("aria-expanded", String(willOpen));
       btn.classList.toggle("open", willOpen);
+    });
+  }
+
+  // 顶栏全局搜索:回车把关键字同时下发到新闻/订阅/稍后处理,清空回车即取消筛选
+  function setupGlobalSearch() {
+    const form = document.getElementById("global-search-form");
+    const input = document.getElementById("global-search");
+    if (!form || !input || form.dataset.ready === "1") return;
+    form.dataset.ready = "1";
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const term = input.value.trim();
+      panels.forEach((panel) => {
+        refreshPanel(panel, { [`${panel.prefix}_q`]: term, [`${panel.prefix}_page`]: "1" });
+      });
+      const laterhubPanel = document.getElementById("laterhub-panel");
+      if (laterhubPanel) {
+        laterhubPanel.querySelectorAll('input[name="laterhub_q"]').forEach((el) => {
+          el.value = term;
+        });
+        laterhubPanel.querySelector(".laterhub-form-stack")?.requestSubmit();
+      }
     });
   }
 
@@ -670,6 +695,7 @@
   function init() {
     applyReadState();
     panels.forEach((panel) => setupUnreadToggle(panel));
+    setupGlobalSearch();
     setupLaterhubResizer();
     setupLaterhubOpenedTracking();
     setupLaterhubTagsToggle();

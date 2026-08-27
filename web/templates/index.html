@@ -9,6 +9,11 @@
       <div class="brand brand-centered">
         <h1>InfoFlowHub</h1>
       </div>
+      {% if view != 'settings' %}
+      <form id="global-search-form" class="global-search-form" role="search">
+        <input id="global-search" class="input global-search-input" type="search" value="{{ entries.q }}" placeholder="搜索标题、来源、标签，回车筛选" aria-label="全局搜索，回车筛选新闻、订阅与稍后处理" autocomplete="off">
+      </form>
+      {% endif %}
       <a class="settings-link {% if view == 'settings' %}active{% endif %}" href="{% if view == 'settings' %}/{% else %}/?view=settings{% endif %}" aria-label="设置">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </a>
@@ -46,12 +51,10 @@
     {% else %}
       <section class="card news-card">
         <div class="panel-title news-panel-title news-header-panel-title">
-          <h2 class="news-heading">新闻</h2>
-          <form class="toolbar toolbar-inline news-header-form" hx-get="/fragments/news" hx-target="#news-panel" hx-swap="innerHTML">
+          <h2>新闻</h2>
+          <form class="toolbar toolbar-inline news-header-form">
             <input type="hidden" name="news_sort" value="{{ news.sort }}">
             <input type="hidden" name="news_dir" value="{{ news.dir }}">
-            <input class="input input-compact" type="search" name="news_q" value="{{ news.q }}" placeholder="搜索资讯标题、来源…" aria-label="搜索新闻" autocomplete="off">
-            <button class="btn btn-compact" type="submit">搜索</button>
             <div id="news-unread-slot" class="entries-unread-slot"></div>
           </form>
         </div>
@@ -79,18 +82,9 @@
                   微信续期
                 </a>
               </div>
-              <form class="toolbar toolbar-inline toolbar-inline-spread entries-header-form entries-header-form-right" hx-get="/fragments/entries" hx-target="#entries-panel" hx-swap="innerHTML">
+              <form class="toolbar toolbar-inline toolbar-inline-spread entries-header-form entries-header-form-right">
                 <input type="hidden" name="entries_sort" value="{{ entries.sort }}">
                 <input type="hidden" name="entries_dir" value="{{ entries.dir }}">
-                <input type="hidden" name="laterhub_q" value="{{ laterhub.q }}">
-                <input type="hidden" name="laterhub_filter_finished" value="{{ laterhub.filter_finished }}">
-                <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
-                <input type="hidden" name="laterhub_sort" value="{{ laterhub.sort }}">
-                <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
-                <div class="toolbar toolbar-inline entries-search-group">
-                  <input class="input" type="search" name="entries_q" value="{{ entries.q }}" placeholder="搜索标题、来源…" aria-label="搜索订阅内容" autocomplete="off">
-                  <button class="btn" type="submit">搜索</button>
-                </div>
                 <div id="entries-unread-slot" class="entries-unread-slot"></div>
               </form>
             </div>
