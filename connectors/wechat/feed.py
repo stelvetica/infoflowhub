@@ -69,8 +69,9 @@ def fetch_wechat_feed_via_tool(source: dict, limit: int = 30) -> FeedFetchResult
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
     # 中转平台（weread 中转域）对连续请求有分钟级软限流：HTTP 200 但静默返回空数组，
     # 实测隔约 1 分钟恢复。短间隔重试跨不过该窗口，需指数退避拖过限流期；
-    # 全部重试耗尽仍为空才判定失败（未收录与限流无法从响应区分，文案并列提示）。
-    WEREAD_EMPTY_RETRY_DELAYS = (0.0, 5.0, 15.0, 30.0)
+    # 末档 60s 覆盖实测限流窗口，全部重试耗尽仍为空才判定失败
+    # （未收录与限流无法从响应区分，文案并列提示）。
+    WEREAD_EMPTY_RETRY_DELAYS = (0.0, 5.0, 15.0, 30.0, 60.0)
     articles: list = []
     last_error = ""
     for attempt, delay in enumerate(WEREAD_EMPTY_RETRY_DELAYS, start=1):
