@@ -379,6 +379,7 @@
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const term = input.value.trim();
+      input.value = term;
       panels.forEach((panel) => {
         refreshPanel(panel, { [`${panel.prefix}_q`]: term, [`${panel.prefix}_page`]: "1" });
       });
