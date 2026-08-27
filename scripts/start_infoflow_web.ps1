@@ -63,11 +63,10 @@ Write-Host "[OK] Old processes cleaned" -ForegroundColor Green
 # ============================================================
 # Phase 1.5: Ensure wechat-mp-tools (公众号外部工具, port 5300)
 # 微信 9 源走 weread:// 轻量协议，依赖该工具；已运行则不重复拉起。
-# 独立迁出至 Playground\wechat-mp-tools（脱离本仓 gitlink），优先新位置。
 # ============================================================
 Write-Host "=== Phase 1.5: Ensuring wechat-mp-tools (port 5300) ===" -ForegroundColor Cyan
 
-$mpToolDir = "C:\Users\ETT\Playground\wechat-mp-tools"
+$mpToolDir = Join-Path $root "wechat-mp-tools"
 $mpToolPort = 5300
 $mpToolUp = netstat -ano -p tcp | Select-String "LISTENING" | Select-String ":$mpToolPort"
 if ($mpToolUp) {
