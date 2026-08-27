@@ -190,9 +190,9 @@ def get_login_status(*, cache_unavailable: bool = False) -> Dict[str, Any]:
             break
     account = account or ((pool or {}).get("accounts", []) or [None])[0]
 
-    logged_in = bool(status.get("logged_in")) and bool(account)
-    login_state = status.get("login_state") or {}
-    status_text = "登录有效" if logged_in else ("未登录" if status.get("logged_in") is False else "登录失效")
+    logged_in = bool(result.get("logged_in")) and bool(account)
+    login_state = result.get("login_state") or {}
+    status_text = "登录有效" if logged_in else ("未登录" if result.get("logged_in") is False else "登录失效")
 
     remaining = int(account.get("remaining_seconds") or 0) if account else 0
     expired = bool(account.get("expired")) if account else True
@@ -201,7 +201,7 @@ def get_login_status(*, cache_unavailable: bool = False) -> Dict[str, Any]:
     nickname = str((account or {}).get("nickname") or "") if account else ""
     last_error = str((account or {}).get("last_error") or "") if account else ""
 
-    is_expired = bool(status.get("logged_in")) is False or expired or not account
+    is_expired = bool(result.get("logged_in")) is False or expired or not account
     is_expiring_soon = bool(remaining) and remaining <= 24 * 3600 and not is_expired
 
     result = {

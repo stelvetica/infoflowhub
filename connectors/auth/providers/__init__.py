@@ -16,33 +16,18 @@ from connectors.auth.providers.browser_profiles import (
     validate_xiaoheihe_auth,
     validate_youtube_auth,
 )
-from connectors.auth.providers.wechat import (
-    WECHAT_AUTH_PATH,
-    get_wechat_credentials,
-    get_wechat_status,
-    log_wechat_auth_event,
-    save_wechat_credentials,
-    validate_wechat_auth,
-)
-
 __all__ = [
     "ALPHAPAI_RUNNER_DIR",
     "AUTH_PROFILE_DIR",
     "BILIBILI_AUTH_PATH",
-    "WECHAT_AUTH_PATH",
     "export_bilibili_cookie_from_chrome",
     "get_bilibili_cookie",
     "get_bilibili_headers",
     "get_context_path",
-    "get_wechat_credentials",
-    "get_wechat_status",
-    "log_wechat_auth_event",
-    "save_wechat_credentials",
     "validate_alphapai_auth",
     "validate_bilibili_auth",
     "validate_douyin_auth",
     "validate_jiuyangongshe_auth",
-    "validate_wechat_auth",
     "validate_x_auth",
     "validate_xiaoheihe_auth",
     "validate_youtube_auth",

@@ -10,7 +10,6 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
-from web.services.wechat_login import check_login_scan, complete_login, get_login_qrcode, renew_login_with_existing_credentials, start_login
 from web.services import weread_login
 from web.services.views import (
     build_entries_state_params,
@@ -234,55 +233,6 @@ async def weread_login_start():
 async def weread_login_cancel():
     result = await run_in_threadpool(weread_login.cancel_login)
     return JSONResponse(result)
-
-
-@router.post("/actions/wechat-login/start")
-async def wechat_login_start(request: Request):
-    result, set_cookie_headers = await start_login(request.headers.get("cookie", ""))
-    response = JSONResponse(result)
-    for value in set_cookie_headers:
-        response.headers.append("Set-Cookie", value)
-    return response
-
-
-@router.get("/actions/wechat-login/qrcode")
-async def wechat_login_qrcode(request: Request):
-    content, media_type, set_cookie_headers = await get_login_qrcode(request.headers.get("cookie", ""))
-    response = Response(content=content, media_type=media_type, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
-    for value in set_cookie_headers:
-        response.headers.append("Set-Cookie", value)
-    return response
-
-
-@router.get("/actions/wechat-login/scan")
-async def wechat_login_scan(request: Request):
-    payload, set_cookie_headers = await check_login_scan(request.headers.get("cookie", ""))
-    response = JSONResponse(payload)
-    for value in set_cookie_headers:
-        response.headers.append("Set-Cookie", value)
-    return response
-
-
-@router.post("/actions/wechat-login/complete")
-async def wechat_login_complete(request: Request):
-    try:
-        credentials, set_cookie_headers = await complete_login(request.headers.get("cookie", ""))
-        response = JSONResponse({"success": True, "data": credentials})
-        for value in set_cookie_headers:
-            response.headers.append("Set-Cookie", value)
-        return response
-    except Exception as exc:
-        return JSONResponse({"success": False, "error": str(exc)}, status_code=400)
-
-
-@router.post("/actions/wechat-login/renew", response_class=HTMLResponse)
-async def wechat_login_renew(request: Request):
-    try:
-        await renew_login_with_existing_credentials()
-    except Exception:
-        pass
-    params = query_dict(request)
-    return templates.TemplateResponse(request, "partials/auth_assets_panel.html", {"settings": get_settings_view(params), "params": params})
 
 
 @router.post("/actions/bilibili-login/sync", response_class=HTMLResponse)

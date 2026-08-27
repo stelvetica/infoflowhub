@@ -142,8 +142,6 @@ def source_channel_label(feed_url: str, site_url: str, provider: str) -> str:
     combined = f"{feed} {site}"
     if "youtube.com" in combined or "youtu.be" in combined:
         return "YouTube"
-    if "wechat://mp/" in combined or "mp.weixin.qq.com" in combined:
-        return "微信公众号"
     if "douyin.com" in combined:
         return "抖音"
     if provider == "rsshub" or "rsshub" in feed:

@@ -4,10 +4,8 @@ from pathlib import Path
 
 from connectors.auth.models import AuthDescriptor, AuthRegistration
 from connectors.auth.providers import (
-    WECHAT_AUTH_PATH,
     get_bilibili_headers,
     get_context_path,
-    get_wechat_status,
     validate_alphapai_auth,
     validate_bilibili_auth,
     validate_douyin_auth,
@@ -101,16 +99,16 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         login_method="复用登录态取Cookie",
         renew_label="在常用 Chrome 登录 B站后点同步",
     ),
-    # 方式4：扫码公众号
+    # 方式4：微信公众号（经外部工具微信读书通道）
     "wechat_mp_main": AuthRegistration(
         auth_key="wechat_mp_main",
         platform="wechat",
         auth_mode="cookie_session",
-        storage_ref=str(WECHAT_AUTH_PATH),
+        storage_ref="外部工具 wechat-mp-tools 账号池",
         renew_strategy="scan_qr",
         display_name="微信公众号",
-        description="9 个公众号文章抓取共用。",
-        login_method="扫码登录(公众号后台)",
+        description="9 个公众号文章经外部工具（wechat-mp-tools 微信读书模式）抓取，登录态保存在外部工具。",
+        login_method="扫码登录(微信读书, 外部工具)",
         renew_label="重新扫码",
     ),
 }
@@ -126,7 +124,11 @@ def resolve_auth(auth_key: str) -> AuthRegistration:
 def validate_auth(auth_key: str) -> AuthDescriptor:
     registration = resolve_auth(auth_key)
     if auth_key == "wechat_mp_main":
-        status = get_wechat_status()
+        # 微信源实际登录态在外部工具（微信读书账号池），这里透传其归一化状态
+        from web.services.weread_login import get_login_status
+
+        status = get_login_status(cache_unavailable=True)
+        status.setdefault("remaining_hours", -1)
     elif auth_key == "douyin_shared":
         status = validate_douyin_auth()
     elif auth_key == "bilibili_main":
@@ -190,14 +192,6 @@ def invalidate_auth_status_cache() -> None:
 def get_auth_headers(auth_key: str) -> dict[str, str]:
     if auth_key == "bilibili_main":
         return get_bilibili_headers()
-    if auth_key == "wechat_mp_main":
-        descriptor = validate_auth(auth_key)
-        if not descriptor.is_available:
-            raise ValueError(descriptor.hint or "微信登录态不可用")
-        from connectors.auth.providers import get_wechat_credentials
-
-        credentials = get_wechat_credentials()
-        return {"Cookie": str(credentials.get("cookie") or "").strip()}
     raise ValueError(f"{auth_key} 不是 cookie/session 类型登录态")
 
 

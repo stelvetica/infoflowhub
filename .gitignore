@@ -25,6 +25,8 @@ runtime/health/*.json
 !runtime/health/*.example.json
 runtime/auth/
 runtime/wechat_auth.json
+# 外部工具不可达哨兵（运行时缓存，weread_login.py 读写）
+runtime/weread_login_unavailable.json
 runtime/tmp_chrome_probe.mjs
 web/__pycache__/
 

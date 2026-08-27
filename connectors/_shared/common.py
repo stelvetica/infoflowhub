@@ -84,13 +84,6 @@ def resolve_web_target(source: dict) -> WebSourceTarget | None:
         uid = uid.strip().strip("/")
         if uid:
             return WebSourceTarget(site="wechat", uid=uid, page_url=f"wechat://{uid}")
-    if feed_url.startswith("wechat://mp/") or site_url.startswith("wechat://mp/"):
-        raw = feed_url if feed_url.startswith("wechat://mp/") else site_url
-        uid = raw.split("wechat://mp/", 1)[1].strip().strip("/")
-        if uid:
-            return WebSourceTarget(site="wechat", uid=uid, page_url=f"https://mp.weixin.qq.com/cgi-bin/appmsgpublish?fakeid={uid}")
-    if feed_url.startswith("wechat://article?url=") or "mp.weixin.qq.com/s/" in site_url:
-        return WebSourceTarget(site="wechat", uid="", page_url=site_url or feed_url)
     match = re.search(r"space\.bilibili\.com/(\d+)", site_url)
     if match:
         uid = match.group(1)

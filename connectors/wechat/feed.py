@@ -7,9 +7,6 @@ from datetime import datetime, timedelta
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
 from connectors._shared.common import parse_published_datetime, result_error
-from connectors.wechat.api import fetch_wechat_articles, parse_wechat_publish_list
-from connectors.wechat.auth import validate_wechat_auth_prerequisite
-from connectors.wechat.renew import ensure_wechat_auth_fresh_for_fetch
 
 
 def _format_timestamp(value: int) -> str:
@@ -119,43 +116,11 @@ def fetch_wechat_feed_via_tool(source: dict, limit: int = 30) -> FeedFetchResult
 
 
 def fetch_wechat_feed(source: dict, limit: int = 12) -> FeedFetchResult:
-    if _parse_weread_url(source)[1]:
-        return fetch_wechat_feed_via_tool(source, limit=limit)
-    ensure_wechat_auth_fresh_for_fetch()
-    auth_error = validate_wechat_auth_prerequisite(source)
-    if auth_error:
-        return result_error(source, auth_error)
-    try:
-        payload = fetch_wechat_articles(source, begin=0, count=max(limit, 10))
-        articles, parse_error = parse_wechat_publish_list(payload)
-        if parse_error:
-            return result_error(source, parse_error)
-        entries: list[FeedEntry] = []
-        for article in articles[:limit]:
-            title = str(article.get("title") or "").strip()
-            link = str(article.get("link") or "").strip()
-            if not title or not link:
-                continue
-            published = _format_timestamp(int(article.get("update_time") or article.get("create_time") or 0))
-            summary = str(article.get("digest") or article.get("author") or "").strip()
-            entries.append(
-                FeedEntry(
-                    source_id=source["id"],
-                    source_name=source["name"],
-                    title=title,
-                    link=link,
-                    published=published,
-                    summary=summary,
-                )
-            )
-        return FeedFetchResult(
-            source_id=source["id"],
-            source_name=source["name"],
-            feed_url=source["feed_url"],
-            ok=True,
-            status=200,
-            entries=entries,
-            error="",
+    # 公众号唯一通道：外部工具 wechat-mp-tools 微信读书轻量接口（weread:// 源）。
+    # 旧公众号后台 appmsgpublish 接口已被微信下线（2026-07-30 起恒返 200013），不再回退。
+    if not _parse_weread_url(source)[1]:
+        return result_error(
+            source,
+            "微信公众号源缺少 weread://<fakeid>@<host> 配置，请改为外部工具微信读书通道。",
         )
-    except Exception as exc:
-        return result_error(source, f"微信公众号抓取失败: {exc}")
+    return fetch_wechat_feed_via_tool(source, limit=limit)

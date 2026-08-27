@@ -199,8 +199,8 @@ def infer_source_meta(feed_url: str, site_url: str) -> tuple[str, str, str]:
     feed = normalize_text(feed_url)
     site = normalize_text(site_url)
     combined = f"{feed} {site}"
-    if "wechat://mp/" in combined or "mp.weixin.qq.com" in combined:
-        return ("web", "wechat-api", "web")
+    if "weread://" in combined:
+        return ("web", "wechat-tool", "web")
     if any(host in combined for host in ("bilibili.com", "x.com", "twitter.com", "douyin.com", "youtube.com", "youtu.be", "jiuyangongshe.com")):
         return ("web", "web", "web")
     if "rsshub" in feed:
@@ -213,8 +213,6 @@ def infer_channel(feed_url: str, site_url: str) -> str:
     if target:
         return target.site
     combined = f"{normalize_text(feed_url)} {normalize_text(site_url)}"
-    if "wechat://mp/" in combined or "mp.weixin.qq.com" in combined:
-        return "wechat"
     if "youtube.com" in combined or "youtu.be" in combined:
         return "youtube"
     if "rsshub" in combined:

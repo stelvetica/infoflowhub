@@ -19,14 +19,6 @@ RUNTIME_DIR = BASE_DIR / "runtime"
 HEALTH_DIR = RUNTIME_DIR / "health"
 
 
-def normalize_wechat_auth_file(path: Path) -> None:
-    payload = load_json_utf8(path, default={})
-    if not isinstance(payload, dict):
-        payload = {}
-    payload["nickname"] = normalize_utf8_text(payload.get("nickname"))
-    dump_json_utf8(path, payload)
-
-
 def normalize_automation_runtime() -> None:
     path = HEALTH_DIR / "automation_runtime.json"
     payload = load_json_utf8(path, default={"slots": {}})
@@ -70,8 +62,6 @@ def normalize_source_health() -> None:
 
 
 def main() -> None:
-    normalize_wechat_auth_file(RUNTIME_DIR / "wechat_auth.json")
-    normalize_wechat_auth_file(RUNTIME_DIR / "auth" / "wechat_mp_main.json")
     normalize_automation_runtime()
     normalize_source_health()
     dump_json_utf8(BASE_DIR / "config" / "subscription_sources.json", {"sources": load_sources()})
