@@ -1,4 +1,4 @@
-# InfoFlowHub 一键启动：Web 服务（仅本地）
+﻿# InfoFlowHub 一键启动：Web 服务（仅本地）
 # 隧道（cloudflared + Chrome 书签同步）见 start_tunnel.ps1
 $ErrorActionPreference = "Stop"
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
