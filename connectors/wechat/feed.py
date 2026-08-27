@@ -67,24 +67,27 @@ def fetch_wechat_feed_via_tool(source: dict, limit: int = 30) -> FeedFetchResult
         return result_error(source, "微信公众号轻量源缺少工具地址或 fakeid，请检查 weread:// 配置。")
     url = f"http://{host}/api/articles/list/{urllib.parse.quote(fakeid)}?count={max(int(limit), 10)}"
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
-    # 微信读书接口偶发抖动/限频会返回空列表，做轻量重试提升稳定性
+    # 中转平台（weread 中转域）对连续请求有分钟级软限流：HTTP 200 但静默返回空数组，
+    # 实测隔约 1 分钟恢复。短间隔重试跨不过该窗口，需指数退避拖过限流期；
+    # 全部重试耗尽仍为空才判定失败（未收录与限流无法从响应区分，文案并列提示）。
+    WEREAD_EMPTY_RETRY_DELAYS = (0.0, 5.0, 15.0, 30.0)
     articles: list = []
     last_error = ""
-    for attempt in range(3):
+    for attempt, delay in enumerate(WEREAD_EMPTY_RETRY_DELAYS, start=1):
+        if delay:
+            import time
+            time.sleep(delay)
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 payload = json.loads(response.read().decode("utf-8", errors="ignore"))
             articles = payload.get("articles", []) if isinstance(payload, dict) else []
             if isinstance(articles, list) and articles:
                 break
-            last_error = "微信公众号轻量接口返回空，该号在微信读书可能暂无收录文章。"
+            last_error = "微信公众号轻量接口返回空：可能触发中转平台软限流（约1分钟自愈），或该号未被微信读书收录。"
         except Exception as exc:
             last_error = f"微信公众号轻量抓取失败(工具不可达?): {exc}"
-        if attempt < 2:
-            import time
-            time.sleep(1.5)
     if not isinstance(articles, list) or not articles:
-        return result_error(source, last_error or "微信公众号轻量接口返回空，该号在微信读书可能暂无收录文章。")
+        return result_error(source, last_error or "微信公众号轻量接口返回空。")
     entries: list[FeedEntry] = []
     for article in articles:
         title = str(article.get("title") or "").strip()
