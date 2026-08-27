@@ -87,6 +87,27 @@ if ($mpToolUp) {
     Write-Host "[WARN] wechat-mp-tools 或其 venv312 缺失，跳过拉起，公众号源将不可用" -ForegroundColor Yellow
 }
 
+# ── Phase 1.6: 自动启动微信本地拦截代理（MITM，评论会话捕获依赖）──
+# 仅当工具成功拉起且代理未运行时调用其 /proxy/start；证书未信任时提示一次。
+# 注意：若 Clash 等代理工具开着系统代理，此处启动会覆盖系统代理指向 5202。
+if ($mpToolUp) {
+    Write-Host "=== Phase 1.6: Ensuring WeChat MITM proxy (port 5202) ===" -ForegroundColor Cyan
+    try {
+        $mpStatus = Invoke-RestMethod -Uri "http://127.0.0.1:$mpToolPort/api/channels/proxy/status" -TimeoutSec 5
+        if ($mpStatus.proxy_running) {
+            Write-Host "[OK] WeChat MITM proxy already running on $($mpStatus.proxy_port)" -ForegroundColor Green
+        } else {
+            $startResp = Invoke-RestMethod -Uri "http://127.0.0.1:$mpToolPort/api/channels/proxy/start" -Method Post -TimeoutSec 60
+            Write-Host "[OK] WeChat MITM proxy auto-started on 5202（评论捕获依赖此代理）" -ForegroundColor Green
+        }
+        if (-not $mpStatus.cert_installed) {
+            Write-Host "[WARN] CA 证书未信任：微信内页面将拦截失败。请打开 http://127.0.0.1:$mpToolPort → 视频号 → 一键安装证书" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "[WARN] MITM 代理自动启动失败（不影响公众号订阅，仅评论捕获不可用）: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 # ============================================================
 # Phase 2: Start Web service
 # ============================================================
