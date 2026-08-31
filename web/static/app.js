@@ -586,9 +586,17 @@
       const nickname = data.nickname || data.account_info?.nickname || "微信读书";
       setStatus(`✅ 登录成功：${nickname}`);
       const nextUrl = root.dataset.nextUrl || "/?view=settings";
-      window.setTimeout(() => {
+      let remaining = 3;
+      const tick = () => {
+        if (remaining > 0) {
+          setStatus(`✅ 登录成功：${nickname}（${remaining} 秒后自动返回）`);
+          remaining -= 1;
+          wechatLogin.timer = window.setTimeout(tick, 1000);
+          return;
+        }
         window.location.href = nextUrl;
-      }, 1200);
+      };
+      tick();
     };
 
     const poll = async () => {
