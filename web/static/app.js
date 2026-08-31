@@ -671,16 +671,20 @@
         if (fetchNow.pollCount <= 150) {
           fetchNow.timer = window.setTimeout(pollFetchStatus, 2000);
         } else {
+          // 轮询超时放弃:复位按钮,避免转圈永不结束
           stopFetchPolling();
+          finishFetchButtons();
         }
         return;
       }
     } catch {
       stopFetchPolling();
+      finishFetchButtons();
       return;
     }
-    // 抓取完成:刷新运行状态面板与各订阅面板
+    // 抓取完成:复位按钮,刷新运行状态面板与各订阅面板
     stopFetchPolling();
+    finishFetchButtons();
     const statusPanel = document.querySelector("#runtime-status-panel");
     const params = window.location.search || "";
     if (statusPanel) {
@@ -711,34 +715,49 @@
     setupWechatLogin();
   }
 
-  document.body.addEventListener("htmx:beforeRequest", (event) => {
-    const form = event.target;
-    if (!(form instanceof HTMLFormElement)) return;
+  // 抓取按钮 loading 态:点击即转圈。订阅抓取的 POST 秒回、后台才真正执行,
+  // 转圈需持续到轮询确认完成;稍后处理为同步请求,响应返回即复位。
+  function fetchLoadingButton(form) {
+    if (!(form instanceof HTMLFormElement)) return null;
     const button = form.querySelector('button[type="submit"]');
-    if (!(button instanceof HTMLButtonElement)) return;
+    if (!(button instanceof HTMLButtonElement)) return null;
     if (!button.dataset.originalText) {
       button.dataset.originalText = button.textContent || "";
     }
-    if (button.dataset.originalText.includes("抓取")) {
-      button.textContent = "抓取中…";
-      button.disabled = true;
-    }
+    if (!button.dataset.originalText.includes("抓取")) return null;
+    return button;
+  }
+
+  function setButtonLoading(button, loading) {
+    if (!button) return;
+    button.classList.toggle("is-loading", loading);
+    button.textContent = loading ? "抓取中" : button.dataset.originalText || "";
+    button.disabled = loading;
+  }
+
+  document.body.addEventListener("htmx:beforeRequest", (event) => {
+    const button = fetchLoadingButton(event.target);
+    if (button) setButtonLoading(button, true);
   });
 
   document.body.addEventListener("htmx:afterRequest", (event) => {
-    const form = event.target;
-    if (!(form instanceof HTMLFormElement)) return;
-    const button = form.querySelector('button[type="submit"]');
-    if (!(button instanceof HTMLButtonElement)) return;
-    if (button.dataset.originalText) {
-      button.textContent = button.dataset.originalText;
-      button.disabled = false;
-    }
-    // 立即抓取:后台执行后轮询状态,完成时自动刷新面板与条目
-    if (button.dataset.originalText && button.dataset.originalText.includes("抓取")) {
+    const button = fetchLoadingButton(event.target);
+    if (!button) return;
+    // 稍后处理(/actions/laterhub/fetch-now)同步执行,响应返回即完成,直接复位;
+    // 订阅抓取的 POST 秒回、后台才真正执行,保持转圈,由轮询结束后统一复位。
+    const isLaterhub = !!button.closest('form[hx-post*="/actions/laterhub/fetch-now"]');
+    if (isLaterhub) {
+      setButtonLoading(button, false);
+    } else {
       startFetchPolling();
     }
   });
+
+  function finishFetchButtons() {
+    document.querySelectorAll('.btn.is-loading[data-original-text]').forEach((button) => {
+      setButtonLoading(button, false);
+    });
+  }
 
   // 模态框:Esc 关闭,打开后焦点移入首个输入框
   document.addEventListener("keydown", (event) => {

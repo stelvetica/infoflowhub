@@ -218,6 +218,22 @@ button, input, select, textarea { font: inherit; }
 }
 .btn:hover { filter: brightness(0.97); }
 .btn:disabled { cursor: wait; opacity: 0.72; }
+/* 抓取中:按钮内联转圈,宽度用 min-width 锁定避免文字换行跳动 */
+.btn.is-loading { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.btn.is-loading::before {
+  content: "";
+  width: 0.9em;
+  height: 0.9em;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: btn-spin 0.7s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .btn.is-loading::before { animation-duration: 1.6s; }
+}
 .btn.secondary { background: #eef4ff; color: var(--accent); border-color: #b6d3ff; }
 .btn.success { background: var(--ok-soft); color: var(--ok); border-color: #8ddb9b; }
 .btn.warn { background: var(--warn-soft); color: var(--warn); border-color: #eac54f; }
