@@ -26,6 +26,7 @@ reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v ApplicationBoundEncryptionEnab
 - 关闭后**需重新登录各站点**（旧 ABE 加密 cookie 无法被工具读取，重登后生成可复制的 DPAPI(v10) 格式）。
 - 验证：`chrome://policy` 中 `ApplicationBoundEncryptionEnabled` 应为 `false`。
 - 恢复安全：`reg delete "HKLM\SOFTWARE\Policies\Google\Chrome" /v ApplicationBoundEncryptionEnabled /f`。
+- **防写回保护**（2026-09-01 已启用）：该注册表键已加 Deny-WriteKey ACL，普通/管理员进程均无法直接改写策略值（Deny 优先于 Allow）。若确需调整，须先在注册表编辑器（需管理员）中移除 `Authenticated Users` 的 Deny 规则再操作。
 - Mac/Linux 无 ABE 机制，无需此操作。
 
 > ⚠️ 关闭 ABE 会降低本机 Chrome 本地 cookie/密码的安全性，仅在本机运行抓取时建议如此。
