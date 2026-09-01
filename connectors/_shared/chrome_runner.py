@@ -363,6 +363,7 @@ def prepare_runner_profile(
             _copy_path(src, dst)
 
     _ensure_minimal_preferences(runner_profile_dir)
+    _strip_google_identity(runner_dir, runner_profile_dir)
 
     for lock_name in ("SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"):
         _safe_unlink(runner_dir / lock_name)
@@ -370,6 +371,37 @@ def prepare_runner_profile(
 
     if not is_runner_profile_ready(runner_profile_dir):
         raise RuntimeError("专用浏览器 profile 初始化失败，未能复制出有效 Cookies")
+
+
+def _strip_google_identity(runner_dir: Path, runner_profile_dir: Path) -> None:
+    """从副本中剥离 Google 账号身份，只保留 cookie 解密所需的 os_crypt 密钥。
+
+    副本若携带 account_info / account_token_service，会以同一 Google 账号 +
+    同一设备注册身份（Local State 内含 device_id）联网刷新令牌；Google 侧
+    检测到"同设备身份异常双活"会吊销会话，导致用户常用 Chrome 被要求重新登录。
+    """
+    ls_path = runner_dir / "Local State"
+    if ls_path.exists():
+        try:
+            data = json.loads(ls_path.read_text(encoding="utf-8"))
+            for key in ("account_info", "account_token_service"):
+                data.pop(key, None)
+            ls_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        except (OSError, ValueError) as exc:
+            print(f"[WARN] 剥离副本 Google 身份失败 (Local State): {exc}")
+
+    prefs_path = runner_profile_dir / "Preferences"
+    if prefs_path.exists():
+        try:
+            data = json.loads(prefs_path.read_text(encoding="utf-8"))
+            data.pop("account_info", None)
+            signin = data.get("signin")
+            if isinstance(signin, dict):
+                for key in ("signin_pending_start_time", "sync_paused_start_time"):
+                    signin.pop(key, None)
+            prefs_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        except (OSError, ValueError) as exc:
+            print(f"[WARN] 剥离副本 Google 身份失败 (Preferences): {exc}")
 
 
 def rebuild_runner_profile(
