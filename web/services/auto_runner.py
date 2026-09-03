@@ -16,6 +16,7 @@ RUNTIME_PATH = BASE_DIR / "runtime" / "health" / "automation_runtime.json"
 MORNING_START_HOUR = 8
 MORNING_START_MINUTE = 10
 CHECK_INTERVAL_SECONDS = 600
+CHECK_INTERVAL_SECONDS_MORNING = 60
 
 
 class AutoRunner:
@@ -37,8 +38,14 @@ class AutoRunner:
     async def _loop(self) -> None:
         while not self._stopped.is_set():
             await self._maybe_run_morning()
+            # 8 点时段用 1 分钟粒度，避免 10 分钟间隔的相位漂移把当天首次抓取推迟数分钟
+            interval = (
+                CHECK_INTERVAL_SECONDS_MORNING
+                if datetime.now().hour == MORNING_START_HOUR
+                else CHECK_INTERVAL_SECONDS
+            )
             try:
-                await asyncio.wait_for(self._stopped.wait(), timeout=CHECK_INTERVAL_SECONDS)
+                await asyncio.wait_for(self._stopped.wait(), timeout=interval)
             except TimeoutError:
                 continue
 
