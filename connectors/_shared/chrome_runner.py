@@ -372,6 +372,16 @@ def prepare_runner_profile(
     if not is_runner_profile_ready(runner_profile_dir):
         raise RuntimeError("专用浏览器 profile 初始化失败，未能复制出有效 Cookies")
 
+    # 记录重建时间：should_rebuild_runner_profile 依赖 meta 判断 3 天内免重建。
+    # 此前 _write_runner_meta 从未被调用，副本永远无 meta → 每次抓取都强制
+    # 关用户 Chrome 重建副本（骚扰 + 放大关闭失败窗口）
+    _write_runner_meta(
+        runner_dir,
+        profile_name=profile_name,
+        source_profile_dir=source_profile_dir,
+        rebuilt_at=_now_ts(),
+    )
+
 
 def _strip_google_identity(runner_dir: Path, runner_profile_dir: Path) -> None:
     """从副本中剥离 Google 账号身份，只保留 cookie 解密所需的 os_crypt 密钥。

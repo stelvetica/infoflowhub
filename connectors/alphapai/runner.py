@@ -69,10 +69,11 @@ def fetch_alphapai_source(
     session=None,
 ) -> FeedFetchResult:
     own_session = session is None
-    if own_session:
-        session = _make_session()
-        session.start()
+    session = session or _make_session()
     try:
+        # start（需关闭用户 Chrome 复制 profile）失败只作本源错误，
+        # 不得向上抛炸穿整批抓取（历史上曾丢弃同批已抓好的全部源）
+        session.start()
         return _run_fetch_once(session, source, limit=limit, timeout_ms=timeout_ms)
     except Exception as exc:
         return result_error(source, f"蓝宝书抓取失败: {exc}")

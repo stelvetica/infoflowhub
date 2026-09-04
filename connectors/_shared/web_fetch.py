@@ -197,18 +197,30 @@ def fetch_web_many(
     other_indices = [i for i in range(len(sources)) if i not in set(shared_indices)]
 
     # 所有浏览器站点共用一个复制副本 session（单一常用 Chrome 登录态来源）
+    # start 需关闭用户 Chrome 复制 profile，可能失败——失败只作各源错误，
+    # 不得向上抛炸穿整批抓取（历史上曾丢弃同批已抓好的全部源）
     if shared_indices:
-        session = _make_session_for(sources[shared_indices[0]])
-        session.start()
+        session: CopyRunnerSession | None = None
+        start_error = ""
         try:
+            session = _make_session_for(sources[shared_indices[0]])
+            session.start()
+        except Exception as exc:
+            start_error = f"浏览器会话启动失败: {exc}"
+            session = None
+        if session is None:
             for i in shared_indices:
-                source = sources[i]
-                try:
-                    results_by_index[i] = _fetch_one_via_session(session, source, limit=limit, timeout_ms=timeout_ms)
-                except Exception as exc:
-                    results_by_index[i] = result_error(source, f"网页直抓失败: {exc}")
-        finally:
-            session.shutdown()
+                results_by_index[i] = result_error(sources[i], start_error)
+        else:
+            try:
+                for i in shared_indices:
+                    source = sources[i]
+                    try:
+                        results_by_index[i] = _fetch_one_via_session(session, source, limit=limit, timeout_ms=timeout_ms)
+                    except Exception as exc:
+                        results_by_index[i] = result_error(source, f"网页直抓失败: {exc}")
+            finally:
+                session.shutdown()
 
     # bilibili / wechat 等非浏览器源各自独立抓取
     for i in other_indices:

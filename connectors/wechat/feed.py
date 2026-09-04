@@ -60,6 +60,11 @@ def _parse_weread_url(source: dict) -> tuple[str, str]:
     return "", ""
 
 
+def _is_connection_refused(exc: Exception) -> bool:
+    """识别"服务未监听"类错误（Windows WinError 10061 / ConnectionRefusedError）。"""
+    return isinstance(exc, ConnectionRefusedError) or "10061" in str(exc) or "Connection refused" in str(exc)
+
+
 def fetch_wechat_feed_via_tool(source: dict, limit: int = 30) -> FeedFetchResult:
     """走外部工具轻量 API，仅取标题/链接/摘要元数据，复用 trim_entries 截断（≥10篇且覆盖3天）。"""
     host, fakeid = _parse_weread_url(source)
@@ -74,6 +79,7 @@ def fetch_wechat_feed_via_tool(source: dict, limit: int = 30) -> FeedFetchResult
     WEREAD_EMPTY_RETRY_DELAYS = (0.0, 5.0, 15.0, 30.0, 60.0)
     articles: list = []
     last_error = ""
+    service_down = False
     for attempt, delay in enumerate(WEREAD_EMPTY_RETRY_DELAYS, start=1):
         if delay:
             import time
@@ -85,8 +91,24 @@ def fetch_wechat_feed_via_tool(source: dict, limit: int = 30) -> FeedFetchResult
             if isinstance(articles, list) and articles:
                 break
             last_error = "微信公众号轻量接口返回空：可能触发中转平台软限流（约1分钟自愈），或该号未被微信读书收录。"
+        except urllib.error.HTTPError as exc:
+            body = ""
+            try:
+                body = exc.read().decode("utf-8", errors="ignore")
+            except Exception:
+                pass
+            last_error = f"微信公众号轻量抓取失败: HTTP {exc.code} {body[:200]}"
+            # 确定性业务失败（账号池空/登录失效），重试无意义，短路 110s 退避
+            if "账号池" in body or "无可用账号" in body:
+                break
         except Exception as exc:
             last_error = f"微信公众号轻量抓取失败(工具不可达?): {exc}"
+            # 连接拒绝 = 工具服务未起，重试无意义，短路 110s 退避
+            if _is_connection_refused(exc):
+                service_down = True
+                break
+    if service_down:
+        last_error = "微信公众号工具服务(127.0.0.1:5300)未运行，请重启 InfoFlowHub 服务或手动拉起 wechat-mp-tools。"
     if not isinstance(articles, list) or not articles:
         return result_error(source, last_error or "微信公众号轻量接口返回空。")
     entries: list[FeedEntry] = []
