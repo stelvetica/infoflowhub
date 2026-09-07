@@ -364,6 +364,7 @@ def prepare_runner_profile(
 
     _ensure_minimal_preferences(runner_profile_dir)
     _strip_google_identity(runner_dir, runner_profile_dir)
+    _strip_google_cookies(runner_profile_dir)
 
     for lock_name in ("SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"):
         _safe_unlink(runner_dir / lock_name)
@@ -412,6 +413,32 @@ def _strip_google_identity(runner_dir: Path, runner_profile_dir: Path) -> None:
             prefs_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         except (OSError, ValueError) as exc:
             print(f"[WARN] 剥离副本 Google 身份失败 (Preferences): {exc}")
+
+
+def _strip_google_cookies(runner_profile_dir: Path) -> None:
+    """删除副本中 Google 系域的 cookie（含 SID/HSID/SAPISID 等登录会话）。
+
+    仅剥离身份标识（_strip_google_identity）不够：副本仍携带真实 Google
+    会话 cookie 从第二个 profile 路径联网，Google 风控按"同会话异常双活"
+    吊销会话，用户常用 Chrome 依旧被要求重登。抓取目标不依赖 Google 登录态，
+    让副本彻底以未登录身份访问。best-effort：删除失败仅告警，不阻断抓取。
+    """
+    delete_sql = "DELETE FROM cookies WHERE host_key LIKE ? OR host_key LIKE ?"
+    for cookies_path in (
+        runner_profile_dir / "Network" / "Cookies",
+        runner_profile_dir / "Cookies",
+    ):
+        if not cookies_path.exists():
+            continue
+        try:
+            conn = sqlite3.connect(str(cookies_path))
+            try:
+                conn.execute(delete_sql, ("%google.com", "%youtube.com"))
+                conn.commit()
+            finally:
+                conn.close()
+        except sqlite3.Error as exc:
+            print(f"[WARN] 剥离副本 Google cookie 失败 ({cookies_path}): {exc}")
 
 
 def rebuild_runner_profile(

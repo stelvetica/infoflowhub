@@ -110,3 +110,35 @@ def test_shared_runner_session_acquire_page_requires_start(monkeypatch, tmp_path
         assert False, "should have raised"
     except RuntimeError:
         pass
+
+
+def test_strip_google_cookies_removes_google_only(tmp_path):
+    """副本剥离：Google 系域 cookie 删净，其他域保留。"""
+    import sqlite3
+
+    cookies_path = tmp_path / "Network" / "Cookies"
+    cookies_path.parent.mkdir(parents=True)
+    conn = sqlite3.connect(str(cookies_path))
+    conn.execute("CREATE TABLE cookies (host_key TEXT, name TEXT)")
+    rows = [
+        (".google.com", "SID"),
+        ("accounts.google.com", "HSID"),
+        (".youtube.com", "VISITOR_INFO1_LIVE"),
+        ("mp.weixin.qq.com", "sessionid"),
+        (".sspai.com", "token"),
+    ]
+    conn.executemany("INSERT INTO cookies VALUES (?, ?)", rows)
+    conn.commit()
+    conn.close()
+
+    chrome_runner._strip_google_cookies(tmp_path)
+
+    conn = sqlite3.connect(str(cookies_path))
+    left = conn.execute("SELECT host_key FROM cookies").fetchall()
+    conn.close()
+    assert sorted(h for (h,) in left) == [".sspai.com", "mp.weixin.qq.com"]
+
+
+def test_strip_google_cookies_absent_file_no_error(tmp_path):
+    """Network/Cookies 不存在时不报错。"""
+    chrome_runner._strip_google_cookies(tmp_path)
