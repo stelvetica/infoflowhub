@@ -433,7 +433,7 @@ def _strip_google_cookies(runner_profile_dir: Path) -> None:
         try:
             conn = sqlite3.connect(str(cookies_path))
             try:
-                conn.execute(delete_sql, ("%google.com", "%youtube.com"))
+                conn.execute(delete_sql, ("%google%", "%youtube%"))
                 conn.commit()
             finally:
                 conn.close()
