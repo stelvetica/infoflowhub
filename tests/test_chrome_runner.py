@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from connectors._shared import chrome_runner
@@ -142,3 +143,34 @@ def test_strip_google_cookies_removes_google_only(tmp_path):
 def test_strip_google_cookies_absent_file_no_error(tmp_path):
     """Network/Cookies 不存在时不报错。"""
     chrome_runner._strip_google_cookies(tmp_path)
+
+
+def test_strip_google_identity_cleans_secure_preferences(tmp_path):
+    """Secure Preferences 中的 signin/google.services 必须连 MAC 一起剥掉，
+    否则 Chrome 运行时恢复账号状态并以已登录身份向 Google 发校验请求。"""
+    runner_dir = tmp_path / "runner"
+    profile = runner_dir / "Default"
+    profile.mkdir(parents=True)
+    (runner_dir / "Local State").write_text(
+        '{"account_info": [{"email": "a@x.com"}], "os_crypt": {"key": "k"}}', encoding="utf-8"
+    )
+    secure = {
+        "google.services": {"account_id": "111704574367954466831"},
+        "signin": {"allowed": True},
+        "protection": {"macs": {"google.services": {"account_id": "MAC1"}, "signin": {"allowed": "MAC2"}, "other": {"x": "KEEP"}}},
+    }
+    (profile / "Secure Preferences").write_text(json.dumps(secure), encoding="utf-8")
+    (profile / "Preferences").write_text(json.dumps({"signin": {"allowed": True}, "download": {"x": 1}}), encoding="utf-8")
+
+    chrome_runner._strip_google_identity(runner_dir, profile)
+
+    secure_now = json.loads((profile / "Secure Preferences").read_text(encoding="utf-8"))
+    assert "google.services" not in secure_now
+    assert "signin" not in secure_now
+    assert secure_now["protection"]["macs"] == {"other": {"x": "KEEP"}}
+    prefs_now = json.loads((profile / "Preferences").read_text(encoding="utf-8"))
+    assert "signin" not in prefs_now
+    assert prefs_now["download"] == {"x": 1}
+    ls_now = json.loads((runner_dir / "Local State").read_text(encoding="utf-8"))
+    assert "account_info" not in ls_now
+    assert ls_now["os_crypt"] == {"key": "k"}

@@ -384,12 +384,24 @@ def prepare_runner_profile(
     )
 
 
+def _strip_google_account_state(data: dict) -> None:
+    """就地删除一份 prefs JSON 中所有"已登录 Google 账号"状态。"""
+    for key in ("account_info", "signin", "google.services"):
+        data.pop(key, None)
+
+
 def _strip_google_identity(runner_dir: Path, runner_profile_dir: Path) -> None:
     """从副本中剥离 Google 账号身份，只保留 cookie 解密所需的 os_crypt 密钥。
 
     副本若携带 account_info / account_token_service，会以同一 Google 账号 +
     同一设备注册身份（Local State 内含 device_id）联网刷新令牌；Google 侧
     检测到"同设备身份异常双活"会吊销会话，导致用户常用 Chrome 被要求重新登录。
+
+    注意必须连 Secure Preferences 一起剥：Chrome 对 signin/google.services 用
+    HMAC 保护存储在 Secure Preferences，运行时会从那里把账号状态恢复进
+    Preferences——只剥普通 Preferences 时，副本 Chrome 仍以"已登录 profile"
+    自居向 Google 发起账号校验（实测出现 account_preview fetch 请求），照样
+    触发风控。删除受保护键后 MAC 不匹配，Chrome 会将其重置为默认（未登录）。
     """
     ls_path = runner_dir / "Local State"
     if ls_path.exists():
@@ -401,18 +413,20 @@ def _strip_google_identity(runner_dir: Path, runner_profile_dir: Path) -> None:
         except (OSError, ValueError) as exc:
             print(f"[WARN] 剥离副本 Google 身份失败 (Local State): {exc}")
 
-    prefs_path = runner_profile_dir / "Preferences"
-    if prefs_path.exists():
+    for prefs_path in (runner_profile_dir / "Preferences", runner_profile_dir / "Secure Preferences"):
+        if not prefs_path.exists():
+            continue
         try:
             data = json.loads(prefs_path.read_text(encoding="utf-8"))
-            data.pop("account_info", None)
-            signin = data.get("signin")
-            if isinstance(signin, dict):
-                for key in ("signin_pending_start_time", "sync_paused_start_time"):
-                    signin.pop(key, None)
+            _strip_google_account_state(data)
+            # 同步删除被删键的 MAC，避免留下"值没了 MAC 还在"的悬挂校验
+            macs = data.get("protection", {}).get("macs")
+            if isinstance(macs, dict):
+                for key in ("account_info", "signin", "google.services"):
+                    macs.pop(key, None)
             prefs_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         except (OSError, ValueError) as exc:
-            print(f"[WARN] 剥离副本 Google 身份失败 (Preferences): {exc}")
+            print(f"[WARN] 剥离副本 Google 身份失败 ({prefs_path.name}): {exc}")
 
 
 def _strip_google_cookies(runner_profile_dir: Path) -> None:
