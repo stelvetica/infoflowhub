@@ -174,3 +174,30 @@ def test_strip_google_identity_cleans_secure_preferences(tmp_path):
     ls_now = json.loads((runner_dir / "Local State").read_text(encoding="utf-8"))
     assert "account_info" not in ls_now
     assert ls_now["os_crypt"] == {"key": "k"}
+
+
+def test_rebuild_clock_shared_across_runners(monkeypatch, tmp_path):
+    """统一计时：任一副本重建刷新全局时钟，全体副本在间隔内不再重建。"""
+    clock = tmp_path / ".rebuild_clock.json"
+    monkeypatch.setattr(chrome_runner, "REBUILD_CLOCK_PATH", clock)
+
+    assert chrome_runner._read_rebuild_clock() == 0
+    chrome_runner._write_rebuild_clock()
+    assert chrome_runner._read_rebuild_clock() > 0
+
+    ready = tmp_path / "p"
+    ready.mkdir()
+    (ready / "Preferences").write_text("{}", encoding="utf-8")
+    cookies = ready / "Network" / "Cookies"
+    cookies.parent.mkdir()
+    cookies.write_bytes(b"x")
+
+    runner_dir = tmp_path / "runner-a"
+    runner_dir.mkdir()
+    assert not chrome_runner.should_rebuild_runner_profile(ready, runner_dir)
+
+    # 时钟过期 → 需要重建
+    import time as _t
+    old = {"rebuilt_at": int(_t.time()) - 8 * 24 * 3600}
+    clock.write_text(json.dumps(old), encoding="utf-8")
+    assert chrome_runner.should_rebuild_runner_profile(ready, runner_dir)

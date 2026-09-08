@@ -37,7 +37,27 @@ DEFAULT_PROFILE_DIRS_TO_COPY = (
     "WebStorage",
     "Code Cache",
 )
-DEFAULT_REBUILD_INTERVAL_SECONDS = 3 * 24 * 60 * 60
+DEFAULT_REBUILD_INTERVAL_SECONDS = 7 * 24 * 60 * 60
+
+# 全局重建时钟：所有 runner 副本（web/laterhub/alphapai/bilibili）共用一份
+# rebuilt_at，任一副本重建即刷新——避免各目录独立计时导致"每隔一两天就有
+# 某个副本到期重建、反复强杀用户 Chrome"。重建间隔也统一放宽到 7 天。
+REBUILD_CLOCK_PATH = Path(__file__).resolve().parents[2] / "runtime" / "browser_profiles" / ".rebuild_clock.json"
+
+
+def _read_rebuild_clock() -> int:
+    try:
+        return int(json.loads(REBUILD_CLOCK_PATH.read_text(encoding="utf-8")).get("rebuilt_at") or 0)
+    except (OSError, ValueError):
+        return 0
+
+
+def _write_rebuild_clock() -> None:
+    try:
+        REBUILD_CLOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        REBUILD_CLOCK_PATH.write_text(json.dumps({"rebuilt_at": _now_ts()}), encoding="utf-8")
+    except OSError as exc:
+        print(f"[WARN] 写入全局重建时钟失败: {exc}")
 
 # 抓取期间会关掉用户常用 Chrome，抓完重开时默认带上 InfoFlowHub 控制台链接。
 INFOFLOW_WEB_URL = "http://127.0.0.1:18421/"
@@ -227,8 +247,9 @@ def should_rebuild_runner_profile(
 ) -> bool:
     if not is_runner_profile_ready(runner_profile_dir):
         return True
-    meta = _read_runner_meta(runner_dir)
-    rebuilt_at = int(meta.get("rebuilt_at") or 0)
+    # 统一计时：读全局重建时钟而非各 runner 自己的 meta，任一副本重建后
+    # 全体副本在间隔内都不再重建（免反复强杀用户 Chrome）。
+    rebuilt_at = _read_rebuild_clock()
     if rebuilt_at <= 0:
         return True
     return (_now_ts() - rebuilt_at) >= rebuild_interval
@@ -382,6 +403,7 @@ def prepare_runner_profile(
         source_profile_dir=source_profile_dir,
         rebuilt_at=_now_ts(),
     )
+    _write_rebuild_clock()
 
 
 def _strip_google_account_state(data: dict) -> None:
