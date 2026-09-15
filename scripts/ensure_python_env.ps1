@@ -18,7 +18,11 @@ $venvPython = Join-Path $root ".venv\Scripts\python.exe"
 $reqFile = Join-Path $root "requirements.txt"
 $portablePython = Join-Path $root "runtime\python-portable\python.exe"
 $offlineWheels = Join-Path $root "runtime\wheels"
-$coreProbe = "import fastapi,uvicorn,jinja2,feedparser,httpx,requests,dotenv,yaml"
+# Keep this file ASCII: PowerShell 5.1 reads BOM-less .ps1 as ANSI, and a trailing
+# multibyte char can swallow the newline and comment out the next line.
+# A gutted websockets install (dir kept, .py files gone) still imports as a namespace
+# package, so `import websockets` alone misses it. Probe the class uvicorn loads at boot.
+$coreProbe = "import fastapi,uvicorn,jinja2,feedparser,httpx,requests,dotenv,yaml; from uvicorn.protocols.websockets.auto import AutoWebSocketsProtocol"
 
 function Test-PythonOk($exe) {
     if (-not $exe -or -not (Test-Path $exe)) { return $false }

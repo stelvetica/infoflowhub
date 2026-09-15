@@ -129,7 +129,7 @@ do {
     } catch {}
 } while ((Get-Date) -lt $deadline)
 
-if (-not $webReady) { throw "Web service failed to start within 45s: $localUrl" }
+if (-not $webReady) { throw "Web service failed to start within 45s: $localUrl (启动报错见 runtime\web.log 末尾)" }
 
 Write-Host "[OK] Web service running at $localUrl" -ForegroundColor Green
 
