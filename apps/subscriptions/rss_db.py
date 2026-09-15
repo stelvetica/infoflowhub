@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import re
+import sys
 from pathlib import Path
 from typing import Iterable
 
@@ -14,6 +15,9 @@ from infra.text_normalizer import normalize_utf8_text
 BASE_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "subscriptions.sqlite3"
+
+# 订阅库体积上限：未超过时一条历史都不清理，超过后从最旧条目开始删到回落。
+MAX_DB_BYTES = 10 * 1024 ** 3
 
 
 SCHEMA = """
@@ -304,9 +308,65 @@ def save_entries(entries: Iterable[FeedEntry]) -> int:
             )
             inserted += int(cursor.rowcount > 0)
         conn.commit()
+        prune_entries_over_limit(conn)
     finally:
         conn.close()
     return inserted
+
+
+def _db_file_size() -> int:
+    try:
+        return DB_PATH.stat().st_size
+    except OSError:
+        return 0
+
+
+def _vacuum(conn: sqlite3.Connection) -> bool:
+    try:
+        conn.execute("VACUUM")
+        return True
+    except sqlite3.Error:
+        return False
+
+
+def prune_entries_over_limit(conn: sqlite3.Connection, limit_bytes: int | None = None) -> int:
+    """订阅库超过体积上限时，从最旧条目开始删除并回收空间，返回删除条数。
+
+    体积按库文件大小计。删除只释放页、不缩文件，必须 VACUUM 才真正回落，
+    故 VACUUM 失败即停止本轮——否则会"删了行体积不降、下轮接着删"，越删越少。
+    """
+    limit = MAX_DB_BYTES if limit_bytes is None else int(limit_bytes)
+    deleted = 0
+    try:
+        while True:
+            size = _db_file_size()
+            if size <= limit:
+                break
+            total = int(conn.execute("SELECT COUNT(*) FROM rss_entries").fetchone()[0])
+            if total <= 0:
+                break
+            # 按当前平均行体积估算要删多少行，多删 1 行留余量
+            per_row = max(1, size // total)
+            batch = min(total, (size - limit) // per_row + 1)
+            conn.execute(
+                """
+                DELETE FROM rss_entries
+                WHERE id IN (
+                    SELECT id FROM rss_entries
+                    ORDER BY COALESCE(NULLIF(published_at, ''), NULLIF(published, ''), created_at) ASC, id ASC
+                    LIMIT ?
+                )
+                """,
+                (batch,),
+            )
+            conn.commit()
+            deleted += batch
+            if not _vacuum(conn):
+                print(f"[subscriptions] 订阅库清理中止：已删 {deleted} 条但 VACUUM 失败，体积未回落", file=sys.stderr)
+                break
+    except sqlite3.Error as exc:
+        print(f"[subscriptions] 订阅库清理中止：{exc}", file=sys.stderr)
+    return deleted
 
 
 def list_entries(limit: int = 200, source_id: str = "") -> list[dict]:
