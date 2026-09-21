@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import re
 import sqlite3
 import time as _time
@@ -9,10 +8,12 @@ from pathlib import Path
 from typing import List
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
+from connectors._shared import md_store
 from connectors._shared.common import clean_line
 
 
 BLUEBOOK_URL = "https://alphapai-web.rabyte.cn/reading/home/market-report/detail"
+SOURCE_LINE = "Alpha派 蓝宝书"
 LIST_SELECTOR = ".scroll-box, .list-box, .left-list"
 DETAIL_SELECTOR = ".main-content, .main-content-wrapper, .main-section"
 TITLE_RE = re.compile(r"^(国内|全球)(\d{1,2})月(\d{1,2})日(晨会版|午间版|晚间版|全球版)\|\s*(.+)$")
@@ -236,13 +237,6 @@ def _build_entry_title(detail_text: str, fallback_title: str) -> str:
     return f"{content_title} | {summary_excerpt[:180]}".strip()[:260]
 
 
-def _sanitize_filename(value: str) -> str:
-    text = clean_line(value).replace("/", "-").replace("\\", "-").replace(":", " -")
-    text = re.sub(r'[<>:"/\\|?*]+', "-", text)
-    text = re.sub(r"\s+", " ", text).strip().strip(".")
-    return text[:120] or "alphapai"
-
-
 def _normalize_detail_text(detail_text: str, content_title: str, time_label: str) -> str:
     lines: list[str] = []
     previous = ""
@@ -265,50 +259,6 @@ def _normalize_detail_text(detail_text: str, content_title: str, time_label: str
         lines.append(line)
         previous = line
     return "\n\n".join(lines).strip()
-
-
-def _build_markdown_body(
-    title: str,
-    published: str,
-    detail_text: str,
-    *,
-    time_label: str = "",
-    display_title: str = "",
-) -> str:
-    heading = clean_line(display_title) or clean_line(title)
-    body = _normalize_detail_text(detail_text, heading, time_label)
-    return (
-        f"# {heading}\n\n"
-        f"- 发布时间: {published}\n"
-        f"- 来源: Alpha派 蓝宝书\n"
-        f"- 原始页: {BLUEBOOK_URL}\n\n"
-        f"{body.strip()}\n"
-    )
-
-
-def _write_markdown_file(
-    title: str,
-    published: str,
-    detail_text: str,
-    *,
-    time_label: str = "",
-    display_title: str = "",
-) -> str:
-    ALPHAPAI_MARKDOWN_DIR.mkdir(parents=True, exist_ok=True)
-    digest = hashlib.sha1(f"{published}|{title}".encode("utf-8")).hexdigest()[:12]
-    filename = f"{published[:10].replace('/', '-')}_{_sanitize_filename(title)}_{digest}.md"
-    path = ALPHAPAI_MARKDOWN_DIR / filename
-    path.write_text(
-        _build_markdown_body(
-            title,
-            published,
-            detail_text,
-            time_label=time_label,
-            display_title=display_title,
-        ),
-        encoding="utf-8",
-    )
-    return str(path)
 
 
 def fetch_alphapai_with_page(page, source: dict, timeout_ms: int = 120000, *, limit: int = 12) -> FeedFetchResult:
@@ -363,11 +313,19 @@ def fetch_alphapai_with_page(page, source: dict, timeout_ms: int = 120000, *, li
 
         content_title = _extract_content_title(detail_text, fallback_title)
         title = _build_entry_title(detail_text, fallback_title)
-        markdown_path = _write_markdown_file(
-            title,
-            entry["published"],
-            detail_text.strip(),
-            time_label=entry["time_label"],
+        markdown_path = md_store.write_markdown_file(
+            ALPHAPAI_MARKDOWN_DIR,
+            title=title,
+            published=entry["published"],
+            source_line=SOURCE_LINE,
+            page_url=BLUEBOOK_URL,
+            # 与历史落盘逐字节一致：正文标题取 content_title（文件名标题仍取 title），
+            # 归一化时用与历史相同的 heading（display_title 优先，回退 title）
+            body_text=_normalize_detail_text(
+                detail_text.strip(),
+                clean_line(content_title) or clean_line(title),
+                entry["time_label"],
+            ),
             display_title=content_title,
         )
 

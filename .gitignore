@@ -16,6 +16,8 @@ data/*.sqlite3
 data/*.db
 data/*.sqlite3.bak
 data/alphapai_markdown/
+data/reports/
+data/jiuyangongshe_markdown/
 runtime/browser_profiles/
 runtime/python-portable/
 runtime/wheels/

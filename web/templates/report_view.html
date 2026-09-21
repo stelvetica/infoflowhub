@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - InfoFlowHub{% endblock %}
+
+{% block body %}
+<main class="report-page" id="main-content">
+  <p class="report-back"><a class="cell-link" href="/">← 返回首页</a></p>
+  {# 产物 markdown 自带一级标题时不再重复渲染文件名标题，避免页首出现两个近似标题 #}
+  {% if '<h1>' not in body_html %}<h1>{{ title }}</h1>{% endif %}
+  <article class="report-body">{{ body_html|safe }}</article>
+</main>
+<style>
+  .report-page { max-width: 960px; margin: 0 auto; padding: 24px 20px 64px; line-height: 1.75; color: #1f2328; }
+  .report-page h1 { font-size: 22px; margin: 0 0 16px; }
+  .report-back { margin: 0 0 12px; font-size: 13px; }
+  .report-body { font-size: 14px; overflow-wrap: anywhere; }
+  .report-body h1, .report-body h2, .report-body h3, .report-body h4, .report-body h5, .report-body h6 { margin: 24px 0 10px; line-height: 1.4; }
+  .report-body h2 { font-size: 18px; border-bottom: 1px solid #d8dee4; padding-bottom: 6px; }
+  .report-body h3 { font-size: 16px; }
+  .report-body p { margin: 10px 0; }
+  .report-body ul, .report-body ol { margin: 10px 0; padding-left: 24px; }
+  .report-body li { margin: 4px 0; }
+  .report-body table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+  .report-body th, .report-body td { border: 1px solid #d8dee4; padding: 6px 8px; text-align: left; vertical-align: top; }
+  .report-body th { background: #f6f8fa; font-weight: 600; }
+  .report-body code { background: #f6f8fa; border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+  .report-body a { color: #0969da; }
+</style>
+{% endblock %}

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 
+from web.services import md_render
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
 from web.services import weread_login
 from web.services.views import (
@@ -37,9 +38,32 @@ from web.services.views import (
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
 BASE_DIR = Path(__file__).resolve().parents[2]
-ALPHAPAI_MARKDOWN_DIR = BASE_DIR / "data" / "alphapai_markdown"
+# 源正文目录：kind 与 web/services/views.MARKDOWN_KINDS 的取值一一对应
+MARKDOWN_DIRS = {
+    "alphapai": BASE_DIR / "data" / "alphapai_markdown",
+    "jiuyangongshe": BASE_DIR / "data" / "jiuyangongshe_markdown",
+}
+REPORTS_DIR = BASE_DIR / "data" / "reports"
 ENTRIES_STATE_COOKIE = "ifh_entries_state_v1"
 NEWS_STATE_COOKIE = "ifh_news_state_v1"
+
+
+def _resolve_inside(root: Path, name: str, suffixes: tuple[str, ...]) -> Path | None:
+    """把用户传入的名字安全解析为 root 下的既有文件；越界或后缀不符返回 None。
+
+    防目录穿越的唯一实现（/markdown、/reports/raw、/reports/view 共用）：
+    先剥掉任何目录成分，带目录即判非法；再要求父目录正是 root 且目标确为文件。
+    """
+    basename = Path(name).name
+    if not basename or basename != name:
+        return None
+    root_resolved = root.resolve()
+    target = (root_resolved / basename).resolve()
+    if target.parent != root_resolved or not target.is_file():
+        return None
+    if target.suffix.lower() not in suffixes:
+        return None
+    return target
 
 
 def query_dict(request: Request) -> dict[str, str]:
@@ -167,12 +191,37 @@ async def mark_entry_read_action(read_key: str = Form(...)):
     return JSONResponse({"success": mark_entry_read_state(read_key)})
 
 
-@router.get("/alphapai/markdown/{markdown_path:path}", response_class=PlainTextResponse)
-async def alphapai_markdown(markdown_path: str):
-    target = (ALPHAPAI_MARKDOWN_DIR / Path(markdown_path).name).resolve()
-    if target.parent != ALPHAPAI_MARKDOWN_DIR.resolve() or not target.exists():
+@router.get("/markdown/{kind}/{name}", response_class=PlainTextResponse)
+async def markdown_source(kind: str, name: str):
+    """订阅条目的本地正文：用 text/plain 而非 text/markdown（Chrome 无渲染器会触发下载）。"""
+    root = MARKDOWN_DIRS.get(kind)
+    target = _resolve_inside(root, name, (".md",)) if root else None
+    if target is None:
         return PlainTextResponse("Markdown not found", status_code=404)
-    return PlainTextResponse(target.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
+    return PlainTextResponse(target.read_text(encoding="utf-8", errors="replace"), media_type="text/plain; charset=utf-8")
+
+
+@router.get("/reports/raw/{name}")
+async def report_raw(name: str):
+    """产物原始字节：.md 走 text/plain，.png 走 image/png；非法/缺失一律 404。"""
+    target = _resolve_inside(REPORTS_DIR, name, (".md", ".png"))
+    if target is None:
+        return PlainTextResponse("Report not found", status_code=404)
+    if target.suffix.lower() == ".png":
+        return Response(content=target.read_bytes(), media_type="image/png")
+    return PlainTextResponse(target.read_text(encoding="utf-8", errors="replace"), media_type="text/plain; charset=utf-8")
+
+
+@router.get("/reports/view/{name}", response_class=HTMLResponse)
+async def report_view(request: Request, name: str):
+    """产物可读页：图片直接跳原始路由，markdown 渲染为 HTML。"""
+    target = _resolve_inside(REPORTS_DIR, name, (".md", ".png"))
+    if target is None:
+        return PlainTextResponse("Report not found", status_code=404)
+    if target.suffix.lower() == ".png":
+        return RedirectResponse(url=f"/reports/raw/{quote(name, safe='')}", status_code=302)
+    body_html = md_render.render(target.read_text(encoding="utf-8", errors="replace"))
+    return templates.TemplateResponse(request, "report_view.html", {"title": target.stem, "body_html": body_html})
 
 
 @router.get("/fragments/laterhub", response_class=HTMLResponse)

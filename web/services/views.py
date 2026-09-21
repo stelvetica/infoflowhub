@@ -52,7 +52,19 @@ LATERHUB_LOG_PATH = RUNTIME_DIR / "logs" / "laterhub.log"
 
 DELETED_SITE_URLS = {"https://www.huxiu.com/member/2321131.html"}
 ENTRIES_PAGE_SIZE = 20
-NEWS_PREFIX = "资讯"
+REPORTS_DIR = BASE_DIR / "data" / "reports"
+# 「新闻」面板的数据源白名单：只认这两类产物（今日新闻.md 与各 json 一律不计入）
+REPORT_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("新闻影响分析_*.md", "新闻影响分析"),
+    ("公告清单_*.md", "公告清单"),
+    ("公告清单_*.png", "公告图片"),
+)
+# 订阅源 → 本地正文目录标识（路由 /markdown/{kind}/{name} 的 kind）
+MARKDOWN_KINDS: dict[str, str] = {
+    "alphapai": "alphapai",
+    "jiuyangongshe_jiucaituanzi": "jiuyangongshe",
+    "jiuyangongshe_jiujiubashiyi": "jiuyangongshe",
+}
 LATERHUB_PAGE_SIZE = 10
 ENTRIES_READ_CUTOFF = datetime(2026, 5, 1).timestamp()
 ABSOLUTE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
@@ -699,25 +711,26 @@ def build_news_state_params(query: Mapping[str, Any], *, page: int | None = None
 
 
 def _build_entry_row(item: dict[str, Any], current_name_map: dict[str, str], current_site_map: dict[str, str]) -> dict[str, Any]:
-    """把一条原始条目构建为可渲染行(链接规范化/alphapai markdown/read_key/时间)。"""
+    """把一条原始条目构建为可渲染行(链接规范化/read_key/本地正文改写/时间)。"""
     current_name = current_name_map.get(item["source_id"], "").strip()
     display_source_name = current_name or normalize_utf8_text(item.get("source_name")) or ""
     display_time_raw = item.get("published_at") or item.get("published") or item.get("created_at") or ""
     sort_time = to_sortable_time(display_time_raw)
     source_site_url = current_site_map.get(item["source_id"], "").strip()
     link = normalize_entry_link(item.get("link") or "", source_site_url)
-    markdown_path = str(item.get("markdown_path") or "").strip()
-    if item["source_id"] == "alphapai" and markdown_path:
-        link = f"/alphapai/markdown/{quote(markdown_path, safe='')}"
+    # 顺序硬约束：read_key 必须先按「改写前的原始 link」算（历史已读态 = sha1(原始 link)），
+    # 之后才把展示 link 改写成仓内可读路由，否则已读态全部失效。
     entry_read_key = read_entry_key(item["source_id"], link, str(item.get("title") or ""))
+    markdown_path = str(item.get("markdown_path") or "").strip()
+    display_link = markdown_url(item["source_id"], markdown_path) or link
     return {
         **item,
         "title": normalize_utf8_text(item.get("title")),
         "summary": normalize_utf8_text(item.get("summary")),
-        "link": link,
+        "link": display_link,
         "markdown_path": markdown_path,
         "read_key": entry_read_key,
-        "has_link": bool(link),
+        "has_link": bool(display_link),
         "source_name": display_source_name,
         "display_time": format_datetime(display_time_raw),
         "sort_time": sort_time,
@@ -775,7 +788,6 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
     page = max(int(query.get("entries_page", "1") or "1"), 1)
     rows = _iter_entry_rows(
         source_ids_filter=None,
-        excluded_prefixes=(NEWS_PREFIX,),
         keyword=keyword,
         unread_only=unread_only,
         effective_read_keys=effective_read_keys,
@@ -802,18 +814,52 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
 
 
 NEWS_PAGE_SIZE = 5
-NEWS_LOAD_LIMIT = 500
+
+
+def markdown_url(source_id: str, markdown_path: str) -> str:
+    """把条目的本地 markdown 路径映射为可读路由；无 kind 映射或路径为空时返回空串。"""
+    kind = MARKDOWN_KINDS.get(str(source_id or "").strip(), "")
+    name = Path(str(markdown_path or "").strip()).name
+    if not kind or not name:
+        return ""
+    return f"/markdown/{kind}/{quote(name, safe='')}"
+
+
+def _iter_report_rows() -> list[dict[str, Any]]:
+    """扫描产物目录（白名单 glob）构建「生成产物」行；目录不存在时返回空列表。"""
+    rows: list[dict[str, Any]] = []
+    for pattern, kind in REPORT_PATTERNS:
+        for path in sorted(REPORTS_DIR.glob(pattern)):
+            if not path.is_file():
+                continue
+            matched = re.search(r"\d{4}-\d{2}-\d{2}", path.name)
+            if matched:
+                date_text = matched.group(0)
+                display_time = date_text.replace("-", "/")
+                sort_time = to_sortable_time(date_text)
+            else:
+                # 文件名没日期时用文件 mtime 兜底，保证排序稳定可读
+                fallback = datetime.fromtimestamp(path.stat().st_mtime)
+                display_time = fallback.strftime("%Y/%m/%d")
+                sort_time = fallback.timestamp()
+            rows.append(
+                {
+                    "name": path.name,
+                    "kind": kind,
+                    "is_image": path.suffix.lower() == ".png",
+                    "title": path.stem,
+                    "link": f"/reports/view/{quote(path.name, safe='')}",
+                    "has_link": True,
+                    "read_key": f"report:{path.name}",
+                    "display_time": display_time,
+                    "sort_time": sort_time,
+                }
+            )
+    return rows
 
 
 def get_news_view(query: dict[str, str]) -> dict[str, Any]:
-    """新闻卡片:小一号订阅区,只展示名称以"资讯"为前缀的启用源,每页 5 条。"""
-    current_sources = normalize_sources(include_auth=False)
-    enabled_ids = {item["id"] for item in current_sources if item.get("enabled")}
-    news_ids = {
-        item["id"]
-        for item in current_sources
-        if item["id"] in enabled_ids and str(item.get("name") or "").strip().startswith(NEWS_PREFIX)
-    }
+    """新闻卡片：展示 data/reports 下的生成产物（新闻影响分析/公告清单/公告图片），每页 5 条。"""
     keyword = normalize_text(query.get("news_q", ""))
     unread_only = query.get("news_unread_only", "0") == "1"
     read_keys = {item for item in split_tags(query.get("news_read_keys", "")) if item}
@@ -822,13 +868,14 @@ def get_news_view(query: dict[str, str]) -> dict[str, Any]:
     sort = query.get("news_sort") or "sort_time"
     direction = query.get("news_dir") or "desc"
     page = max(int(query.get("news_page", "1") or "1"), 1)
-    rows = _iter_entry_rows(
-        source_ids_filter=news_ids,
-        keyword=keyword,
-        unread_only=unread_only,
-        effective_read_keys=effective_read_keys,
-        load_limit=NEWS_LOAD_LIMIT,
-    )
+    rows: list[dict[str, Any]] = []
+    for row in _iter_report_rows():
+        if keyword and keyword not in normalize_text(row["title"]):
+            continue
+        # 产物是新文件，不套用 ENTRIES_READ_CUTOFF（历史条目才需要按时间兜底判已读）
+        if unread_only and row["read_key"] in effective_read_keys:
+            continue
+        rows.append(row)
     rows.sort(key=cmp_to_key(lambda a, b: compare_value(a.get(sort), b.get(sort), direction)))
     total = len(rows)
     total_pages = max((total + NEWS_PAGE_SIZE - 1) // NEWS_PAGE_SIZE, 1)

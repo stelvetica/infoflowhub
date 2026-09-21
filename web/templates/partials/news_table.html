@@ -14,7 +14,7 @@
       <thead>
         <tr>
           <th><a class="sort" href="/fragments/news?{{ base_params|urlencode }}&news_sort=sort_time&news_dir={{ 'desc' if news.sort != 'sort_time' or news.dir == 'asc' else 'asc' }}" hx-get="/fragments/news?{{ base_params|urlencode }}&news_sort=sort_time&news_dir={{ 'desc' if news.sort != 'sort_time' or news.dir == 'asc' else 'asc' }}" hx-target="#news-panel" hx-swap="innerHTML">时间</a></th>
-          <th><a class="sort" href="/fragments/news?{{ base_params|urlencode }}&news_sort=source_name&news_dir={{ 'asc' if news.sort != 'source_name' or news.dir == 'desc' else 'desc' }}" hx-get="/fragments/news?{{ base_params|urlencode }}&news_sort=source_name&news_dir={{ 'asc' if news.sort != 'source_name' or news.dir == 'desc' else 'desc' }}" hx-target="#news-panel" hx-swap="innerHTML">来源</a></th>
+          <th><a class="sort" href="/fragments/news?{{ base_params|urlencode }}&news_sort=kind&news_dir={{ 'asc' if news.sort != 'kind' or news.dir == 'desc' else 'desc' }}" hx-get="/fragments/news?{{ base_params|urlencode }}&news_sort=kind&news_dir={{ 'asc' if news.sort != 'kind' or news.dir == 'desc' else 'desc' }}" hx-target="#news-panel" hx-swap="innerHTML">类型</a></th>
           <th><a class="sort" href="/fragments/news?{{ base_params|urlencode }}&news_sort=title&news_dir={{ 'asc' if news.sort != 'title' or news.dir == 'desc' else 'desc' }}" hx-get="/fragments/news?{{ base_params|urlencode }}&news_sort=title&news_dir={{ 'asc' if news.sort != 'title' or news.dir == 'desc' else 'desc' }}" hx-target="#news-panel" hx-swap="innerHTML">标题</a></th>
         </tr>
       </thead>
@@ -23,7 +23,7 @@
           {% for item in news.rows %}
           <tr>
             <td class="cell-time">{{ item.display_time[:10] }}</td>
-            <td class="cell-ellipsis cell-muted" title="{{ item.source_name }}">{{ item.source_name }}</td>
+            <td class="cell-ellipsis cell-muted" title="{{ item.kind }}">{{ item.kind }}</td>
             <td>
               {% if item.has_link %}
               <a class="cell-ellipsis cell-link cell-unread read-track" href="{{ item.link }}" data-read-key="{{ item.read_key }}" target="_blank" rel="noreferrer" title="{{ item.title }}">{{ item.title }}</a>
@@ -34,7 +34,7 @@
           </tr>
           {% endfor %}
         {% else %}
-          <tr><td colspan="3" class="empty">暂无资讯内容</td></tr>
+          <tr><td colspan="3" class="empty">暂无生成内容</td></tr>
         {% endif %}
       </tbody>
     </table>
