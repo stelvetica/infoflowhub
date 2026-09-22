@@ -329,6 +329,8 @@
       row.replaceWith(document.importNode(fresh, true));
     } else {
       // 当前筛选(如「未处理」)已不含该条目
+      // ponytail: 分页按绝对偏移取,完成一条后列表左移,继续下滚可能跳过一条(刷新即恢复);
+      // 升级路径=游标式续载(按排序键取下一页)。见 TECH_DEBT.md
       row.remove();
     }
     const total = parsed.querySelector("[data-laterhub-fragment]")?.dataset.total;
