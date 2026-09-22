@@ -57,7 +57,7 @@ class LaterhubQueryStateTest(unittest.TestCase):
         ):
             self.assertEqual(query.count(f"{key}="), 1, key)
 
-    def test_template_uses_canonical_state_query_for_actions_and_pagination(self):
+    def test_template_uses_canonical_state_query_for_actions(self):
         context = {
             "request": object(),
             "params": {"entries_q": "", "entries_sort": "", "entries_dir": ""},
@@ -99,9 +99,15 @@ class LaterhubQueryStateTest(unittest.TestCase):
             },
         }
         html = templates.get_template("partials/laterhub_panel.html").render(context)
-        self.assertIn('/actions/laterhub/7/toggle-finished?laterhub_q=AI&amp;laterhub_sort=sort_time&amp;laterhub_dir=desc&amp;laterhub_filter_finished=opened&amp;laterhub_filter_tag=%E6%95%88%E7%8E%87&amp;laterhub_filter_scope=today&amp;laterhub_page=2', html)
-        self.assertIn('/fragments/laterhub?laterhub_q=AI&amp;laterhub_sort=sort_time&amp;laterhub_dir=desc&amp;laterhub_filter_finished=opened&amp;laterhub_filter_tag=%E6%95%88%E7%8E%87&amp;laterhub_filter_scope=today&amp;laterhub_page=1', html)
-        self.assertIn('/fragments/laterhub?laterhub_q=AI&amp;laterhub_sort=sort_time&amp;laterhub_dir=desc&amp;laterhub_filter_finished=opened&amp;laterhub_filter_tag=%E6%95%88%E7%8E%87&amp;laterhub_filter_scope=today&amp;laterhub_page=3', html)
+        # 动作 URL 带上完整状态查询串(前缀是订阅面板状态,顺序不敏感,故断言包含)
+        canonical = "laterhub_q=AI&amp;laterhub_sort=sort_time&amp;laterhub_dir=desc&amp;laterhub_filter_finished=opened&amp;laterhub_filter_tag=%E6%95%88%E7%8E%87&amp;laterhub_filter_scope=today&amp;laterhub_page=2"
+        self.assertIn("/actions/laterhub/7/toggle-finished?", html)
+        self.assertIn(canonical, html)
+        # 滚动续载取代翻页:片段根带总页数/总数,计数行显示已加载条数,页脚不再有翻页按钮
+        self.assertIn('data-total-pages="4"', html)
+        self.assertIn('data-total="3"', html)
+        self.assertIn("已加载 1 / 共 3 条", html)
+        self.assertNotIn("下一页", html)
         self.assertNotIn("params|urlencode", html)
         self.assertNotIn("params%7Curlencode", html)
 

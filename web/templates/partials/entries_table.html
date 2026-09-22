@@ -8,7 +8,7 @@
   'laterhub_sort': params.get('laterhub_sort', ''),
   'laterhub_dir': params.get('laterhub_dir', '')
 } %}
-<div data-entries-fragment="1" data-page="{{ entries.page }}" data-unread-only="{{ '1' if entries.unread_only else '0' }}" data-read-keys="{{ entries.read_keys_text }}">
+<div data-entries-fragment="1" data-page="{{ entries.page }}" data-total-pages="{{ entries.total_pages }}" data-total="{{ entries.filtered_total }}" data-unread-only="{{ '1' if entries.unread_only else '0' }}" data-read-keys="{{ entries.read_keys_text }}">
   <div class="table-wrap">
     <table class="entries-table">
       <colgroup>
@@ -45,12 +45,6 @@
     </table>
   </div>
   <div class="pagination pagination-tight pagination-aligned">
-    <div class="subtle">第 {{ entries.page }} / {{ entries.total_pages }} 页，共 {{ entries.filtered_total }} 条</div>
-    <div class="toolbar">
-      {% set prev_page = entries.page - 1 if entries.page > 1 else 1 %}
-      {% set next_page = entries.page + 1 if entries.page < entries.total_pages else entries.total_pages %}
-      <button class="btn ghost {% if entries.page <= 1 %}disabled{% endif %}" type="button" {% if entries.page > 1 %}hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort={{ entries.sort }}&entries_dir={{ entries.dir }}&entries_page={{ prev_page }}" hx-target="#entries-panel" hx-swap="innerHTML"{% else %}disabled{% endif %}>上一页</button>
-      <button class="btn ghost {% if entries.page >= entries.total_pages %}disabled{% endif %}" type="button" {% if entries.page < entries.total_pages %}hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort={{ entries.sort }}&entries_dir={{ entries.dir }}&entries_page={{ next_page }}" hx-target="#entries-panel" hx-swap="innerHTML"{% else %}disabled{% endif %}>下一页</button>
-    </div>
+    <div class="subtle">已加载 {{ entries.rows|length }} / 共 {{ entries.filtered_total }} 条</div>
   </div>
 </div>

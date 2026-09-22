@@ -171,10 +171,9 @@
     setCookie(`ifh_${panel.kind}_state_v1`, cookieParams.toString());
   }
 
-  function refreshPanel(panel, extraParams = {}) {
-    if (!window.htmx) return;
+  function buildPanelQuery(panel, extraParams = {}) {
     const form = document.querySelector(panel.formSel);
-    if (!form) return;
+    if (!form) return null;
 
     syncPanelFields(panel);
     const params = new URLSearchParams();
@@ -198,9 +197,137 @@
       }
     });
 
+    return params;
+  }
+
+  function refreshPanel(panel, extraParams = {}) {
+    if (!window.htmx) return;
+    const params = buildPanelQuery(panel, extraParams);
+    if (!params) return;
+
     window.htmx.ajax("GET", `${panel.fragmentUrl}?${params.toString()}`, {
       target: panel.panelSel,
       swap: "innerHTML",
+    });
+  }
+
+  function findPanel(kind) {
+    return panels.find((panel) => panel.kind === kind) || null;
+  }
+
+  // 表格续载:先把表格区填满(不留空白),滚到接近底部再追加下一页,故不再需要「下一页」按钮。
+  // 已加载页数按片段根元素记(WeakMap):HTMX 换掉片段根即自动归零,无需额外重置逻辑。
+  const AUTO_LOAD_TRIGGER_PX = 160;
+  const AUTO_LOAD_FILL_ROUNDS = 5;
+  const autoLoadPages = new WeakMap();
+  const autoLoadPanels = [
+    {
+      key: "entries",
+      metaSel: "[data-entries-fragment]",
+      wrapSel: "#entries-panel .table-wrap",
+      tbodySel: "#entries-panel tbody",
+      countSel: "#entries-panel .pagination .subtle",
+      loading: false,
+      nextUrl(page) {
+        const panel = findPanel("entries");
+        const params = panel ? buildPanelQuery(panel, { entries_page: String(page) }) : null;
+        return params ? `${panel.fragmentUrl}?${params.toString()}` : "";
+      },
+    },
+    {
+      key: "laterhub",
+      metaSel: "[data-laterhub-fragment]",
+      wrapSel: ".pane-right-stack .table-wrap",
+      tbodySel: ".pane-right-stack tbody",
+      countSel: ".pane-right-stack .pagination .subtle",
+      loading: false,
+      nextUrl(page) {
+        const params = new URLSearchParams(getLaterhubQueryString());
+        params.set("laterhub_page", String(page));
+        return `/fragments/laterhub?${params.toString()}`;
+      },
+    },
+  ];
+
+  function readAutoLoadState(descriptor) {
+    const meta = document.querySelector(descriptor.metaSel);
+    const wrap = document.querySelector(descriptor.wrapSel);
+    const tbody = document.querySelector(descriptor.tbodySel);
+    if (!meta || !wrap || !tbody) return null;
+    return {
+      meta,
+      wrap,
+      tbody,
+      basePage: Number(meta.dataset.page || 1) || 1,
+      totalPages: Number(meta.dataset.totalPages || 1) || 1,
+      total: Number(meta.dataset.total || 0) || 0,
+    };
+  }
+
+  function loadedRowCount(tbody) {
+    return [...tbody.querySelectorAll("tr")].filter((row) => !row.querySelector(".empty")).length;
+  }
+
+  function updateAutoLoadCount(descriptor, state) {
+    const count = document.querySelector(descriptor.countSel);
+    const tbody = document.querySelector(descriptor.tbodySel);
+    if (!count || !tbody) return;
+    count.textContent = `已加载 ${loadedRowCount(tbody)} / 共 ${state.total} 条`;
+  }
+
+  async function appendNextPage(descriptor) {
+    if (descriptor.loading) return false;
+    const state = readAutoLoadState(descriptor);
+    if (!state) return false;
+    const loaded = autoLoadPages.get(state.meta) ?? state.basePage;
+    if (loaded >= state.totalPages) return false;
+    const url = descriptor.nextUrl(loaded + 1);
+    if (!url) return false;
+
+    descriptor.loading = true;
+    try {
+      const response = await fetch(url, { credentials: "same-origin" });
+      if (!response.ok) throw new Error(String(response.status));
+      const html = await response.text();
+      const source = new DOMParser().parseFromString(html, "text/html").querySelector("tbody");
+      const target = document.querySelector(descriptor.tbodySel);
+      if (!source || !target) return false;
+      target.insertAdjacentHTML("beforeend", source.innerHTML);
+      autoLoadPages.set(state.meta, loaded + 1);
+      updateAutoLoadCount(descriptor, state);
+      applyReadState();
+      setupLaterhubOpenedTracking();
+      return true;
+    } catch {
+      // 失败不打断浏览:计数行提示,继续滚动会再试
+      const count = document.querySelector(descriptor.countSel);
+      if (count) count.textContent = "加载失败，继续滚动重试";
+      return false;
+    } finally {
+      descriptor.loading = false;
+    }
+  }
+
+  async function fillAutoLoadPanel(descriptor) {
+    for (let round = 0; round < AUTO_LOAD_FILL_ROUNDS; round += 1) {
+      const state = readAutoLoadState(descriptor);
+      if (!state) return;
+      // 表格区已出现滚动即视为填满;取完或空结果由 appendNextPage 自行停下
+      if (state.wrap.scrollHeight > state.wrap.clientHeight + 1) return;
+      if (!(await appendNextPage(descriptor))) return;
+    }
+  }
+
+  function bindAutoLoadScroll(descriptor) {
+    const state = readAutoLoadState(descriptor);
+    if (!state || state.wrap.dataset.autoLoadBound === "1") return;
+    state.wrap.dataset.autoLoadBound = "1";
+    const wrap = state.wrap;
+    wrap.addEventListener("scroll", () => {
+      if (wrap.scrollTop + wrap.clientHeight < wrap.scrollHeight - AUTO_LOAD_TRIGGER_PX) return;
+      appendNextPage(descriptor).then((appended) => {
+        if (appended) fillAutoLoadPanel(descriptor);
+      });
     });
   }
 
@@ -691,6 +818,10 @@
     setupLaterhubTagsToggle();
     setupSplitResizer();
     setupWechatLogin();
+    autoLoadPanels.forEach((descriptor) => {
+      bindAutoLoadScroll(descriptor);
+      fillAutoLoadPanel(descriptor);
+    });
   }
 
   // 抓取按钮 loading 态:点击即转圈。订阅抓取的 POST 秒回、后台才真正执行,

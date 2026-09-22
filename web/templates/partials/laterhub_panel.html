@@ -1,4 +1,4 @@
-<div class="pane-right-stack">
+<div class="pane-right-stack" data-laterhub-fragment="1" data-page="{{ laterhub.page }}" data-total-pages="{{ laterhub.total_pages }}" data-total="{{ laterhub.filtered_total }}">
   <section class="card pane-card pane-card-right">
     <div class="panel-title">
       <div class="panel-title-inline laterhub-title-row">
@@ -88,11 +88,7 @@
       </table>
     </div>
     <div class="pagination pagination-tight pagination-aligned">
-      <div class="subtle">第 {{ laterhub.page }} / {{ laterhub.total_pages }} 页，共 {{ laterhub.filtered_total }} 条</div>
-      <div class="toolbar">
-        <button class="btn ghost {% if laterhub.page <= 1 %}disabled{% endif %}" type="button" {% if laterhub.page > 1 %}hx-get="/fragments/laterhub?{{ params|urlencode }}&{{ laterhub.prev_query }}" hx-target="#laterhub-panel" hx-swap="innerHTML"{% else %}disabled{% endif %}>上一页</button>
-        <button class="btn ghost {% if laterhub.page >= laterhub.total_pages %}disabled{% endif %}" type="button" {% if laterhub.page < laterhub.total_pages %}hx-get="/fragments/laterhub?{{ params|urlencode }}&{{ laterhub.next_query }}" hx-target="#laterhub-panel" hx-swap="innerHTML"{% else %}disabled{% endif %}>下一页</button>
-      </div>
+      <div class="subtle">已加载 {{ laterhub.rows|length }} / 共 {{ laterhub.filtered_total }} 条</div>
     </div>
   </section>
 </div>
