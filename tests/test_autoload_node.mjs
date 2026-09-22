@@ -22,6 +22,9 @@ function assert(cond, label) {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
+// 取 URL 里的续载游标(URLSearchParams 会做百分号解码)
+const afterCursor = (url) => new URLSearchParams(url.split("?")[1]).get("entries_after");
+
 function makeElement(extra = {}) {
   const listeners = new Map();
   return {
@@ -85,8 +88,7 @@ function loadPage({ totalPages, wrapHeight, preloadedPages = 1, failFrom = null 
   const count = makeElement({ textContent: `已加载 ${preloadedPages * ROWS_PER_PAGE} / 共 ${totalPages * ROWS_PER_PAGE} 条` });
   const meta = makeElement({
     dataset: {
-      page: String(preloadedPages),
-      totalPages: String(totalPages),
+      nextCursor: preloadedPages < totalPages ? `cursor~${preloadedPages}` : "",
       total: String(totalPages * ROWS_PER_PAGE),
     },
   });
@@ -107,18 +109,31 @@ function loadPage({ totalPages, wrapHeight, preloadedPages = 1, failFrom = null 
   globalThis.DOMParser = class {
     parseFromString(html) {
       const body = /<tbody[^>]*>([\s\S]*?)<\/tbody>/.exec(html)?.[1] ?? "";
-      return { querySelector: (selector) => (selector === "tbody" ? { innerHTML: body } : null) };
+      const cursor = /data-next-cursor="([^"]*)"/.exec(html)?.[1] ?? "";
+      const total = /data-total="([^"]*)"/.exec(html)?.[1] ?? "";
+      return {
+        querySelector: (selector) => {
+          if (selector === "tbody") return { innerHTML: body };
+          if (selector === "[data-entries-fragment]") return { dataset: { nextCursor: cursor, total } };
+          return null;
+        },
+      };
     }
   };
   globalThis.fetch = (url) => {
     fetched.push(url);
-    const page = Number(new URLSearchParams(url.split("?")[1]).get("entries_page") || 1);
+    const cursor = new URLSearchParams(url.split("?")[1]).get("entries_after") || "";
+    const page = Number(cursor.split("~")[1] || 1) + 1;
     if (failFrom !== null && page >= failFrom) {
       return Promise.resolve({ ok: false, status: 500 });
     }
     loadedPages = Math.max(loadedPages, page);
-    const html = Array.from({ length: ROWS_PER_PAGE }, () => "<tr><td>条目</td></tr>").join("");
-    return Promise.resolve({ ok: true, text: () => Promise.resolve(`<tbody>${html}</tbody>`) });
+    const rows = Array.from({ length: ROWS_PER_PAGE }, () => "<tr><td>条目</td></tr>").join("");
+    const nextCursor = page < totalPages ? `cursor~${page}` : "";
+    return Promise.resolve({
+      ok: true,
+      text: () => Promise.resolve(`<div data-entries-fragment data-next-cursor="${nextCursor}" data-total="${totalPages * ROWS_PER_PAGE}"><tbody>${rows}</tbody></div>`),
+    });
   };
   globalThis.document = {
     querySelector(selector) {
@@ -150,8 +165,8 @@ function loadPage({ totalPages, wrapHeight, preloadedPages = 1, failFrom = null 
   const page = loadPage({ totalPages: 5, wrapHeight: 300 });
   await settle();
   assert(page.fetched.length === 2, "未填满时自动追加下一页(共 2 次)");
-  assert(page.fetched[0].includes("entries_page=2"), "首次追加取第 2 页");
-  assert(page.fetched[1].includes("entries_page=3"), "仍未填满则继续取第 3 页");
+  assert(afterCursor(page.fetched[0]) === "cursor~1", "首次续载带上游标");
+  assert(afterCursor(page.fetched[1]) === "cursor~2", "仍未填满则按新游标继续取");
   assert(page.rows() === 3 * ROWS_PER_PAGE, "追加的行进入表格");
   assert(page.count.textContent === "已加载 15 / 共 25 条", "计数行改为已加载条数");
   // 追加的行必须交给 HTMX process,否则行内 hx-post(「完成」按钮)是死的
@@ -169,7 +184,7 @@ function loadPage({ totalPages, wrapHeight, preloadedPages = 1, failFrom = null 
   assert(page.fetched.length === 0, "滚到顶部不触发续载");
   page.scrollTo(200); // 500-300=200 的可滚区间,离底部 <160px
   await settle();
-  assert(page.fetched.length === 1 && page.fetched[0].includes("entries_page=5"), "滚到接近底部取下一页");
+  assert(page.fetched.length === 1 && afterCursor(page.fetched[0]) === "cursor~4", "滚到接近底部按游标续载");
   assert(page.rows() === 5 * ROWS_PER_PAGE, "续载行追加在末尾");
 }
 
@@ -181,7 +196,7 @@ function loadPage({ totalPages, wrapHeight, preloadedPages = 1, failFrom = null 
   await settle();
   page.scrollTo(200);
   await settle();
-  assert(page.fetched.length === 0, "已取到最后一页后不再请求");
+  assert(page.fetched.length === 0, "没有下一游标后不再请求");
 }
 
 // 用例4: 同一时刻只发一个请求(并发去重)

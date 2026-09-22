@@ -3,7 +3,7 @@
   'news_unread_only': '1' if news.unread_only else '',
   'news_read_keys': news.read_keys_text,
 } %}
-<div data-news-fragment="1" data-page="{{ news.page }}" data-total-pages="{{ news.total_pages }}" data-total="{{ news.filtered_total }}" data-unread-only="{{ '1' if news.unread_only else '0' }}" data-read-keys="{{ news.read_keys_text }}" data-panel-kind="news">
+<div data-news-fragment="1" data-next-cursor="{{ news.next_cursor }}" data-total="{{ news.filtered_total }}" data-unread-only="{{ '1' if news.unread_only else '0' }}" data-read-keys="{{ news.read_keys_text }}" data-panel-kind="news">
   <div class="table-wrap">
     <table class="entries-table news-table">
       <colgroup>

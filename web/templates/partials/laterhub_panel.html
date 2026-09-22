@@ -1,4 +1,4 @@
-<div class="pane-right-stack" data-laterhub-fragment="1" data-page="{{ laterhub.page }}" data-total-pages="{{ laterhub.total_pages }}" data-total="{{ laterhub.filtered_total }}">
+<div class="pane-right-stack" data-laterhub-fragment="1" data-next-cursor="{{ laterhub.next_cursor }}" data-total="{{ laterhub.filtered_total }}">
   <section class="card pane-card pane-card-right">
     <div class="panel-title">
       <div class="panel-title-inline laterhub-title-row">
@@ -14,7 +14,6 @@
         <input type="hidden" name="laterhub_q" value="{{ laterhub.q }}">
         <input type="hidden" name="laterhub_sort" value="{{ laterhub.sort }}">
         <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
-        <input type="hidden" name="laterhub_page" value="1">
         <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
         <span class="laterhub-filter-label">状态</span>
         <select class="select laterhub-status-select laterhub-status-select-small" name="laterhub_filter_finished" aria-label="按状态筛选" onchange="this.form.requestSubmit()">
@@ -29,7 +28,6 @@
       <input type="hidden" name="laterhub_q" value="{{ laterhub.q }}">
       <input type="hidden" name="laterhub_sort" value="{{ laterhub.sort }}">
       <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
-      <input type="hidden" name="laterhub_page" value="1">
       <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
       <input type="hidden" name="laterhub_filter_finished" value="{{ laterhub.filter_finished }}">
       <div class="chips laterhub-chips" id="laterhub-chips" hidden>

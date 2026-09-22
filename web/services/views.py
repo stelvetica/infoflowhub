@@ -30,6 +30,8 @@ from infra.utf8_json import dump_json_utf8, load_json_utf8
 from web.services.utils import (
     build_source_id,
     compare_value,
+    sort_rows_with_tiebreak,
+    take_after_cursor,
     format_date,
     format_datetime,
     join_tags,
@@ -51,9 +53,9 @@ WEB_LOG_PATH = RUNTIME_DIR / "web.log"
 LATERHUB_LOG_PATH = RUNTIME_DIR / "logs" / "laterhub.log"
 
 DELETED_SITE_URLS = {"https://www.huxiu.com/member/2321131.html"}
-# 首屏页数要盖过常见窗口的可见行数:否则首屏填不满区格,滚动续载会立刻补一页,
+# 每批条数要盖过常见窗口的可见行数:否则首屏填不满区格,续载会立刻补一批,
 # 用户会看到「先少后多」的跳动。取 30(订阅行约 33px、稍后处理行约 60px,足够高)。
-ENTRIES_PAGE_SIZE = 30
+ENTRIES_BATCH_SIZE = 30
 REPORTS_DIR = BASE_DIR / "data" / "reports"
 # 「新闻」面板的数据源白名单：只认这两类产物（今日新闻.md 与各 json 一律不计入）
 REPORT_PATTERNS: tuple[tuple[str, str], ...] = (
@@ -67,19 +69,10 @@ MARKDOWN_KINDS: dict[str, str] = {
     "jiuyangongshe_jiucaituanzi": "jiuyangongshe",
     "jiuyangongshe_jiujiubashiyi": "jiuyangongshe",
 }
-LATERHUB_PAGE_SIZE = 30  # 同 ENTRIES_PAGE_SIZE:首屏必须盖过可见行数,避免续载紧接着补页造成跳动
+LATERHUB_BATCH_SIZE = 30  # 同 ENTRIES_BATCH_SIZE:首批必须盖过可见行数,避免续载紧接着补批造成跳动
 ENTRIES_READ_CUTOFF = datetime(2026, 5, 1).timestamp()
 ABSOLUTE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 BILIBILI_DYNAMIC_PATH_RE = re.compile(r"^/(\d+)$")
-LATERHUB_QUERY_KEYS = (
-    "laterhub_q",
-    "laterhub_sort",
-    "laterhub_dir",
-    "laterhub_filter_finished",
-    "laterhub_filter_tag",
-    "laterhub_filter_scope",
-    "laterhub_page",
-)
 
 
 def read_json(path: Path, fallback: Any) -> Any:
@@ -668,26 +661,22 @@ def _filter_laterhub_rows(query: dict[str, str]) -> tuple[list[dict[str, Any]], 
     return rows, all_rows, selected_tag, scope_counts, filter_scope
 
 
-def build_laterhub_state_params(query: Mapping[str, Any], *, page: int | None = None) -> dict[str, str]:
-    safe_page = page if page is not None else max(int(str(query.get("laterhub_page", "1") or "1")), 1)
-    state = {
+def build_laterhub_state_params(query: Mapping[str, Any]) -> dict[str, str]:
+    return {
         "laterhub_q": str(query.get("laterhub_q", "") or ""),
         "laterhub_sort": str(query.get("laterhub_sort") or "sort_time"),
         "laterhub_dir": str(query.get("laterhub_dir") or "desc"),
         "laterhub_filter_finished": str(query.get("laterhub_filter_finished", "0") or "0"),
         "laterhub_filter_tag": str(query.get("laterhub_filter_tag", "") or ""),
         "laterhub_filter_scope": str(query.get("laterhub_filter_scope", "") or ""),
-        "laterhub_page": str(max(safe_page, 1)),
     }
-    return state
 
 
-def build_laterhub_query_string(query: Mapping[str, Any], *, page: int | None = None) -> str:
-    return urlencode({key: value for key, value in build_laterhub_state_params(query, page=page).items() if value != ""})
+def build_laterhub_query_string(query: Mapping[str, Any]) -> str:
+    return urlencode({key: value for key, value in build_laterhub_state_params(query).items() if value != ""})
 
 
-def build_entries_state_params(query: Mapping[str, Any], *, page: int | None = None) -> dict[str, str]:
-    safe_page = page if page is not None else max(int(str(query.get("entries_page", "1") or "1")), 1)
+def build_entries_state_params(query: Mapping[str, Any]) -> dict[str, str]:
     unread_only = query.get("entries_unread_only")
     return {
         "entries_q": str(query.get("entries_q", "") or ""),
@@ -695,12 +684,10 @@ def build_entries_state_params(query: Mapping[str, Any], *, page: int | None = N
         "entries_dir": str(query.get("entries_dir") or "desc"),
         "entries_unread_only": "1" if unread_only is None else str(unread_only),
         "entries_read_keys": str(query.get("entries_read_keys", "") or ""),
-        "entries_page": str(max(safe_page, 1)),
     }
 
 
-def build_news_state_params(query: Mapping[str, Any], *, page: int | None = None) -> dict[str, str]:
-    safe_page = page if page is not None else max(int(str(query.get("news_page", "1") or "1")), 1)
+def build_news_state_params(query: Mapping[str, Any]) -> dict[str, str]:
     unread_only = query.get("news_unread_only")
     return {
         "news_q": str(query.get("news_q", "") or ""),
@@ -708,7 +695,6 @@ def build_news_state_params(query: Mapping[str, Any], *, page: int | None = None
         "news_dir": str(query.get("news_dir") or "desc"),
         "news_unread_only": "1" if unread_only is None else str(unread_only),
         "news_read_keys": str(query.get("news_read_keys", "") or ""),
-        "news_page": str(max(safe_page, 1)),
     }
 
 
@@ -787,7 +773,7 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
     effective_read_keys = read_keys | persisted_read_keys
     sort = query.get("entries_sort") or "sort_time"
     direction = query.get("entries_dir") or "desc"
-    page = max(int(query.get("entries_page", "1") or "1"), 1)
+    cursor = query.get("entries_after", "")
     rows = _iter_entry_rows(
         source_ids_filter=None,
         keyword=keyword,
@@ -795,27 +781,22 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
         effective_read_keys=effective_read_keys,
         load_limit=ENTRIES_LOAD_LIMIT,
     )
-    rows.sort(key=cmp_to_key(lambda a, b: compare_value(a.get(sort), b.get(sort), direction)))
-    total = len(rows)
-    total_pages = max((total + ENTRIES_PAGE_SIZE - 1) // ENTRIES_PAGE_SIZE, 1)
-    safe_page = min(page, total_pages)
-    page_rows = rows[(safe_page - 1) * ENTRIES_PAGE_SIZE : safe_page * ENTRIES_PAGE_SIZE]
+    sort_rows_with_tiebreak(rows, sort, direction, "read_key")
+    batch, next_cursor = take_after_cursor(rows, cursor, sort, direction, "read_key", ENTRIES_BATCH_SIZE)
     return {
-        "rows": page_rows,
+        "rows": batch,
         "sort": sort,
         "dir": direction,
         "q": query.get("entries_q", ""),
-        "page": safe_page,
-        "page_size": ENTRIES_PAGE_SIZE,
-        "total_pages": total_pages,
-        "filtered_total": total,
+        "next_cursor": next_cursor,
+        "filtered_total": len(rows),
         "total": _count_entries(),
         "unread_only": unread_only,
         "read_keys_text": ",".join(sorted(effective_read_keys)),
     }
 
 
-NEWS_PAGE_SIZE = 5
+NEWS_BATCH_SIZE = 5
 
 
 def markdown_url(source_id: str, markdown_path: str) -> str:
@@ -869,7 +850,7 @@ def get_news_view(query: dict[str, str]) -> dict[str, Any]:
     effective_read_keys = read_keys | persisted_read_keys
     sort = query.get("news_sort") or "sort_time"
     direction = query.get("news_dir") or "desc"
-    page = max(int(query.get("news_page", "1") or "1"), 1)
+    cursor = query.get("news_after", "")
     rows: list[dict[str, Any]] = []
     for row in _iter_report_rows():
         if keyword and keyword not in normalize_text(row["title"]):
@@ -878,20 +859,15 @@ def get_news_view(query: dict[str, str]) -> dict[str, Any]:
         if unread_only and row["read_key"] in effective_read_keys:
             continue
         rows.append(row)
-    rows.sort(key=cmp_to_key(lambda a, b: compare_value(a.get(sort), b.get(sort), direction)))
-    total = len(rows)
-    total_pages = max((total + NEWS_PAGE_SIZE - 1) // NEWS_PAGE_SIZE, 1)
-    safe_page = min(page, total_pages)
-    page_rows = rows[(safe_page - 1) * NEWS_PAGE_SIZE : safe_page * NEWS_PAGE_SIZE]
+    sort_rows_with_tiebreak(rows, sort, direction, "read_key")
+    batch, next_cursor = take_after_cursor(rows, cursor, sort, direction, "read_key", NEWS_BATCH_SIZE)
     return {
-        "rows": page_rows,
+        "rows": batch,
         "sort": sort,
         "dir": direction,
         "q": query.get("news_q", ""),
-        "page": safe_page,
-        "page_size": NEWS_PAGE_SIZE,
-        "total_pages": total_pages,
-        "filtered_total": total,
+        "next_cursor": next_cursor,
+        "filtered_total": len(rows),
         "unread_only": unread_only,
         "read_keys_text": ",".join(sorted(effective_read_keys)),
     }
@@ -905,10 +881,10 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
     status = load_status()
     sort = query.get("laterhub_sort") or "sort_time"
     direction = query.get("laterhub_dir") or "desc"
-    page = max(int(query.get("laterhub_page", "1") or "1"), 1)
+    cursor = query.get("laterhub_after", "")
     rows, all_rows, selected_tag, scope_counts, filter_scope = _filter_laterhub_rows(query)
     filter_finished = query.get("laterhub_filter_finished", "0")
-    rows.sort(key=cmp_to_key(lambda a, b: compare_value(a.get(sort), b.get(sort), direction)))
+    sort_rows_with_tiebreak(rows, sort, direction, "id")
     all_tags_map: dict[str, str] = {}
     for item in all_rows:
         for tag in item["tag_list"]:
@@ -916,20 +892,17 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
             if key not in all_tags_map:
                 all_tags_map[key] = tag
     all_tags = [all_tags_map[key] for key in sorted(all_tags_map.keys())]
-    total_pages = max((len(rows) + LATERHUB_PAGE_SIZE - 1) // LATERHUB_PAGE_SIZE, 1)
-    safe_page = min(page, total_pages)
-    page_rows = rows[(safe_page - 1) * LATERHUB_PAGE_SIZE : safe_page * LATERHUB_PAGE_SIZE]
+    batch, next_cursor = take_after_cursor(rows, cursor, sort, direction, "id", LATERHUB_BATCH_SIZE)
     actionable_ids = [int(item["id"]) for item in rows if not item["is_finished"]]
     state_params = build_laterhub_state_params(
         {
             **query,
             "laterhub_filter_tag": selected_tag,
             "laterhub_filter_scope": filter_scope,
-            "laterhub_page": str(safe_page),
         }
     )
     return {
-        "rows": page_rows,
+        "rows": batch,
         "total": count_laterhub_items(),
         "filtered_total": len(rows),
         "bulk_finishable_count": len(actionable_ids),
@@ -944,13 +917,9 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
         "q": query.get("laterhub_q", ""),
         "status": status,
         "filter_finished": filter_finished,
-        "page": safe_page,
-        "page_size": LATERHUB_PAGE_SIZE,
-        "total_pages": total_pages,
+        "next_cursor": next_cursor,
         "state_params": state_params,
         "state_query": build_laterhub_query_string(state_params),
-        "prev_query": build_laterhub_query_string(state_params, page=(safe_page - 1 if safe_page > 1 else 1)),
-        "next_query": build_laterhub_query_string(state_params, page=(safe_page + 1 if safe_page < total_pages else total_pages)),
     }
 
 
