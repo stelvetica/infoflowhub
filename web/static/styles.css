@@ -107,13 +107,13 @@ button, input, select, textarea { font: inherit; }
 
 .stack { display: grid; gap: var(--sp-4); margin: 0 auto; width: 100%; max-width: min(1600px, 100%); }
 
-/* 左右分栏(主视图) */
+/* 左右分栏(主视图):左栏=新闻 + 订阅内容,右栏=稍后处理 */
 .split-shell {
-  --splitter-size: 20px;
   --laterhub-min: 320px;
   --laterhub-width: 36%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--splitter-size) minmax(var(--laterhub-min), var(--laterhub-width));
+  grid-template-columns: minmax(0, 1fr) minmax(var(--laterhub-min), var(--laterhub-width));
+  gap: var(--sp-4);
   align-items: stretch;
   margin: 0 auto;
   width: 100%;
@@ -121,30 +121,9 @@ button, input, select, textarea { font: inherit; }
   min-height: calc(100vh - 90px);
 }
 .split-pane { min-width: 0; }
-.split-pane-main { padding-right: var(--sp-2); }
-.split-pane-side { overflow: hidden; padding-left: var(--sp-2); }
-.split-resizer {
-  position: relative; width: var(--splitter-size); min-width: var(--splitter-size);
-  cursor: col-resize; touch-action: none; user-select: none;
-}
-.split-resizer::before {
-  content: ""; position: absolute; inset: 0; margin: auto;
-  width: 3px; height: 100%;
-  background: var(--line-soft);
-  transition: background-color 0.18s ease;
-}
-.split-resizer::after {
-  content: ""; position: sticky; top: 90px; z-index: 2; display: block;
-  width: 20px; height: 52px; margin: 0 auto;
-  border: 1px solid var(--line); border-radius: var(--radius-pill);
-  background: linear-gradient(180deg, #fff 0%, var(--panel-muted) 100%);
-  box-shadow: var(--shadow-sm);
-  transition: border-color 0.18s ease, background-color 0.18s ease;
-}
-.split-resizer:hover::before { background: var(--line); }
-.split-resizer:hover::after, .split-resizer.is-dragging::after { border-color: var(--accent); background: #fff; }
-.split-resizer.is-dragging::before { background: rgba(9, 105, 218, 0.35); }
+.split-pane-side { overflow: hidden; }
 
+.pane-left-stack { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--sp-4); }
 .pane-right-stack { display: grid; gap: var(--sp-3); }
 
 /* ============================================================
@@ -164,8 +143,8 @@ button, input, select, textarea { font: inherit; }
 .panel-title-settings-nowrap, .panel-title-settings-nowrap .panel-title-inline { flex-wrap: wrap; align-items: center; }
 .panel-heading-nowrap { white-space: nowrap; }
 
-/* 新闻卡片(小号条带) */
-.news-card { margin: 0 auto 12px; width: 100%; max-width: min(1600px, 100%); padding-bottom: var(--sp-3); }
+/* 新闻卡片(小号条带,左栏顶部) */
+.news-card { width: 100%; padding-bottom: var(--sp-3); }
 .news-panel-title { margin-bottom: var(--sp-2); }
 .news-header-form { justify-content: flex-end; }
 .news-card .entries-table td { padding-top: 3px; padding-bottom: 3px; }
@@ -255,7 +234,7 @@ button, input, select, textarea { font: inherit; }
 .wechat-renew-btn-active { font-weight: 700; box-shadow: 0 0 0 1px rgba(154, 103, 0, 0.08), 0 6px 16px rgba(154, 103, 0, 0.12); }
 
 .btn:focus-visible, .chip:focus-visible, .sort:focus-visible,
-.settings-link:focus-visible, .split-resizer:focus-visible {
+.settings-link:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -481,8 +460,6 @@ td { font-size: var(--fs-sm); }
    ============================================================ */
 @media (max-width: 1100px) {
   .split-shell { grid-template-columns: 1fr; }
-  .split-pane-main, .split-pane-side { padding: 0; }
-  .split-resizer { display: none; }
 }
 @media (max-width: 980px) {
   .main { padding: 14px; }

@@ -1,6 +1,5 @@
 (() => {
   const STORAGE_KEY = "infoflowhub:read-links:v3";
-  const LATERHUB_WIDTH_KEY = "infoflowhub:laterhub-width";
   // 每个订阅面板(主订阅区/新闻卡片)独立的交互配置与未读态。
   const panels = [
     {
@@ -442,109 +441,6 @@
     if (event.target.classList.contains("modal-backdrop")) clearModal();
   }
 
-  function setupLaterhubResizer() {
-    const resizer = document.querySelector("[data-split-resizer]");
-    const shell = document.querySelector(".split-shell");
-    if (!resizer || !shell) return;
-    if (resizer.dataset.ready === "1") return;
-    resizer.dataset.ready = "1";
-
-    const clampWidth = (width) => {
-      const shellWidth = shell.getBoundingClientRect().width;
-      const minWidth = 320;
-      const maxWidth = Math.max(minWidth, Math.min(720, Math.floor(shellWidth * 0.6)));
-      return Math.min(maxWidth, Math.max(minWidth, Math.round(width)));
-    };
-
-    const applyWidth = (width, persist = true) => {
-      if (window.innerWidth <= 1100) return;
-      const nextWidth = clampWidth(width);
-      shell.style.setProperty("--laterhub-width", `${nextWidth}px`);
-      resizer.setAttribute("aria-valuenow", String(nextWidth));
-      if (persist) {
-        window.localStorage.setItem(LATERHUB_WIDTH_KEY, String(nextWidth));
-      }
-    };
-
-    const restoreWidth = () => {
-      if (window.innerWidth <= 1100) {
-        shell.style.removeProperty("--laterhub-width");
-        return;
-      }
-      const stored = Number(window.localStorage.getItem(LATERHUB_WIDTH_KEY) || "");
-      if (Number.isFinite(stored) && stored > 0) {
-        applyWidth(stored, false);
-      } else {
-        shell.style.removeProperty("--laterhub-width");
-      }
-    };
-
-    let dragging = false;
-    let activePointerId = null;
-
-    const updateFromClientX = (clientX) => {
-      const bounds = shell.getBoundingClientRect();
-      applyWidth(bounds.right - clientX);
-    };
-
-    const stopDragging = (pointerId) => {
-      if (!dragging) return;
-      dragging = false;
-      activePointerId = null;
-      resizer.classList.remove("is-dragging");
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      if (pointerId !== undefined && resizer.hasPointerCapture(pointerId)) {
-        resizer.releasePointerCapture(pointerId);
-      }
-    };
-
-    resizer.addEventListener("pointerdown", (event) => {
-      if (window.innerWidth <= 1100) return;
-      event.preventDefault();
-      dragging = true;
-      activePointerId = event.pointerId;
-      resizer.classList.add("is-dragging");
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      resizer.setPointerCapture(event.pointerId);
-      updateFromClientX(event.clientX);
-    });
-
-    const handlePointerMove = (event) => {
-      if (!dragging) return;
-      if (activePointerId !== null && event.pointerId !== activePointerId) return;
-      updateFromClientX(event.clientX);
-    };
-
-    const handlePointerUp = (event) => {
-      if (activePointerId !== null && event.pointerId !== activePointerId) return;
-      stopDragging(event.pointerId);
-    };
-
-    const handlePointerCancel = (event) => {
-      if (activePointerId !== null && event.pointerId !== activePointerId) return;
-      stopDragging(event.pointerId);
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerCancel);
-
-    // 键盘替代:聚焦分割条后用左右方向键调整宽度(±24px/步)
-    resizer.addEventListener("keydown", (event) => {
-      const step = event.key === "ArrowLeft" ? -24 : event.key === "ArrowRight" ? 24 : 0;
-      if (!step) return;
-      event.preventDefault();
-      const side = shell.querySelector(".split-pane-side");
-      const current = side ? side.getBoundingClientRect().width : 0;
-      applyWidth(current + step);
-    });
-
-    window.addEventListener("resize", restoreWidth);
-    restoreWidth();
-  }
-
   async function setupWechatLogin() {
     const root = document.querySelector("[data-wechat-login]");
     if (!root || root.dataset.ready === "1") return;
@@ -709,7 +605,6 @@
     applyReadState();
     panels.forEach((panel) => setupUnreadToggle(panel));
     setupGlobalSearch();
-    setupLaterhubResizer();
     setupLaterhubOpenedTracking();
     setupLaterhubTagsToggle();
     setupWechatLogin();

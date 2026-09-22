@@ -49,23 +49,23 @@
         </section>
       </div>
     {% else %}
-      <section class="card news-card">
-        <div class="panel-title news-panel-title news-header-panel-title">
-          <h2>新闻</h2>
-          <form class="toolbar toolbar-inline news-header-form">
-            <input type="hidden" name="news_sort" value="{{ news.sort }}">
-            <input type="hidden" name="news_dir" value="{{ news.dir }}">
-            <div id="news-unread-slot" class="entries-unread-slot"></div>
-          </form>
-        </div>
-        <div id="news-panel">
-          {% include "partials/news_table.html" %}
-        </div>
-      </section>
       <div class="split-shell">
-        <section class="split-pane split-pane-main">
-        <section class="card pane-card pane-card-left">
-          <div class="panel-title panel-title-settings-nowrap">
+        <section class="split-pane split-pane-main pane-left-stack">
+          <section class="card news-card">
+            <div class="panel-title news-panel-title news-header-panel-title">
+              <h2>新闻</h2>
+              <form class="toolbar toolbar-inline news-header-form">
+                <input type="hidden" name="news_sort" value="{{ news.sort }}">
+                <input type="hidden" name="news_dir" value="{{ news.dir }}">
+                <div id="news-unread-slot" class="entries-unread-slot"></div>
+              </form>
+            </div>
+            <div id="news-panel">
+              {% include "partials/news_table.html" %}
+            </div>
+          </section>
+          <section class="card pane-card pane-card-left">
+            <div class="panel-title panel-title-settings-nowrap">
               <div class="panel-title-inline">
                 <h2 class="panel-heading-nowrap">订阅内容</h2>
                 <form hx-post="/actions/fetch-now?{{ params|urlencode }}" hx-target="#runtime-status-panel" hx-swap="innerHTML">
@@ -93,7 +93,6 @@
             </div>
           </section>
         </section>
-        <div class="split-resizer" data-split-resizer aria-label="调整稍后处理宽度" role="separator" aria-orientation="vertical" tabindex="0" aria-valuemin="320" aria-valuemax="720"></div>
         <aside class="split-pane split-pane-side">
           <div id="laterhub-panel">
             {% include "partials/laterhub_panel.html" %}
