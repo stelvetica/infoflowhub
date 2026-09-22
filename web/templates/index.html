@@ -6,17 +6,19 @@
 <div class="shell">
     <main class="main{% if view != 'settings' %} main-fit{% endif %}" id="main-content">
     <header class="topbar">
-      <div class="brand brand-centered">
+      <div class="brand">
         <h1>InfoFlowHub</h1>
       </div>
-      {% if view != 'settings' %}
-      <form id="global-search-form" class="global-search-form" role="search">
-        <input id="global-search" class="input global-search-input" type="search" value="{{ entries.q }}" placeholder="搜索标题、来源、标签，回车筛选" aria-label="全局搜索，回车筛选新闻、订阅与稍后处理" autocomplete="off">
-      </form>
-      {% endif %}
-      <a class="settings-link {% if view == 'settings' %}active{% endif %}" href="{% if view == 'settings' %}/{% else %}/?view=settings{% endif %}" aria-label="设置">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      </a>
+      <div class="topbar-actions">
+        {% if view != 'settings' %}
+        <form id="global-search-form" class="global-search-form" role="search">
+          <input id="global-search" class="input global-search-input" type="search" value="{{ entries.q }}" placeholder="搜索标题、来源、标签，回车筛选" aria-label="全局搜索，回车筛选新闻、订阅与稍后处理" autocomplete="off">
+        </form>
+        {% endif %}
+        <a class="settings-link {% if view == 'settings' %}active{% endif %}" href="{% if view == 'settings' %}/{% else %}/?view=settings{% endif %}" aria-label="设置">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </a>
+      </div>
     </header>
 
     {% if view == 'settings' %}
