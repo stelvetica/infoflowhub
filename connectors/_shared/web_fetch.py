@@ -4,6 +4,8 @@ import time
 from pathlib import Path
 
 from apps.subscriptions.models import FeedFetchResult
+from apps.subscriptions.rss_config import browser_backend_for
+from connectors._shared.bsk_session import BskRunnerSession, run_bsk_with_copy_fallback
 from connectors._shared.chrome_runner import CopyRunnerSession, SharedRunnerSession
 from connectors._shared.common import (
     USER_AGENT,
@@ -134,8 +136,8 @@ def _needs_shared_runner(source: dict) -> bool:
     return bool(target and target.site in _SHARED_RUNNER_SITES)
 
 
-def _make_session_for(source: dict) -> CopyRunnerSession:
-    """订阅抓取统一走 CopyRunnerSession：复制常用 Chrome Default profile 登录态到副本。
+def _make_copy_session_for(source: dict) -> CopyRunnerSession:
+    """复制常用 Chrome Default profile 登录态到副本（历史默认后端，行为不变）。
 
     各站点（X/YouTube/抖音/蓝宝书）共用同一常用 Chrome 来源，cookie 按域名隔离天然可用。
     headless 无头抓取，副本独立运行不影响你常用浏览器。
@@ -152,6 +154,31 @@ def _make_session_for(source: dict) -> CopyRunnerSession:
     )
 
 
+def _uses_bsk(source: dict) -> bool:
+    return browser_backend_for(source) == "bsk"
+
+
+def _make_session_for(source: dict):
+    """按配置挑会话（唯一分派点）：默认 copy（复制常用 Chrome Default profile 副本），
+    可按 source id 覆盖成 bsk（驱动用户自己已登录的 Chromium，不复制 profile）。"""
+    if _uses_bsk(source):
+        return BskRunnerSession(start_url="about:blank")
+    return _make_copy_session_for(source)
+
+
+def _fetch_one_with_backend(source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
+    """抓单个源，后端由配置决定；bsk 失败自动回退复制 profile 路径一次。"""
+    if not _uses_bsk(source):
+        with _make_session_for(source) as session:
+            return _fetch_one_via_session(session, source, limit=limit, timeout_ms=timeout_ms)
+    return run_bsk_with_copy_fallback(
+        source=source,
+        bsk_session=_make_session_for(source),
+        copy_session_factory=lambda: _make_copy_session_for(source),
+        run_once=lambda session: _fetch_one_via_session(session, source, limit=limit, timeout_ms=timeout_ms),
+    )
+
+
 def fetch_web_source(source: dict) -> FeedFetchResult:
     """单源抓取（CLI/重试入口）。自起临时 session。"""
     last_result: FeedFetchResult | None = None
@@ -160,8 +187,7 @@ def fetch_web_source(source: dict) -> FeedFetchResult:
             time.sleep(delay)
         try:
             if _needs_shared_runner(source):
-                with _make_session_for(source) as session:
-                    result = _fetch_one_via_session(session, source)
+                result = _fetch_one_with_backend(source)
             else:
                 target = resolve_web_target(source)
                 if not target:
@@ -194,26 +220,36 @@ def fetch_web_many(
 
     results_by_index: dict[int, FeedFetchResult] = {}
     shared_indices = [i for i, s in enumerate(sources) if _needs_shared_runner(s)]
+    bsk_indices = [i for i in shared_indices if _uses_bsk(sources[i])]
+    copy_indices = [i for i in shared_indices if i not in set(bsk_indices)]
     other_indices = [i for i in range(len(sources)) if i not in set(shared_indices)]
 
-    # 所有浏览器站点共用一个复制副本 session（单一常用 Chrome 登录态来源）
+    # bsk 后端：每个源一个独立会话（含失败回退），不与复制副本组共用
+    for i in bsk_indices:
+        source = sources[i]
+        try:
+            results_by_index[i] = _fetch_one_with_backend(source, limit=limit, timeout_ms=timeout_ms)
+        except Exception as exc:
+            results_by_index[i] = result_error(source, f"网页直抓失败: {exc}")
+
+    # 复制副本后端：所有站点共用一个 session（单一常用 Chrome 登录态来源）
     # start 需关闭用户 Chrome 复制 profile，可能失败——失败只作各源错误，
     # 不得向上抛炸穿整批抓取（历史上曾丢弃同批已抓好的全部源）
-    if shared_indices:
+    if copy_indices:
         session: CopyRunnerSession | None = None
         start_error = ""
         try:
-            session = _make_session_for(sources[shared_indices[0]])
+            session = _make_session_for(sources[copy_indices[0]])
             session.start()
         except Exception as exc:
             start_error = f"浏览器会话启动失败: {exc}"
             session = None
         if session is None:
-            for i in shared_indices:
+            for i in copy_indices:
                 results_by_index[i] = result_error(sources[i], start_error)
         else:
             try:
-                for i in shared_indices:
+                for i in copy_indices:
                     source = sources[i]
                     try:
                         results_by_index[i] = _fetch_one_via_session(session, source, limit=limit, timeout_ms=timeout_ms)

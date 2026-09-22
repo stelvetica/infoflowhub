@@ -6,5 +6,11 @@
   },
   "wechat_tool": {
     "base_url": "http://127.0.0.1:5300"
+  },
+  "browser_backend": {
+    "default": "copy",
+    "sources": {},
+    "request_help_timeout": 30,
+    "command_timeout": 120
   }
 }

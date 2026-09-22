@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from apps.subscriptions.models import FeedFetchResult
+from apps.subscriptions.rss_config import browser_backend_for
 from apps.subscriptions.rss_db import save_entries
+from connectors._shared.bsk_session import BskRunnerSession, run_bsk_with_copy_fallback
 from connectors._shared.chrome_runner import CopyRunnerSession
 from connectors._shared.common import CHROME_USER_DATA, USER_AGENT, result_error
 from connectors.alphapai.browser import ALPHAPAI_TARGET_URL
@@ -39,6 +41,11 @@ def _make_session() -> CopyRunnerSession:
     )
 
 
+def _make_bsk_session() -> BskRunnerSession:
+    # bsk 驱动用户自己已登录的 Chromium，蓝宝书单设备登录限制天然满足，无需复制 profile。
+    return BskRunnerSession(start_url=ALPHAPAI_TARGET_URL)
+
+
 def _run_fetch_once(session: CopyRunnerSession, source: dict, *, limit: int, timeout_ms: int) -> FeedFetchResult:
     page = session.acquire_page_by_url(ALPHAPAI_TARGET_URL, timeout_ms=30000)
     try:
@@ -68,6 +75,15 @@ def fetch_alphapai_source(
     timeout_ms: int = 120000,
     session=None,
 ) -> FeedFetchResult:
+    if session is None and browser_backend_for(source) == "bsk":
+        # bsk 失败（BskError 任一子类/超时/登录帮助阻塞，或被 feed.py 吞成非 ok 结果）
+        # 时结束 bsk 会话，回退到复制 profile 路径重试一次；只返回一个结果，故只落一次库。
+        return run_bsk_with_copy_fallback(
+            source=source,
+            bsk_session=_make_bsk_session(),
+            copy_session_factory=_make_session,
+            run_once=lambda active: _run_fetch_once(active, source, limit=limit, timeout_ms=timeout_ms),
+        )
     own_session = session is None
     session = session or _make_session()
     try:

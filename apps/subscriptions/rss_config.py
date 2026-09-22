@@ -61,6 +61,17 @@ def save_sources(sources: List[Dict[str, Any]]) -> None:
 
 DEFAULT_WECHAT_TOOL_BASE = "http://127.0.0.1:5300"
 
+# 浏览器抓取后端：copy = 复制常用 Chrome Default profile 到副本（历史默认，行为不变）；
+# bsk = 用 bsk CLI 驱动用户自己已登录的 Chromium。可按 source id 覆盖，默认不动。
+DEFAULT_BROWSER_BACKEND = "copy"
+BROWSER_BACKENDS = ("copy", "bsk")
+# request_help_timeout：疑似登录/验证码等人的判定上限，用于逐命令的看门狗。
+DEFAULT_REQUEST_HELP_TIMEOUT_SECONDS = 30.0
+# command_timeout：导航这类真正慢的命令交给 bsk 自身的 --timeout，必须远大于前者，
+# 否则正常慢加载会被误判成「疑似登录阻塞」。
+DEFAULT_COMMAND_TIMEOUT_SECONDS = 120.0
+BROWSER_TIMEOUT_BOUNDS = (5.0, 600.0)
+
 
 def _settings_with_defaults(settings: Dict[str, Any]) -> Dict[str, Any]:
     """补齐 settings 默认值，避免调用方各自判空（SSOT：wechat_tool.base_url）。"""
@@ -83,3 +94,52 @@ def load_settings() -> Dict[str, Any]:
             }
         )
     return _settings_with_defaults(load_json_utf8(SETTINGS_PATH))
+
+
+def _bounded_seconds(raw: Any, default: float) -> float:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return default
+    low, high = BROWSER_TIMEOUT_BOUNDS
+    return min(max(value, low), high)
+
+
+def browser_backend_settings(settings: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    """浏览器后端配置的唯一归一化入口（SSOT）：缺省/非法值一律回落默认，调用方不做判断。"""
+    section = (settings if settings is not None else load_settings()).get("browser_backend")
+    if not isinstance(section, dict):
+        section = {}
+    default = str(section.get("default") or DEFAULT_BROWSER_BACKEND).strip().lower()
+    if default not in BROWSER_BACKENDS:
+        default = DEFAULT_BROWSER_BACKEND
+    raw_sources = section.get("sources")
+    sources: Dict[str, str] = {}
+    if isinstance(raw_sources, dict):
+        for key, value in raw_sources.items():
+            backend = str(value or "").strip().lower()
+            if backend in BROWSER_BACKENDS:
+                sources[str(key)] = backend
+    return {
+        "default": default,
+        "sources": sources,
+        "request_help_timeout": _bounded_seconds(
+            section.get("request_help_timeout"), DEFAULT_REQUEST_HELP_TIMEOUT_SECONDS
+        ),
+        "command_timeout": _bounded_seconds(section.get("command_timeout"), DEFAULT_COMMAND_TIMEOUT_SECONDS),
+    }
+
+
+def browser_backend_for(source: Dict[str, Any] | str | None) -> str:
+    """某个源该用哪个浏览器后端：按 source id 覆盖优先，其次全局默认。"""
+    settings = browser_backend_settings()
+    source_id = source if isinstance(source, str) else str((source or {}).get("id") or "")
+    return settings["sources"].get(source_id, settings["default"])
+
+
+def browser_request_help_timeout() -> float:
+    return browser_backend_settings()["request_help_timeout"]
+
+
+def browser_command_timeout() -> float:
+    return browser_backend_settings()["command_timeout"]
