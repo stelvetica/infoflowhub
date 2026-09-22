@@ -51,7 +51,9 @@ WEB_LOG_PATH = RUNTIME_DIR / "web.log"
 LATERHUB_LOG_PATH = RUNTIME_DIR / "logs" / "laterhub.log"
 
 DELETED_SITE_URLS = {"https://www.huxiu.com/member/2321131.html"}
-ENTRIES_PAGE_SIZE = 20
+# 首屏页数要盖过常见窗口的可见行数:否则首屏填不满区格,滚动续载会立刻补一页,
+# 用户会看到「先少后多」的跳动。取 30(订阅行约 33px、稍后处理行约 60px,足够高)。
+ENTRIES_PAGE_SIZE = 30
 REPORTS_DIR = BASE_DIR / "data" / "reports"
 # 「新闻」面板的数据源白名单：只认这两类产物（今日新闻.md 与各 json 一律不计入）
 REPORT_PATTERNS: tuple[tuple[str, str], ...] = (
@@ -65,7 +67,7 @@ MARKDOWN_KINDS: dict[str, str] = {
     "jiuyangongshe_jiucaituanzi": "jiuyangongshe",
     "jiuyangongshe_jiujiubashiyi": "jiuyangongshe",
 }
-LATERHUB_PAGE_SIZE = 10
+LATERHUB_PAGE_SIZE = 30  # 同 ENTRIES_PAGE_SIZE:首屏必须盖过可见行数,避免续载紧接着补页造成跳动
 ENTRIES_READ_CUTOFF = datetime(2026, 5, 1).timestamp()
 ABSOLUTE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 BILIBILI_DYNAMIC_PATH_RE = re.compile(r"^/(\d+)$")
