@@ -176,12 +176,13 @@ button, input, select, textarea { font: inherit; }
 .panel-title-settings-nowrap, .panel-title-settings-nowrap .panel-title-inline { flex-wrap: wrap; align-items: center; }
 .panel-heading-nowrap { white-space: nowrap; }
 
-/* 新闻卡片(小号条带,左栏顶部) */
-.news-card { width: 100%; padding-bottom: var(--sp-3); }
+/* 新闻条带:行高固定,只露 3 行,其余靠滚动续载(表头高=字号×1.5+上下 padding 12px) */
+.news-card { --news-row-h: 24px; --news-head-h: 30px; width: 100%; padding-bottom: var(--sp-3); }
 .news-panel-title { margin-bottom: var(--sp-2); }
 .news-header-form { justify-content: flex-end; }
-.news-card .entries-table td { padding-top: 3px; padding-bottom: 3px; }
+.news-card .entries-table td { height: var(--news-row-h); padding-top: 0; padding-bottom: 0; }
 .news-card .pagination .subtle, .news-card .entries-table th a.sort { font-size: var(--fs-xs); }
+.news-card .table-wrap { max-height: calc(3 * var(--news-row-h) + var(--news-head-h)); }
 
 /* ============================================================
    工具栏与表单控件
@@ -257,9 +258,8 @@ button, input, select, textarea { font: inherit; }
 
 /* 工具栏按钮(搜索/筛选等,跟随输入框档) */
 .toolbar .btn, .filterbar .btn { font-size: var(--fs-sm); }
-/* 小号按钮(表格内操作/分页) */
-.pagination .btn, .source-actions .btn, .laterhub-action-cell .btn,
-.news-card .btn, .news-card #news-unread-slot .btn.ghost {
+/* 小号按钮(表格内操作) */
+.source-actions .btn, .laterhub-action-cell .btn {
   font-size: var(--fs-xs);
   padding: 4px 8px;
 }
