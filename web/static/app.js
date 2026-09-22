@@ -289,7 +289,10 @@
     const count = document.querySelector(descriptor.countSel);
     const tbody = document.querySelector(descriptor.tbodySel);
     if (!count || !tbody) return;
-    count.textContent = countText(loadedRowCount(tbody), state.total);
+    // 总数现读片段根,不用调用方捕获的快照:「完成」改过总数后,在途的续载不该把旧值写回
+    const meta = document.querySelector(descriptor.metaSel);
+    const total = meta ? Number(meta.dataset.total || 0) || state.total : state.total;
+    count.textContent = countText(loadedRowCount(tbody), total);
   }
 
   // 「完成」就地生效:只换那一行(当前筛选不再匹配则移除该行),不重绘整个面板——
