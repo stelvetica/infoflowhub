@@ -1,5 +1,9 @@
 (() => {
   const STORAGE_KEY = "infoflowhub:read-links:v3";
+  // 中缝拖拽:存比例而非像素,窗口缩放后比例依然成立,故无需 resize 监听。
+  const SPLIT_RATIO_KEY = "infoflowhub:laterhub-ratio";
+  const LEGACY_SPLIT_WIDTH_KEY = "infoflowhub:laterhub-width";
+  const SPLIT_MAX_RATIO = 0.6;
   // 每个订阅面板(主订阅区/新闻卡片)独立的交互配置与未读态。
   const panels = [
     {
@@ -392,6 +396,84 @@
     });
   }
 
+  // 中缝拖拽:拖动改左右栏比例,松手即存(存比例,窗口缩放后依然成立)
+  function setupSplitResizer() {
+    const resizer = document.querySelector("[data-split-resizer]");
+    const shell = document.querySelector(".split-shell");
+    if (!resizer || !shell || resizer.dataset.ready === "1") return;
+    resizer.dataset.ready = "1";
+    // 旧的像素宽度键已废弃,留着会让人以为它仍在生效
+    window.localStorage.removeItem(LEGACY_SPLIT_WIDTH_KEY);
+
+    // 下限取 CSS 里的 --laterhub-min,不重复写死像素
+    const minSide = parseFloat(getComputedStyle(shell).getPropertyValue("--laterhub-min")) || 320;
+    const clampRatio = (ratio) => Math.min(SPLIT_MAX_RATIO, Math.max(minSide / shell.clientWidth, ratio));
+
+    const applyRatio = (ratio, persist = false) => {
+      const next = clampRatio(ratio);
+      shell.style.setProperty("--laterhub-width", `${(next * 100).toFixed(2)}%`);
+      resizer.setAttribute("aria-valuenow", String(Math.round(next * 100)));
+      if (persist) window.localStorage.setItem(SPLIT_RATIO_KEY, String(next));
+    };
+
+    const ratioFromClientX = (clientX) => {
+      const bounds = shell.getBoundingClientRect();
+      return (bounds.right - clientX) / bounds.width;
+    };
+
+    let activePointerId = null;
+
+    const stopDragging = (pointerId) => {
+      if (activePointerId === null) return;
+      activePointerId = null;
+      resizer.classList.remove("is-dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      if (pointerId !== undefined && resizer.hasPointerCapture(pointerId)) {
+        resizer.releasePointerCapture(pointerId);
+      }
+    };
+
+    resizer.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      activePointerId = event.pointerId;
+      resizer.classList.add("is-dragging");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      resizer.setPointerCapture(event.pointerId);
+      applyRatio(ratioFromClientX(event.clientX));
+    });
+
+    window.addEventListener("pointermove", (event) => {
+      if (activePointerId === null || event.pointerId !== activePointerId) return;
+      applyRatio(ratioFromClientX(event.clientX));
+    });
+
+    window.addEventListener("pointerup", (event) => {
+      if (activePointerId === null || event.pointerId !== activePointerId) return;
+      applyRatio(ratioFromClientX(event.clientX), true);
+      stopDragging(event.pointerId);
+    });
+
+    window.addEventListener("pointercancel", (event) => {
+      if (activePointerId === null || event.pointerId !== activePointerId) return;
+      stopDragging(event.pointerId);
+    });
+
+    // 键盘替代:聚焦中缝后用左右方向键微调(±2%),同样即调即存
+    resizer.addEventListener("keydown", (event) => {
+      const step = event.key === "ArrowLeft" ? 0.02 : event.key === "ArrowRight" ? -0.02 : 0;
+      if (!step) return;
+      event.preventDefault();
+      const side = shell.querySelector(".split-pane-side");
+      const current = side ? side.getBoundingClientRect().width / shell.clientWidth : 0;
+      applyRatio(current + step, true);
+    });
+
+    const stored = Number(window.localStorage.getItem(SPLIT_RATIO_KEY) || "");
+    if (Number.isFinite(stored) && stored > 0) applyRatio(stored);
+  }
+
   function clearModal() {
     const root = document.getElementById("modal-root");
     if (root) root.innerHTML = "";
@@ -607,6 +689,7 @@
     setupGlobalSearch();
     setupLaterhubOpenedTracking();
     setupLaterhubTagsToggle();
+    setupSplitResizer();
     setupWechatLogin();
   }
 
