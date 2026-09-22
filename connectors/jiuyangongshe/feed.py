@@ -52,6 +52,8 @@ _BLOCK_TAG_RE = re.compile(
     re.IGNORECASE,
 )
 _TAG_RE = re.compile(r"<[^>]+>")
+# 正文里的超链接（公社内容精选就是一篇「带链接的文章清单」，链接是它的核心信息）
+_ANCHOR_RE = re.compile(r"<a\s[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", re.IGNORECASE | re.DOTALL)
 _ARTICLE_ID_IN_LINK_RE = re.compile(r"/a/([a-z0-9]+)")
 _PUBLISHED_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})")
 
@@ -155,8 +157,22 @@ def _payload_string(html_text: str, key: str) -> str:
     return _decode_js_string(raw)
 
 
+def _anchor_to_markdown(match: re.Match[str]) -> str:
+    """`<a href="…">标题</a>` → `[标题](url)`；非 http(s) 链接只保留标题文本。
+
+    公社内容精选本身就是「带链接的文章清单」，链接是它的核心信息，去标签时不能一起丢掉。
+    """
+    href = html.unescape(match.group(1)).strip()
+    label = clean_line(html.unescape(_TAG_RE.sub("", match.group(2))))
+    if not label:
+        return ""
+    if not href.lower().startswith(("http://", "https://")):
+        return label
+    return f"[{label}]({href})"
+
+
 def _extract_article_body(html_text: str) -> str:
-    """提取正文纯文本：payload content → 去标签（块级标签转换行）→ 逐行清理 → 去免责段。
+    """提取正文文本：payload content → 链接转 markdown → 去标签（块级标签转换行）→ 逐行清理 → 去免责段。
 
     免责段（作者利益披露 / 声明）在真实页面里位于 payload 之外的独立 SSR 节点，不会进
     正文；此处再按行首前缀兜底丢弃它及其后全部内容。
@@ -164,6 +180,8 @@ def _extract_article_body(html_text: str) -> str:
     fragment = _payload_string(html_text, CONTENT_KEY)
     if not fragment:
         return ""
+    # 先把 <a> 转成 markdown 链接，再做去标签——否则链接地址会随标签一起被剥掉
+    fragment = _ANCHOR_RE.sub(_anchor_to_markdown, fragment)
     text = _BLOCK_TAG_RE.sub("\n", fragment)
     text = _TAG_RE.sub("", text)
     text = html.unescape(text).replace("\xa0", " ")
