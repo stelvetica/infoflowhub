@@ -4,7 +4,7 @@
 
 {% block body %}
 <div class="shell">
-    <main class="main" id="main-content">
+    <main class="main{% if view != 'settings' %} main-fit{% endif %}" id="main-content">
     <header class="topbar">
       <div class="brand brand-centered">
         <h1>InfoFlowHub</h1>
