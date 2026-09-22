@@ -3,7 +3,7 @@
   'news_unread_only': '1' if news.unread_only else '',
   'news_read_keys': news.read_keys_text,
 } %}
-<div data-news-fragment="1" data-page="{{ news.page }}" data-unread-only="{{ '1' if news.unread_only else '0' }}" data-read-keys="{{ news.read_keys_text }}" data-panel-kind="news">
+<div data-news-fragment="1" data-page="{{ news.page }}" data-total-pages="{{ news.total_pages }}" data-total="{{ news.filtered_total }}" data-unread-only="{{ '1' if news.unread_only else '0' }}" data-read-keys="{{ news.read_keys_text }}" data-panel-kind="news">
   <div class="table-wrap">
     <table class="entries-table news-table">
       <colgroup>
@@ -40,12 +40,6 @@
     </table>
   </div>
   <div class="pagination pagination-tight pagination-aligned">
-    <div class="subtle">第 {{ news.page }} / {{ news.total_pages }} 页，共 {{ news.filtered_total }} 条</div>
-    <div class="toolbar">
-      {% set prev_page = news.page - 1 if news.page > 1 else 1 %}
-      {% set next_page = news.page + 1 if news.page < news.total_pages else news.total_pages %}
-      <button class="btn ghost {% if news.page <= 1 %}disabled{% endif %}" type="button" {% if news.page > 1 %}hx-get="/fragments/news?{{ base_params|urlencode }}&news_sort={{ news.sort }}&news_dir={{ news.dir }}&news_page={{ prev_page }}" hx-target="#news-panel" hx-swap="innerHTML"{% else %}disabled{% endif %}>上一页</button>
-      <button class="btn ghost {% if news.page >= news.total_pages %}disabled{% endif %}" type="button" {% if news.page < news.total_pages %}hx-get="/fragments/news?{{ base_params|urlencode }}&news_sort={{ news.sort }}&news_dir={{ news.dir }}&news_page={{ next_page }}" hx-target="#news-panel" hx-swap="innerHTML"{% else %}disabled{% endif %}>下一页</button>
-    </div>
+    <div class="subtle">已加载 {{ news.rows|length }} / 共 {{ news.filtered_total }} 条</div>
   </div>
 </div>

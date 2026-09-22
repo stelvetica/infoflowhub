@@ -222,6 +222,19 @@
   const autoLoadPages = new WeakMap();
   const autoLoadPanels = [
     {
+      key: "news",
+      metaSel: "[data-news-fragment]",
+      wrapSel: "#news-panel .table-wrap",
+      tbodySel: "#news-panel tbody",
+      countSel: "#news-panel .pagination .subtle",
+      loading: false,
+      nextUrl(page) {
+        const panel = findPanel("news");
+        const params = panel ? buildPanelQuery(panel, { news_page: String(page) }) : null;
+        return params ? `${panel.fragmentUrl}?${params.toString()}` : "";
+      },
+    },
+    {
       key: "entries",
       metaSel: "[data-entries-fragment]",
       wrapSel: "#entries-panel .table-wrap",
