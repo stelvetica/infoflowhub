@@ -292,6 +292,16 @@ button, input, select, textarea { font: inherit; }
    表格
    ============================================================ */
 .table-wrap { overflow: auto; overflow-x: auto; scrollbar-gutter: stable both-edges; scroll-padding-top: 30px; }
+/* 滚动条静止隐藏,滚动时才浮现(app.js 加 .is-scrolling);轨道留白避免出现时布局跳动。
+   只用 ::-webkit-scrollbar 定制:声明 scrollbar-width 会让 Chrome 忽略这套伪元素样式 */
+.table-wrap::-webkit-scrollbar { width: 10px; height: 10px; }
+.table-wrap::-webkit-scrollbar-track { background: transparent; }
+.table-wrap::-webkit-scrollbar-corner { background: transparent; }
+.table-wrap::-webkit-scrollbar-thumb {
+  background: transparent; border-radius: var(--radius-pill);
+  transition: background-color 0.18s ease;
+}
+.table-wrap.is-scrolling::-webkit-scrollbar-thumb { background: rgba(89, 99, 110, 0.42); }
 table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 th, td { padding: 6px 8px; border-bottom: 1px solid var(--line-soft); text-align: left; vertical-align: top; }
 tbody tr:last-child td { border-bottom: none; }

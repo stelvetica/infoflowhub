@@ -281,11 +281,80 @@
     return [...tbody.querySelectorAll("tr")].filter((row) => !row.querySelector(".empty")).length;
   }
 
+  function countText(loaded, total) {
+    return `已加载 ${loaded} / 共 ${total} 条`;
+  }
+
   function updateAutoLoadCount(descriptor, state) {
     const count = document.querySelector(descriptor.countSel);
     const tbody = document.querySelector(descriptor.tbodySel);
     if (!count || !tbody) return;
-    count.textContent = `已加载 ${loadedRowCount(tbody)} / 共 ${state.total} 条`;
+    count.textContent = countText(loadedRowCount(tbody), state.total);
+  }
+
+  // 「完成」就地生效:只换那一行(当前筛选不再匹配则移除该行),不重绘整个面板——
+  // 面板整块重绘会丢掉已续载的行与滚动位置。总数取自响应里的片段根 data-total。
+  function setupLaterhubFinishForms() {
+    document.querySelectorAll(".laterhub-action-cell form[data-toggle-url]").forEach((form) => {
+      if (form.dataset.finishReady === "1") return;
+      form.dataset.finishReady = "1";
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const button = form.querySelector("button");
+        if (button) button.disabled = true;
+        try {
+          const response = await fetch(form.dataset.toggleUrl, {
+            method: "POST",
+            body: new FormData(form),
+            credentials: "same-origin",
+          });
+          if (!response.ok) throw new Error(String(response.status));
+          applyLaterhubToggle(await response.text(), form.dataset.linkId || form.closest("tr")?.dataset.linkId);
+        } catch {
+          if (button) button.disabled = false; // 失败保持原样,可再点
+        }
+      });
+    });
+  }
+
+  function applyLaterhubToggle(html, linkId) {
+    const row = document.querySelector(`.pane-right-stack tr[data-link-id="${linkId}"]`);
+    if (!row) return;
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const fresh = parsed.querySelector(`tr[data-link-id="${linkId}"]`);
+    if (fresh) {
+      row.replaceWith(document.importNode(fresh, true));
+    } else {
+      // 当前筛选(如「未处理」)已不含该条目
+      row.remove();
+    }
+    const total = parsed.querySelector("[data-laterhub-fragment]")?.dataset.total;
+    const meta = document.querySelector("[data-laterhub-fragment]");
+    if (total && meta) meta.dataset.total = total;
+    const count = document.querySelector(".pane-right-stack .pagination .subtle");
+    const tbody = document.querySelector(".pane-right-stack tbody");
+    if (count && tbody && total) count.textContent = countText(loadedRowCount(tbody), total);
+    setupLaterhubFinishForms();
+    setupLaterhubOpenedTracking();
+    applyReadState();
+    const descriptor = autoLoadPanels.find((item) => item.key === "laterhub");
+    if (descriptor) fillAutoLoadPanel(descriptor); // 移除一行后若区格变空,顺手补上
+  }
+
+  // 表格滚动条:静止时不显示,滚动时才浮现(Windows Chrome 默认那条带箭头的粗条太抢眼)
+  const SCROLLBAR_IDLE_MS = 1000;
+
+  function setupScrollbarReveal() {
+    document.querySelectorAll(".table-wrap").forEach((wrap) => {
+      if (wrap.dataset.scrollbarReady === "1") return;
+      wrap.dataset.scrollbarReady = "1";
+      let timer = null;
+      wrap.addEventListener("scroll", () => {
+        wrap.classList.add("is-scrolling");
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => wrap.classList.remove("is-scrolling"), SCROLLBAR_IDLE_MS);
+      });
+    });
   }
 
   async function appendNextPage(descriptor) {
@@ -314,6 +383,7 @@
       updateAutoLoadCount(descriptor, state);
       applyReadState();
       setupLaterhubOpenedTracking();
+      setupLaterhubFinishForms();
       return true;
     } catch {
       // 失败不打断浏览:计数行提示,继续滚动会再试
@@ -835,6 +905,8 @@
     setupLaterhubTagsToggle();
     setupSplitResizer();
     setupWechatLogin();
+    setupLaterhubFinishForms();
+    setupScrollbarReveal();
     autoLoadPanels.forEach((descriptor) => {
       bindAutoLoadScroll(descriptor);
       fillAutoLoadPanel(descriptor);
