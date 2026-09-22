@@ -59,7 +59,7 @@
         <tbody>
           {% if laterhub.rows %}
             {% for item in laterhub.rows %}
-            <tr>
+            <tr data-link-id="{{ item.id }}">
               <td class="cell-time cell-time-small">{{ item.display_time }}</td>
               <td class="laterhub-link-cell">
                 <div class="cell-ellipsis" title="{{ item.title }}">
@@ -74,7 +74,8 @@
                 <div class="subtle cell-ellipsis" title="{{ item.tags_text or '-' }}">{{ item.tags_text or '-' }}</div>
               </td>
               <td class="laterhub-action-cell laterhub-action-cell-small">
-                <form hx-post="/actions/laterhub/{{ item.id }}/toggle-finished?{{ params|urlencode }}&{{ laterhub.state_query }}" hx-target="#laterhub-panel" hx-swap="innerHTML">
+                {# 提交交给 app.js 就地换行:整块重绘面板会丢掉已续载的行与滚动位置 #}
+                <form data-toggle-url="/actions/laterhub/{{ item.id }}/toggle-finished?{{ params|urlencode }}&{{ laterhub.state_query }}">
                   <input type="hidden" name="finished" value="{{ 0 if item.is_finished else 1 }}">
                   <button class="btn {% if item.is_finished %}secondary{% endif %}" type="submit">{{ '未完成' if item.is_finished else '完成' }}</button>
                 </form>
