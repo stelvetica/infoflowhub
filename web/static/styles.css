@@ -371,7 +371,6 @@ td { font-size: var(--fs-sm); }
 /* 分页 */
 .pagination { margin-top: var(--sp-3); display: flex; justify-content: space-between; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
 .pagination .subtle { font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
-.pagination-aligned { min-height: 40px; }
 
 /* ============================================================
    辅助组件
