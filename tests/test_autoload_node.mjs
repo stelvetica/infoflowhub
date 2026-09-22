@@ -65,6 +65,7 @@ function makeForm(fields) {
 // 一次「打开页面」:全新 DOM;表格长度按已加载页数推算,越加越长
 function loadPage({ totalPages, wrapHeight, preloadedPages = 1, failFrom = null }) {
   const fetched = [];
+  const processed = [];
   const tbody = makeElement();
   let loadedPages = preloadedPages;
   const rows = () => tbody.innerHTML.split("<tr").length - 1;
@@ -73,6 +74,10 @@ function loadPage({ totalPages, wrapHeight, preloadedPages = 1, failFrom = null 
   tbody.insertAdjacentHTML = (position, html) => {
     if (position === "beforeend") tbody.innerHTML += html;
   };
+  // children 按行数实时生成,用于验证「只把新追加的行交给 HTMX process」
+  Object.defineProperty(tbody, "children", {
+    get: () => Array.from({ length: rows() }, (_, index) => ({ __row: index })),
+  });
   tbody.innerHTML = Array.from({ length: preloadedPages * ROWS_PER_PAGE }, () => "<tr><td>条目</td></tr>").join("");
 
   const wrap = makeElement({ scrollTop: 0, clientHeight: wrapHeight });
@@ -90,7 +95,7 @@ function loadPage({ totalPages, wrapHeight, preloadedPages = 1, failFrom = null 
   globalThis.window = globalThis;
   globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
   globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
-  globalThis.htmx = { ajax() {} };
+  globalThis.htmx = { ajax() {}, process: (node) => processed.push(node) };
   globalThis.FormData = class {
     constructor(target) {
       this._fields = target._fields;
@@ -137,7 +142,7 @@ function loadPage({ totalPages, wrapHeight, preloadedPages = 1, failFrom = null 
   new Function(source)();
   globalThis.__domReady();
 
-  return { fetched, wrap, tbody, count, rows, scrollTo: (top) => { wrap.scrollTop = top; wrap.fire("scroll"); } };
+  return { fetched, processed, wrap, tbody, count, rows, scrollTo: (top) => { wrap.scrollTop = top; wrap.fire("scroll"); } };
 }
 
 // 用例1: 首屏没填满 → 自动续到填满为止(300px 区:1 页 125px 不满,2 页 250px 不满,3 页 375px 才满)
@@ -149,6 +154,9 @@ function loadPage({ totalPages, wrapHeight, preloadedPages = 1, failFrom = null 
   assert(page.fetched[1].includes("entries_page=3"), "仍未填满则继续取第 3 页");
   assert(page.rows() === 3 * ROWS_PER_PAGE, "追加的行进入表格");
   assert(page.count.textContent === "已加载 15 / 共 25 条", "计数行改为已加载条数");
+  // 追加的行必须交给 HTMX process,否则行内 hx-post(「完成」按钮)是死的
+  assert(page.processed.length === 2 * ROWS_PER_PAGE, "只把新追加的行交给 HTMX process");
+  assert(page.processed.every((node) => node && node.__row !== undefined), "process 收到的确实是追加的行");
 }
 
 // 用例2: 已填满则不预取;滚到接近底部才续载,顶部滚动不触发

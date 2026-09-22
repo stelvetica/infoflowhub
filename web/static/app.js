@@ -305,7 +305,11 @@
       const source = new DOMParser().parseFromString(html, "text/html").querySelector("tbody");
       const target = document.querySelector(descriptor.tbodySel);
       if (!source || !target) return false;
+      const existingRows = target.children.length;
       target.insertAdjacentHTML("beforeend", source.innerHTML);
+      // 追加的行没经过 HTMX 交换,需手动 process 才能让 hx-post 等属性生效(否则「完成」按钮是死的)
+      const appendedRows = [...target.children].slice(existingRows);
+      if (window.htmx?.process) appendedRows.forEach((row) => window.htmx.process(row));
       autoLoadPages.set(state.meta, loaded + 1);
       updateAutoLoadCount(descriptor, state);
       applyReadState();
