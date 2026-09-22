@@ -77,6 +77,33 @@ def test_extract_body_without_payload_is_empty():
     assert jygs._extract_article_body("<html><body><div class='text-box'></div></body></html>") == ""
 
 
+def test_extract_body_keeps_article_links_as_markdown():
+    """公社内容精选是「带链接的文章清单」，<a> 必须转成 markdown 链接而不是随标签丢掉。"""
+    html = (
+        '<script>window.__NUXT__={data:[{data:{article_id:f,title:"精选",content:"'
+        '\\u003Cp\\u003E\\u003Ca target=\\"_blank\\" href=\\"https://www.jiuyangongshe.com/a/2z9a2wbfwtt\\" '
+        'style=\\"color:#337DF2\\"\\u003E玻璃基板：产业渐行渐近\\u003C\\u002Fa\\u003E\\u003C\\u002Fp\\u003E"'
+        '}}]}</script>'
+    )
+
+    body = jygs._extract_article_body(html)
+
+    assert "[玻璃基板：产业渐行渐近](https://www.jiuyangongshe.com/a/2z9a2wbfwtt)" in body
+
+
+def test_extract_body_downgrades_non_http_link_to_plain_text():
+    """非 http(s) 链接（如 javascript:）只留标题文本，不产出可点击的 md 链接。"""
+    html = (
+        '<script>window.__NUXT__={data:[{data:{article_id:f,title:"t",content:"'
+        '\\u003Cp\\u003E\\u003Ca href=\\"javascript:alert(1)\\"\\u003E点我\\u003C\\u002Fa\\u003E\\u003C\\u002Fp\\u003E"'
+        '}}]}</script>'
+    )
+
+    body = jygs._extract_article_body(html)
+
+    assert body == "点我"
+
+
 def test_extract_meta_prefers_ssr_nodes():
     title, published = jygs._extract_article_meta(_fixture(QUOTES_HTML), "2gt9adzuhvm", "回退时间")
 
