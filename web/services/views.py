@@ -693,7 +693,9 @@ def build_news_state_params(query: Mapping[str, Any]) -> dict[str, str]:
         "news_q": str(query.get("news_q", "") or ""),
         "news_sort": str(query.get("news_sort") or "sort_time"),
         "news_dir": str(query.get("news_dir") or "desc"),
-        "news_unread_only": "1" if unread_only is None else str(unread_only),
+        # 新闻与订阅的默认刻意不同:新闻是产物清单(条数少、常回看),缺省显示全部;
+        # 订阅缺省只看未读(build_entries_state_params 里为 "1")
+        "news_unread_only": "0" if unread_only is None else str(unread_only),
         "news_read_keys": str(query.get("news_read_keys", "") or ""),
     }
 

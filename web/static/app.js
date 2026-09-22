@@ -24,7 +24,7 @@
       slotSel: "#news-unread-slot",
       fragmentUrl: "/fragments/news",
       prefix: "news",
-      unreadOnly: true,
+      unreadOnly: false, // 与订阅相反:新闻缺省显示全部(服务端 build_news_state_params 同此默认)
       button: null,
       lastSyncSignature: "",
     },
