@@ -317,7 +317,7 @@
     },
     {
       "id": "alphapai-social-media",
-      "name": "资讯 Alpha派公众号",
+      "name": "公众号 Alpha派公众号",
       "group": "投研",
       "feed_url": "https://alphapai-web.rabyte.cn/reading/social-media/index",
       "site_url": "https://alphapai-web.rabyte.cn/reading/social-media/index",
@@ -326,7 +326,7 @@
       "kind": "web",
       "enabled": true,
       "note": "Alpha派社媒默认页（星标订阅+paipai筛选聚合），bsk 驱动用户已登录 Chromium 只读默认 DOM，不点任何筛选",
-      "channel": "alphapai",
+      "channel": "alphapai_social",
       "auth_key": "alphapai_main",
       "fallback_mode": "none"
     },
