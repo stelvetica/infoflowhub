@@ -46,22 +46,19 @@
               {# id 用产物文件名派生（文件在目录内唯一），续载是追加多批，只靠 loop.index 会撞 id；点号换成连字符以免选择器解析出错 #}
               {% set report_id = 'news-report-%s-%s' % (item.name|replace('.', '-'), loop.index0) %}
               <div class="news-detail">
+                {# 嵌入展开暂停中:点标题回到新窗口打开独立报告页。
+                   恢复方式=把 hx-get/hx-target/hx-swap 与 aria-expanded/aria-controls 加回这个 <a>,
+                   服务端路由 /fragments/news-report/{name} 与下面的 .news-report-row 容器都还在。 #}
                 <a class="cell-ellipsis cell-link cell-unread read-track news-title-link"
                    href="{{ item.link }}"
                    data-read-key="{{ item.read_key }}"
-                   data-read-no-refresh="1"
-                   hx-get="/fragments/news-report/{{ item.name|urlencode }}"
-                   hx-target="#{{ report_id }}"
-                   hx-swap="innerHTML"
-                   hx-on::before-request="this.setAttribute('aria-expanded','true')"
-                   hx-on::response-error="this.setAttribute('aria-expanded','false')"
-                   aria-expanded="false"
-                   aria-controls="{{ report_id }}"
+                   target="_blank"
+                   rel="noreferrer"
                    title="{{ item.title }}">{{ item.title }}</a>
               </div>
             </td>
           </tr>
-          {# 展开内容独占整行:避免被塞进标题列后,前两列被撑高却无内容形成左侧空白带 #}
+          {# 就地展开的内容容器:随嵌入展开一起暂停(空 div 零高度,不占位);恢复展开时直接复用 #}
           <tr class="news-report-row"><td colspan="3"><div class="news-report" id="{{ report_id }}"></div></td></tr>
           {% endfor %}
         {% else %}
