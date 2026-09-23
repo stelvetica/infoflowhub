@@ -157,6 +157,19 @@
     const cookieParams = new URLSearchParams();
     cookieParams.set(`${panel.prefix}_unread_only`, unreadInput.value || "");
     cookieParams.set(`${panel.prefix}_read_keys`, readKeysInput.value || "");
+    // 范围状态(目前仅新闻面板)从片段根 data-<prefix>-scope 读回,让未读切换/续载带上当前范围
+    const scopeValue = getPanelFragment(panel)?.dataset[`${panel.prefix}Scope`];
+    if (scopeValue !== undefined) {
+      let scopeInput = form.querySelector(`input[name="${panel.prefix}_scope"]`);
+      if (!scopeInput) {
+        scopeInput = document.createElement("input");
+        scopeInput.type = "hidden";
+        scopeInput.name = `${panel.prefix}_scope`;
+        form.appendChild(scopeInput);
+      }
+      scopeInput.value = scopeValue || "";
+      cookieParams.set(`${panel.prefix}_scope`, scopeInput.value);
+    }
     // 关键字统一来自顶栏全局搜索框(设置页无全局框时回退表单字段)
     const globalInput = document.getElementById("global-search");
     const keyword = globalInput?.value ?? form.querySelector(`input[name="${panel.prefix}_q"]`)?.value ?? "";
@@ -266,7 +279,10 @@
   }
 
   function loadedRowCount(tbody) {
-    return [...tbody.querySelectorAll("tr")].filter((row) => !row.querySelector(".empty")).length;
+    // 新闻表每行数据后跟一条 .news-report-row(展开内容行),它不是数据行,计数须排除
+    return [...tbody.querySelectorAll("tr")].filter(
+      (row) => !row.querySelector(".empty") && !row.classList.contains("news-report-row"),
+    ).length;
   }
 
   function countText(loaded, total) {
@@ -509,7 +525,8 @@
         setEntryReadState(anchor, true);
         syncPanelFields(panel);
         syncReadStateToServer(explicitReadKey || readLinkKey(href)).then(() => {
-          if (panel.unreadOnly) {
+          // 内联展开的标题(data-read-no-refresh)标记已读后不刷新面板,否则展开的内容会被重绘掉
+          if (panel.unreadOnly && !anchor.dataset.readNoRefresh) {
             refreshPanel(panel);
           }
         });
@@ -560,6 +577,10 @@
     renderUnreadToggle(panel);
     const currentReadKeys = getReadKeys().join(",");
     if (!meta) return;
+// 面板内有展开的内联报告时跳过签名驱动的重绘:重绘会清空 .news-report,用户刚展开的内容随即消失。
+    // 已读状态存在全局 localStorage,在订阅面板点击也会改到本面板的签名,故必须在这里统一拦。
+    // 收起后差异仍在,下一次 init(任意 afterSwap)会补刷,状态不会丢。
+    if (document.querySelector(`${panel.panelSel} .news-report:not(:empty)`)) return;
     const renderedSignature = `${meta.dataset.unreadOnly || "0"}|${meta.dataset.readKeys || ""}`;
     const targetSignature = `${panel.unreadOnly ? "1" : "0"}|${currentReadKeys}`;
     if (renderedSignature !== targetSignature && panel.lastSyncSignature !== targetSignature) {
@@ -784,6 +805,22 @@
     fetchNow.timer = window.setTimeout(pollFetchStatus, 1500);
   }
 
+  // 流程状态片段由 HTMX 自己轮询(运行中 every 10s,终态不带触发器,空闲零请求)。
+  // 这里只在「片段被换成终态」时补一次产物刷新:flow 范围的产物清单在流程收尾时才写入,
+  // 故必须等终态出现后再刷,运行中刷也没用。按 flow_id 去重,避免重复刷新。
+  const flowWatch = { refreshedFlowId: "" };
+
+  function syncNewsAfterFlow() {
+    const node = document.querySelector("[data-flow-status]");
+    if (!node) return;
+    const status = node.dataset.flowStatus || "";
+    const flowId = node.dataset.flowId || "";
+    if (status === "running" || !flowId || flowWatch.refreshedFlowId === flowId) return;
+    flowWatch.refreshedFlowId = flowId;
+    const panel = findPanel("news");
+    if (panel) refreshPanel(panel);
+  }
+
   function init() {
     applyReadState();
     panels.forEach((panel) => setupUnreadToggle(panel));
@@ -855,4 +892,12 @@
   window.infoflowhub = { clearModal, closeModal };
   document.addEventListener("DOMContentLoaded", init);
   document.body.addEventListener("htmx:afterSwap", init);
+  // 流程终态落盘后刷新产物列表(运行中的状态更新由片段自身轮询负责)。
+  // 必须限定 swap 目标是状态片段自身:此前不判目标,用户点开报告(swap 目标是 .news-report)
+  // 也会触发,首次调用时 refreshedFlowId 为空串 → 命中刷新分支,刚插入的报告内容被整面板重绘清空。
+  document.body.addEventListener("htmx:afterSwap", (event) => {
+    const target = event.detail && event.detail.target;
+    if (!target || target.id !== "news-flow-status") return;
+    syncNewsAfterFlow();
+  });
 })();

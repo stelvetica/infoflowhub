@@ -1,0 +1,15 @@
+{# 报告内联内容片段：md 渲染结果或图片；/reports/view 旧入口仍保留，这里提供同能力入口。
+   收起按钮用 hx-on 内联处理：展开内容已独占整行、按钮在 .news-report 内部，
+   故用自身容器 id 反查标题链接(aria-controls)并复位 aria-expanded。 #}
+<div class="news-report-inner">
+  <div class="news-report-bar">
+    <a class="btn ghost" href="/reports/view/{{ name|urlencode }}" target="_blank" rel="noreferrer">在新页面打开</a>
+    <button type="button" class="btn ghost" aria-label="收起内容"
+            hx-on:click="const box=this.closest('.news-report'); if(!box){return;} const a=document.querySelector('.news-title-link[aria-controls=&quot;'+box.id+'&quot;]'); box.innerHTML=''; if(a){a.setAttribute('aria-expanded','false');}">收起</button>
+  </div>
+  {% if is_image %}
+  <img class="news-report-image" src="/reports/raw/{{ name|urlencode }}" alt="{{ title }}" loading="lazy">
+  {% else %}
+  <div class="news-report-md">{{ body_html|safe }}</div>
+  {% endif %}
+</div>

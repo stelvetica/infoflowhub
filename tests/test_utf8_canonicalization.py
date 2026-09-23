@@ -2,7 +2,18 @@ from __future__ import annotations
 
 from apps.subscriptions import rss_db, runtime_health
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
+from infra.utf8_json import dump_json_utf8, load_json_utf8
 from web.services import views
+
+
+def test_dump_json_utf8_atomic_write_creates_parent_and_leaves_no_temp(tmp_path):
+    """M1：同目录临时文件 + os.replace 写入——父目录自动创建、无 BOM、不留临时文件。"""
+    target = tmp_path / "nested" / "automation_runtime.json"
+    dump_json_utf8(target, {"last_run_date": "2026-09-22"})
+    assert load_json_utf8(target) == {"last_run_date": "2026-09-22"}
+    assert target.read_bytes()[:3] != b"\xef\xbb\xbf"  # UTF-8 无 BOM
+    # 临时文件已 os.replace 掉，目录里只剩目标文件
+    assert [p.name for p in target.parent.iterdir()] == [target.name]
 
 
 def test_update_source_health_normalizes_source_name_and_error(monkeypatch, tmp_path):

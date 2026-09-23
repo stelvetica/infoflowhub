@@ -185,6 +185,57 @@ button, input, select, textarea { font: inherit; }
 .news-card .pagination .subtle, .news-card .entries-table th a.sort { font-size: var(--fs-xs); }
 .news-card .table-wrap { max-height: calc(3 * var(--news-row-h) + var(--news-head-h) + 3px); }
 
+/* 展开报告时解除上面的 3 行限高:改由报告内容区自身限高滚动,并给新闻卡设总高上限,
+   避免两万多像素的长报告把下方「订阅内容」卡挤没。:has() 让「是否展开」纯由 DOM 状态决定,
+   无需 JS 同步类名(收起按钮清空 .news-report 后自动回落)。 */
+.news-card:has(.news-report:not(:empty)) .table-wrap { max-height: none; }
+.news-report:not(:empty) { max-height: 50vh; overflow: auto; }
+.news-card:has(.news-report:not(:empty)) { max-height: 62vh; }
+
+/* 新闻流程状态条 + 范围切换(紧凑一档,复用 chip/status 变量) */
+.news-flow-status {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-xs); color: var(--muted);
+}
+.news-flow-status .news-flow-text strong { color: var(--text); }
+.news-flow-status.is-partial { color: var(--warn); }
+.news-flow-status.is-partial .news-flow-text strong { color: var(--warn); }
+.news-flow-status.is-error { color: var(--danger); }
+.news-flow-status.is-error .news-flow-text strong { color: var(--danger); }
+.news-flow-dot {
+  width: 8px; height: 8px; flex: none; border-radius: 50%;
+  background: var(--accent); animation: news-flow-pulse 1.2s ease-in-out infinite;
+}
+@keyframes news-flow-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+.news-flow-errors { color: var(--danger); }
+
+.news-scope-bar { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.news-scope-bar .chip { padding: 2px 9px; font-size: var(--fs-2xs); text-decoration: none; }
+
+/* 内联展开的报告内容:图片与表格都不得撑破表格/面板布局 */
+.news-detail { min-width: 0; }
+.news-title-link[aria-expanded="true"] { font-weight: 600; }
+/* 展开内容独占整行(colspan=3):单元格去内边距/边框,空 div 零高度 → 未展开时该行不占位。
+   选择器需压过 .news-card .entries-table td 的固定行高,故提升到同层 specificity。 */
+.news-card .entries-table .news-report-row td { height: auto; padding: 0; border-top: none; border-bottom: none; }
+.news-report { margin-top: var(--sp-2); }
+.news-report:empty { margin-top: 0; }
+.news-report-bar { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.news-report-bar .btn { padding: 2px 8px; font-size: var(--fs-xs); }
+.news-report-image {
+  display: block; max-width: 100%; height: auto;
+  border: 1px solid var(--line-soft); border-radius: var(--radius-sm);
+}
+.news-report-md { max-width: 100%; overflow-wrap: anywhere; font-size: var(--fs-sm); line-height: 1.6; }
+.news-report-md h1, .news-report-md h2, .news-report-md h3, .news-report-md h4 { font-size: var(--fs-md); margin: 10px 0 6px; }
+.news-report-md p { margin: 6px 0; }
+.news-report-md ul, .news-report-md ol { margin: 6px 0; padding-left: 20px; }
+.news-report-md table { width: 100%; table-layout: auto; font-size: var(--fs-xs); }
+.news-report-md th, .news-report-md td { border: 1px solid var(--line-soft); padding: 4px 6px; }
+.news-report-md th { background: var(--panel-muted); }
+.news-report-md code { background: var(--panel-muted); border-radius: 4px; padding: 1px 4px; font-family: var(--font-mono); }
+
 /* ============================================================
    工具栏与表单控件
    ============================================================ */

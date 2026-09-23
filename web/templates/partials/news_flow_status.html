@@ -1,0 +1,36 @@
+{# 最近一次自动化流程状态条：运行中自带 10s HTMX 轮询，终态不带触发器（空闲零请求）。
+   终态产物列表刷新由 app.js 的 htmx:afterSwap 钩子处理（见 syncNewsAfterFlow）。
+   ponytail: 终态页面不会自己发现「新流程开始」（那需要常驻轮询，与空闲零请求冲突）；
+   页面在流程开始前就已打开且停在终态时，需手动刷新才能看到运行态。升级路径=把流程开始也做成事件源。 #}
+{% set status = flow.get('status') or '' %}
+{% set skills = flow.get('skills') or [] %}
+<div id="news-flow-status"
+     class="news-flow-status{% if status %} is-{{ status }}{% endif %}"
+     data-flow-status="{{ status }}"
+     data-flow-id="{{ flow.get('flow_id') or '' }}"
+     role="status"
+     aria-live="polite"
+     {% if status == 'running' %}hx-get="/fragments/news-flow-status" hx-trigger="every 10s" hx-swap="outerHTML"{% endif %}>
+  {% if not status %}
+  <span class="subtle">暂无自动化流程记录</span>
+  {% elif status == 'running' %}
+  <span class="news-flow-dot" aria-hidden="true"></span>
+  <span class="news-flow-text"><strong>流程运行中</strong>
+    {# 计数只算 success：skills|length 会把正在跑的那项也当成已完成 #}
+    {%- if skills %} · 阶段：技能 {{ skills[-1].get('name') }}（已完成 {{ skills|selectattr('status', 'eq', 'success')|list|length }} 项）
+    {%- else %} · 阶段：抓取订阅与稍后处理{% endif %}
+    {%- if flow.get('started_at') %} · 开始于 {{ flow.get('started_at') }}{% endif %}
+  </span>
+  {% else %}
+  {% set status_text = {'success': '成功', 'partial': '部分失败', 'error': '失败'}.get(status, status) %}
+  <span class="news-flow-text">最近流程 <strong>{{ status_text }}</strong>
+    {%- if flow.get('finished_at') %} · 完成于 {{ flow.get('finished_at') }}{% endif %}
+    · 新增产物 {{ (flow.get('products') or [])|length }} 个
+  </span>
+  {% set failed = skills|selectattr('status', 'ne', 'success')|list %}
+  {% if failed %}
+  <span class="news-flow-errors">失败：{% for item in failed %}{{ item.get('name') }}（{{ item.get('status') }}）{% if not loop.last %}、{% endif %}{% endfor %}</span>
+  {% endif %}
+  {% if flow.get('error') %}<span class="news-flow-errors">{{ flow.get('error') }}</span>{% endif %}
+  {% endif %}
+</div>
