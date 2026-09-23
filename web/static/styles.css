@@ -508,11 +508,13 @@ td { font-size: var(--fs-sm); }
 .auth-assets-table th:nth-child(1) { width: 180px; }
 .auth-assets-table th:nth-child(2) { width: 110px; }
 .auth-assets-table th:nth-child(3) { width: 150px; }
-.auth-assets-table th:nth-child(4) { width: 160px; }
+.auth-assets-table th:nth-child(4) { width: 210px; }
 .auth-assets-table th:nth-child(5) { width: auto; }
 .auth-assets-table td { vertical-align: middle; }
 .auth-assets-table .btn { font-size: var(--fs-xs); padding: 4px 8px; min-width: 68px; white-space: nowrap; }
-.auth-actions-cell { white-space: nowrap; }
+/* 操作列的提示文案（如「请在日常 Chrome 登录 Alpha派」）比 160px 列宽长，
+   禁止换行会横向溢出压到说明列；按钮自带 nowrap，放开单元格换行不会拆散按钮。 */
+.auth-actions-cell { white-space: normal; }
 .auth-actions-cell form { display: inline-flex; margin: 0 6px 0 0; }
 .auth-row-warning { background: rgba(255, 248, 197, 0.28); }
 .auth-row-expired { background: rgba(255, 235, 233, 0.32); }
