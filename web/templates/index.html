@@ -76,13 +76,6 @@
                 <div id="runtime-status-panel" aria-live="polite">
                   {% include "partials/runtime_status.html" %}
                 </div>
-                <a
-                  class="btn ghost wechat-renew-btn {% if settings.wechat_auth['should_highlight_renew'] %}warn wechat-renew-btn-active{% endif %}"
-                  href="{{ settings.wechat_entries_login_url }}"
-                  title="{% if settings.wechat_auth['should_highlight_renew'] %}微信读书登录态将过期，请扫码重登{% else %}打开微信读书扫码续期页{% endif %}"
-                >
-                  微信续期
-                </a>
               </div>
               <form class="toolbar toolbar-inline toolbar-inline-spread entries-header-form entries-header-form-right">
                 <input type="hidden" name="entries_sort" value="{{ entries.sort }}">

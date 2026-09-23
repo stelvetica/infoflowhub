@@ -61,54 +61,6 @@ Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue | Stop-Process -Fo
 Write-Host "[OK] Old processes cleaned" -ForegroundColor Green
 
 # ============================================================
-# Phase 1.5: Ensure wechat-mp-tools (公众号外部工具, port 5300)
-# 微信 9 源走 weread:// 轻量协议，依赖该工具；已运行则不重复拉起。
-# ============================================================
-Write-Host "=== Phase 1.5: Ensuring wechat-mp-tools (port 5300) ===" -ForegroundColor Cyan
-
-$mpToolDir = Join-Path $root "wechat-mp-tools"
-$mpToolPort = 5300
-$mpToolUp = netstat -ano -p tcp | Select-String "LISTENING" | Select-String ":$mpToolPort"
-if ($mpToolUp) {
-    Write-Host "[OK] wechat-mp-tools already running on $mpToolPort" -ForegroundColor Green
-} elseif ((Test-Path $mpToolDir) -and (Test-Path (Join-Path $mpToolDir "venv312\Scripts\python.exe"))) {
-    $mpToolPython = Join-Path $mpToolDir "venv312\Scripts\python.exe"
-    $mpLog = Join-Path $logDir "mp_tools.log"
-    $mpCommand = "Set-Location '$mpToolDir'; & '$mpToolPython' app.py --port $mpToolPort --no-browser *>> '$mpLog'"
-    Start-Process powershell -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Command", $mpCommand -WindowStyle Hidden
-    $deadline = (Get-Date).AddSeconds(30)
-    do {
-        Start-Sleep -Seconds 1
-        $mpToolUp = netstat -ano -p tcp | Select-String "LISTENING" | Select-String ":$mpToolPort"
-    } while ((-not $mpToolUp) -and ((Get-Date) -lt $deadline))
-    if ($mpToolUp) { Write-Host "[OK] wechat-mp-tools running at http://127.0.0.1:$mpToolPort" -ForegroundColor Green }
-    else { Write-Host "[WARN] wechat-mp-tools 30s 内未监听 $mpToolPort，公众号源将不可用（详见 runtime\mp_tools.log）" -ForegroundColor Yellow }
-} else {
-    Write-Host "[WARN] wechat-mp-tools 或其 venv312 缺失，跳过拉起，公众号源将不可用" -ForegroundColor Yellow
-}
-
-# ── Phase 1.6: 自动启动微信本地拦截代理（MITM，评论会话捕获依赖）──
-# 仅当工具成功拉起且代理未运行时调用其 /proxy/start；证书未信任时提示一次。
-# 注意：若 Clash 等代理工具开着系统代理，此处启动会覆盖系统代理指向 5202。
-if ($mpToolUp) {
-    Write-Host "=== Phase 1.6: Ensuring WeChat MITM proxy (port 5202) ===" -ForegroundColor Cyan
-    try {
-        $mpStatus = Invoke-RestMethod -Uri "http://127.0.0.1:$mpToolPort/api/channels/proxy/status" -TimeoutSec 5
-        if ($mpStatus.proxy_running) {
-            Write-Host "[OK] WeChat MITM proxy already running on $($mpStatus.proxy_port)" -ForegroundColor Green
-        } else {
-            $startResp = Invoke-RestMethod -Uri "http://127.0.0.1:$mpToolPort/api/channels/proxy/start" -Method Post -TimeoutSec 60
-            Write-Host "[OK] WeChat MITM proxy auto-started on 5202（评论捕获依赖此代理）" -ForegroundColor Green
-        }
-        if (-not $mpStatus.cert_installed) {
-            Write-Host "[WARN] CA 证书未信任：微信内页面将拦截失败。请打开 http://127.0.0.1:$mpToolPort → 视频号 → 一键安装证书" -ForegroundColor Yellow
-        }
-    } catch {
-        Write-Host "[WARN] MITM 代理自动启动失败（不影响公众号订阅，仅评论捕获不可用）: $($_.Exception.Message)" -ForegroundColor Yellow
-    }
-}
-
-# ============================================================
 # Phase 2: Start Web service
 # ============================================================
 Write-Host "=== Phase 2: Starting Web service ===" -ForegroundColor Cyan

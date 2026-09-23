@@ -1,54 +1,76 @@
-"""微信公众号唯一通道（外部工具微信读书轻量接口）最小自检。
+"""微信/weread 抓取管线退役后的最小自检。
 
-旧公众号后台通道已删除：api.py/renew.py/wechat_login.py/providers/wechat.py，
-残留调用应显式失败；weread:// 源与认证资产透传是本仓侧仅存的微信逻辑。
+退役事实：抓取链（connectors/wechat）、认证项（wechat_mp_main）、
+扫码登录页与路由均已删除；源配置不含 weread:// 源。
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+from fastapi.testclient import TestClient
+
+from apps.subscriptions import rss_db
+from web.app import app
+from web.services import views
 
 
-def test_old_channel_modules_removed():
+def test_wechat_runtime_modules_removed():
     with pytest.raises(ModuleNotFoundError):
-        import connectors.wechat.api  # noqa: F401
+        import connectors.wechat  # noqa: F401
+    with pytest.raises(ModuleNotFoundError):
+        import web.services.weread_login  # noqa: F401
     with pytest.raises(ModuleNotFoundError):
         import web.services.wechat_login  # noqa: F401
     with pytest.raises(ModuleNotFoundError):
         import connectors.auth.providers.wechat  # noqa: F401
 
 
-def test_fetch_wechat_feed_rejects_non_weread_source():
-    from connectors.wechat import fetch_wechat_feed
+def test_auth_registry_has_no_wechat_asset():
+    from connectors.auth.registry import AUTH_REGISTRY
 
-    result = fetch_wechat_feed(
-        {"id": "wechat-x", "name": "旧协议源", "feed_url": "wechat://mp/fake123", "site_url": ""},
-        limit=5,
-    )
-    assert not result.ok
-    assert "weread://" in result.error
+    assert "wechat_mp_main" not in AUTH_REGISTRY
+    assert all(reg.platform != "wechat" for reg in AUTH_REGISTRY.values())
 
 
-def test_registry_wechat_auth_reflects_external_tool_status(monkeypatch):
-    from connectors.auth.registry import validate_auth
+def test_source_config_has_no_weread_sources():
+    from apps.subscriptions.rss_config import load_sources
 
-    monkeypatch.setattr(
-        "web.services.weread_login.get_login_status",
-        lambda **kwargs: {
-            "is_available": False,
-            "is_expired": True,
-            "is_expiring_soon": False,
-            "remaining_text": "",
-            "expire_time_text": "",
-            "nickname": "",
-            "status_text": "外部工具未运行",
-            "logged_in": False,
-            "message": "外部工具未运行",
-        },
-    )
+    sources = load_sources()
+    for source in sources:
+        assert "weread://" not in str(source.get("feed_url") or "")
+        assert "weread://" not in str(source.get("site_url") or "")
+        assert source.get("channel") != "wechat"
+        assert source.get("auth_key") != "wechat_mp_main"
 
-    descriptor = validate_auth("wechat_mp_main")
 
-    assert descriptor.platform == "wechat"
-    assert descriptor.is_available is False
-    assert descriptor.is_expired is True
+@pytest.fixture()
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    monkeypatch.setattr(rss_db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(rss_db, "DB_PATH", tmp_path / "subscriptions.sqlite3")
+    monkeypatch.setattr(views, "REPORTS_DIR", tmp_path / "data" / "reports")
+    monkeypatch.setattr(views, "migrate_legacy_source_ids", lambda: 0)
+    return TestClient(app)
+
+
+def test_legacy_wechat_routes_not_registered(client: TestClient):
+    assert client.get("/wechat-login").status_code == 404
+    assert client.get("/actions/weread-login/status").status_code == 404
+    assert client.post("/actions/weread-login/start").status_code == 404
+    assert client.post("/actions/weread-login/cancel").status_code == 404
+
+
+def test_settings_view_renders_without_external_tool(client: TestClient):
+    response = client.get("/?view=settings")
+
+    assert response.status_code == 200
+    assert "微信续期" not in response.text
+    assert "wechat_mp_main" not in response.text
+
+
+def test_main_view_has_no_wechat_renew_button(client: TestClient):
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "微信续期" not in response.text

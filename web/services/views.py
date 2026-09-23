@@ -24,7 +24,6 @@ from apps.subscriptions.rss_db import (
 from apps.subscriptions.source_ids import canonicalize_source_id, legacy_source_ids, merge_source_health_rows
 from connectors._shared.common import parse_published_datetime, resolve_web_target
 from connectors.auth import list_auth_statuses, resolve_auth
-from web.services import weread_login
 from infra.text_normalizer import normalize_text_lines, normalize_utf8_obj, normalize_utf8_text
 from infra.utf8_json import dump_json_utf8, load_json_utf8
 from web.services.utils import (
@@ -118,14 +117,6 @@ def read_log_tail(
     return "\n".join(tail)
 
 
-def _is_login_state_error(message: str) -> bool:
-    text = normalize_utf8_text(message).lower()
-    if not text:
-        return False
-    keywords = ("登录态", "登录", "过期", "扫码", "login", "expired", "cookie", "token")
-    return any(keyword in text for keyword in keywords)
-
-
 def normalize_entry_link(link: str, fallback: str = "") -> str:
     primary = str(link or "").strip()
     if ABSOLUTE_URL_RE.match(primary):
@@ -177,8 +168,6 @@ def default_auth_key(channel: str, site_url: str, feed_url: str = "") -> str:
     normalized_site = normalize_text(site_url)
     normalized_feed = normalize_text(feed_url)
     combined = f"{normalized_site} {normalized_feed}"
-    if channel == "wechat":
-        return "wechat_mp_main"
     if "bilibili.com" in combined:
         return "bilibili_main"
     if "x.com/" in combined:
@@ -195,7 +184,6 @@ def auth_requirement_meta(auth_key: str) -> dict[str, str] | None:
         if descriptor.auth_key != auth_key:
             continue
         requirement_map = {
-            "wechat_mp_main": "依赖微信公众号主账号登录态",
             "douyin_shared": "依赖抖音共享登录态",
             "bilibili_main": "依赖 B站主账号登录态",
             "x_profile2": "依赖 X 平台共享登录态",
@@ -213,8 +201,6 @@ def infer_source_meta(feed_url: str, site_url: str) -> tuple[str, str, str]:
     feed = normalize_text(feed_url)
     site = normalize_text(site_url)
     combined = f"{feed} {site}"
-    if "weread://" in combined:
-        return ("web", "wechat-tool", "web")
     if any(host in combined for host in ("bilibili.com", "x.com", "twitter.com", "douyin.com", "youtube.com", "youtu.be", "jiuyangongshe.com")):
         return ("web", "web", "web")
     if "rsshub" in feed:
@@ -962,8 +948,8 @@ def get_laterhub_actionable_ids(query: dict[str, str]) -> list[int]:
 def get_nav_settings() -> dict[str, Any]:
     """主界面(entries view)用的轻量设置切片。
 
-    只取主界面需要的字段（运行状态的成功源数、微信读书续期按钮态），
-    避免每次加载主界面都跑 get_settings_view 的全量源统计（慢）。
+    只取主界面需要的字段（运行状态的成功源数），避免每次加载主界面都跑
+    get_settings_view 的全量源统计（慢）。
     """
     status = load_status()
     status["success_sources_text"] = format_success_sources_text(status)
@@ -972,13 +958,8 @@ def get_nav_settings() -> dict[str, Any]:
     status["last_error"] = last_error
     error_timestamp = str(status.get("last_run_at") or status.get("current_run_started_at") or "")
     status["error_log_text"] = f"{error_timestamp} {last_error}".strip() if last_error else ""
-    # 主界面用非阻塞的缓存读取，避免外部工具不可达时阻塞页面首载
-    wechat_auth = normalize_utf8_obj(weread_login.get_login_status_cached())
-    wechat_auth["should_highlight_renew"] = bool(wechat_auth.get("is_expired") or wechat_auth.get("is_expiring_soon"))
     return {
         "status": status,
-        "wechat_auth": wechat_auth,
-        "wechat_entries_login_url": f"/wechat-login?next={quote('/', safe='')}",
     }
 
 
@@ -999,35 +980,17 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     source_filter = query.get("source_filter", "")
     sort = query.get("sort", "name")
     direction = query.get("dir", "asc")
-    wechat_auth = normalize_utf8_obj(weread_login.get_login_status(cache_unavailable=True))
-    wechat_auth["should_highlight_renew"] = bool(wechat_auth.get("is_expired") or wechat_auth.get("is_expiring_soon"))
-    wechat_login_url = f"/wechat-login?next={quote('/?view=settings', safe='')}"
-    wechat_entries_login_url = f"/wechat-login?next={quote('/', safe='')}"
     auth_assets = []
     for descriptor in list_auth_statuses():
         expire_summary = ""
         expire_at_text = ""
         hint = normalize_utf8_text(descriptor.hint)
-        action_url = wechat_login_url if descriptor.auth_key == "wechat_mp_main" else ""
-        action_label = "重新扫码" if descriptor.auth_key == "wechat_mp_main" else "查看说明"
         renew_action_url = ""
         renew_action_label = ""
         is_expired = False
         is_expiring_soon = False
         nickname = normalize_utf8_text(descriptor.nickname)
-        if descriptor.auth_key == "wechat_mp_main":
-            expire_summary = str(wechat_auth.get("remaining_text") or "")
-            expire_at_text = str(wechat_auth.get("expire_time_text") or "")
-            is_expired = bool(wechat_auth.get("is_expired"))
-            is_expiring_soon = bool(wechat_auth.get("is_expiring_soon"))
-            nickname = normalize_utf8_text(wechat_auth.get("nickname"))
-            if is_expired:
-                hint = "微信读书登录态已过期或外部工具未运行，请点击重新扫码。"
-            elif is_expiring_soon:
-                hint = f"微信读书登录态距离过期还剩 {expire_summary}，建议重新扫码。"
-            elif expire_at_text:
-                hint = f"微信读书登录态可用，预计到期时间 {expire_at_text}。"
-        elif descriptor.auth_key == "bilibili_main":
+        if descriptor.auth_key == "bilibili_main":
             renew_action_url = "/actions/bilibili-login/sync"
             renew_action_label = "同步登录态"
             is_expired = bool(descriptor.is_expired)
@@ -1044,8 +1007,6 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             "status_text": normalize_utf8_text(descriptor.status_text),
             "status_level": descriptor.status_level,
             "hint": hint,
-            "action_url": action_url,
-            "action_label": action_label,
             "renew_action_url": renew_action_url,
             "renew_action_label": renew_action_label,
             "expire_summary": expire_summary,
@@ -1066,14 +1027,6 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         invalid_days = ""
         if failed_at and (not success_at or failed_at > success_at):
             invalid_days = str(max((datetime.now() - failed_at).days, 0))
-        if (
-            str(item.get("auth_key") or "").strip() == "wechat_mp_main"
-            and wechat_auth.get("is_available")
-            and not wechat_auth.get("is_expired")
-            and _is_login_state_error(last_error)
-        ):
-            last_error = ""
-            invalid_days = ""
         row = {
             **item,
             "provider_label": provider_label(str(item.get("provider") or ""), str(item.get("fetch_via") or "")),
@@ -1106,7 +1059,4 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         "sort": sort,
         "dir": direction,
         "settings_raw": load_settings(),
-        "wechat_auth": wechat_auth,
-        "wechat_login_url": wechat_login_url,
-        "wechat_entries_login_url": wechat_entries_login_url,
     }

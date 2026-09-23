@@ -29,9 +29,6 @@
       lastSyncSignature: "",
     },
   ];
-  const wechatLogin = {
-    timer: null,
-  };
   const fetchNow = {
     timer: null,
     pollCount: 0,
@@ -742,115 +739,6 @@
     if (event.target.classList.contains("modal-backdrop")) clearModal();
   }
 
-  async function setupWechatLogin() {
-    const root = document.querySelector("[data-wechat-login]");
-    if (!root || root.dataset.ready === "1") return;
-    root.dataset.ready = "1";
-    const qr = document.getElementById("wechat-login-qr");
-    const status = document.getElementById("wechat-login-status");
-    const refresh = document.getElementById("wechat-login-refresh");
-
-    const setStatus = (text) => {
-      if (status) status.textContent = text;
-    };
-
-    const stopPolling = () => {
-      if (wechatLogin.timer) {
-        window.clearTimeout(wechatLogin.timer);
-        wechatLogin.timer = null;
-      }
-    };
-
-    const renderQrcode = (scanUrl) => {
-      if (!qr) return;
-      qr.innerHTML = "";
-      if (!scanUrl) {
-        qr.innerHTML = "正在加载二维码…";
-        return;
-      }
-      const img = document.createElement("img");
-      img.alt = "微信读书登录二维码";
-      img.width = 220;
-      img.height = 220;
-      img.style.maxWidth = "220px";
-      img.style.maxHeight = "220px";
-      img.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(scanUrl)}`;
-      qr.appendChild(img);
-    };
-
-    const handleSuccess = (data) => {
-      stopPolling();
-      const nickname = data.nickname || data.account_info?.nickname || "微信读书";
-      setStatus(`✅ 登录成功：${nickname}`);
-      const nextUrl = root.dataset.nextUrl || "/?view=settings";
-      let remaining = 3;
-      const tick = () => {
-        if (remaining > 0) {
-          setStatus(`✅ 登录成功：${nickname}（${remaining} 秒后自动返回）`);
-          remaining -= 1;
-          wechatLogin.timer = window.setTimeout(tick, 1000);
-          return;
-        }
-        window.location.href = nextUrl;
-      };
-      tick();
-    };
-
-    const poll = async () => {
-      try {
-        const res = await fetch("/actions/weread-login/status");
-        const data = await res.json();
-        if (data.login_state && data.login_state.status === "failed") {
-          stopPolling();
-          setStatus(`登录失败：${data.login_state.message || "未知错误"}，请点击「刷新二维码」重试。`);
-          return;
-        }
-        if (data.logged_in && !data.login_state.qrcode) {
-          handleSuccess(data);
-          return;
-        }
-        if (data.login_state && data.login_state.status === "scanning" && data.login_state.qrcode) {
-          renderQrcode(data.login_state.qrcode);
-          setStatus("请用微信读书 App 扫码，并在手机上确认登录。");
-        } else {
-          setStatus(data.message || "请用微信读书 App 扫码。");
-        }
-      } catch {
-        setStatus("状态检查失败，请确认外部工具（127.0.0.1:5300）已启动后重试。");
-      }
-      wechatLogin.timer = window.setTimeout(poll, 2000);
-    };
-
-    const loadQrcode = async () => {
-      stopPolling();
-      setStatus("正在准备二维码…");
-      if (qr) qr.innerHTML = "正在加载二维码…";
-      try {
-        await fetch("/actions/weread-login/start", { method: "POST" });
-        const res = await fetch("/actions/weread-login/status");
-        const data = await res.json();
-        if (data.login_state && data.login_state.status === "scanning" && data.login_state.qrcode) {
-          renderQrcode(data.login_state.qrcode);
-          setStatus("请用微信读书 App 扫码，并在手机上确认登录。");
-        } else if (data.logged_in) {
-          handleSuccess(data);
-          return;
-        } else if (data.login_state && data.login_state.status === "failed") {
-          setStatus(`登录失败：${data.login_state.message || "未知错误"}。`);
-          return;
-        } else {
-          setStatus(data.message || "请用微信读书 App 扫码。");
-        }
-        wechatLogin.timer = window.setTimeout(poll, 2000);
-      } catch {
-        setStatus("启动登录失败，请确认外部工具（127.0.0.1:5300）已启动。");
-      }
-    };
-
-    refresh?.addEventListener("click", loadQrcode);
-    await loadQrcode();
-  }
-
   function stopFetchPolling() {
     if (fetchNow.timer) {
       window.clearTimeout(fetchNow.timer);
@@ -909,7 +797,6 @@
     setupLaterhubOpenedTracking();
     setupLaterhubTagsToggle();
     setupSplitResizer();
-    setupWechatLogin();
     setupLaterhubFinishForms();
     setupScrollbarReveal();
     autoLoadPanels.forEach((descriptor) => {

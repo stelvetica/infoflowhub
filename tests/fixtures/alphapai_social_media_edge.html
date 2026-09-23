@@ -1,0 +1,94 @@
+<div class="list-wrapper" data-v-48b1e04e="">
+  <!-- 1) 完整卡片：多行 @PaiPai 摘要 + 多个行业标签 + 「昨天」相对时间 -->
+  <div class="list-item-card-container" data-v-48b1e04e="">
+    <div class="list-item-card-container__main" data-v-f44ada4f="">
+      <div class="card-header" data-v-f44ada4f="">
+        <div class="source-info" data-v-f44ada4f="">
+          <img src="https://example.invalid/avatar1.jpg" alt="" class="source-icon" data-v-f44ada4f="">
+          <span class="source-name" data-v-f44ada4f="">贝叶斯之美</span>
+        </div>
+        <div class="more-action" data-v-f44ada4f="">
+          <ul class="el-dropdown-menu social-media-card-dropdown-menu" style="display: none;">
+            <li class="el-dropdown-menu__item social-media-card-dropdown-item">同步至PaiWork</li>
+            <li class="el-dropdown-menu__item social-media-card-dropdown-item"> 设为星标 </li>
+            <li class="el-dropdown-menu__item social-media-card-dropdown-item"> 取消订阅 </li>
+          </ul>
+        </div>
+      </div>
+      <div class="card-body" data-v-f44ada4f="">
+        <div class="content-wrapper" data-v-f44ada4f="">
+          <div class="title-wrapper" data-v-f44ada4f="">
+            <span class="title" data-v-f44ada4f="">多行摘要卡片标题</span><span class="tag tag-original" data-v-f44ada4f="">原创</span>
+          </div>
+          <div class="summary" data-v-f44ada4f=""><span class="source-paipai" data-v-f44ada4f="">@PaiPai：</span><span data-v-f44ada4f="">• 第一行要点，不能被分类截断。
+• 第二行要点，保留完整。
+• 第三行要点，收尾。</span></div>
+          <div class="footer-info" data-v-f44ada4f="">
+            <span class="category" data-v-f44ada4f="">产业分析</span>
+            <div class="divider-line el-divider el-divider--vertical"></div>
+            <span class="category industry-name" data-v-f44ada4f="">AI应用</span>
+            <span class="category industry-name" data-v-f44ada4f="">计算机</span>
+            <div class="divider-line last el-divider el-divider--vertical"></div>
+            <span class="date" data-v-f44ada4f="">昨天</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- 2) 缺可选字段：无作者、无行业标签、无时间 -->
+  <div class="list-item-card-container" data-v-48b1e04e="">
+    <div class="list-item-card-container__main" data-v-f44ada4f="">
+      <div class="card-header" data-v-f44ada4f=""></div>
+      <div class="card-body" data-v-f44ada4f="">
+        <div class="content-wrapper" data-v-f44ada4f="">
+          <div class="title-wrapper" data-v-f44ada4f="">
+            <span class="title" data-v-f44ada4f="">缺作者与标签的卡片</span>
+          </div>
+          <div class="summary" data-v-f44ada4f=""><span class="source-paipai" data-v-f44ada4f="">@PaiPai：</span><span data-v-f44ada4f="">• 只有摘要。</span></div>
+          <div class="footer-info" data-v-f44ada4f=""></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- 3) 无摘要、无「原创」标记、只有分类 -->
+  <div class="list-item-card-container" data-v-48b1e04e="">
+    <div class="list-item-card-container__main" data-v-f44ada4f="">
+      <div class="card-header" data-v-f44ada4f="">
+        <div class="source-info" data-v-f44ada4f="">
+          <span class="source-name" data-v-f44ada4f="">中金点睛</span>
+        </div>
+      </div>
+      <div class="card-body" data-v-f44ada4f="">
+        <div class="content-wrapper" data-v-f44ada4f="">
+          <div class="title-wrapper" data-v-f44ada4f="">
+            <span class="title" data-v-f44ada4f="">无摘要的行业新闻卡片</span>
+          </div>
+          <div class="footer-info" data-v-f44ada4f="">
+            <span class="category" data-v-f44ada4f="">行业新闻及点评</span>
+            <span class="date" data-v-f44ada4f="">3小时前</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- 4) 有作者但无标题：解析器应跳过，不得产出空标题条目 -->
+  <div class="list-item-card-container" data-v-48b1e04e="">
+    <div class="list-item-card-container__main" data-v-f44ada4f="">
+      <div class="card-header" data-v-f44ada4f="">
+        <div class="source-info" data-v-f44ada4f="">
+          <span class="source-name" data-v-f44ada4f="">水木纪要</span>
+        </div>
+      </div>
+      <div class="card-body" data-v-f44ada4f="">
+        <div class="content-wrapper" data-v-f44ada4f="">
+          <div class="title-wrapper" data-v-f44ada4f="">
+            <span class="title" data-v-f44ada4f=""></span>
+          </div>
+          <div class="footer-info" data-v-f44ada4f="">
+            <span class="date" data-v-f44ada4f="">5小时前</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

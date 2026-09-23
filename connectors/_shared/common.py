@@ -77,13 +77,6 @@ def validate_douyin_login_prerequisite(source: dict) -> str:
 def resolve_web_target(source: dict) -> WebSourceTarget | None:
     site_url = (source.get("site_url") or "").strip()
     feed_url = (source.get("feed_url") or "").strip()
-    if feed_url.startswith("weread://") or site_url.startswith("weread://"):
-        raw = feed_url if feed_url.startswith("weread://") else site_url
-        rest = raw[len("weread://"):]
-        uid = rest.split("@", 1)[0] if "@" in rest else rest
-        uid = uid.strip().strip("/")
-        if uid:
-            return WebSourceTarget(site="wechat", uid=uid, page_url=f"wechat://{uid}")
     match = re.search(r"space\.bilibili\.com/(\d+)", site_url)
     if match:
         uid = match.group(1)
@@ -116,6 +109,12 @@ def resolve_web_target(source: dict) -> WebSourceTarget | None:
     if match:
         uid = match.group(1)
         return WebSourceTarget(site="youtube", uid=uid, page_url=f"https://www.youtube.com/{site_url.rstrip('/').split('youtube.com/', 1)[1]}/videos")
+    if "alphapai-web.rabyte.cn" in site_url and "/reading/social-media" in site_url:
+        return WebSourceTarget(
+            site="alphapai_social",
+            uid="social-media",
+            page_url="https://alphapai-web.rabyte.cn/reading/social-media/index",
+        )
     match = re.search(r"alphapai-web\.rabyte\.cn", site_url)
     if match:
         return WebSourceTarget(

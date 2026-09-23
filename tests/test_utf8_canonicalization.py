@@ -11,9 +11,9 @@ def test_update_source_health_normalizes_source_name_and_error(monkeypatch, tmp_
     monkeypatch.setattr(views, "HEALTH_PATH", health_path)
 
     result = FeedFetchResult(
-        source_id="wechat-source",
+        source_id="demo-source",
         source_name="观点 胖特工",
-        feed_url="wechat://mp/demo",
+        feed_url="https://example.com/feed.xml",
         ok=False,
         status=500,
         entries=[],
@@ -21,7 +21,7 @@ def test_update_source_health_normalizes_source_name_and_error(monkeypatch, tmp_
     )
 
     runtime_health.update_source_health(result)
-    row = views.load_health()["sources"]["wechat-source"]
+    row = views.load_health()["sources"]["demo-source"]
 
     assert row["source_name"] == "观点 胖特工"
     assert row["last_error"] == "登录态 已过期"
@@ -63,7 +63,7 @@ def test_save_and_list_entries_normalize_chinese(monkeypatch, tmp_path):
     rss_db.save_entries(
         [
             FeedEntry(
-                source_id="wechat-pangtegong",
+                source_id="demo-pangtegong",
                 source_name="观点 胖特工",
                 title="今日宏观",
                 link="https://example.com/a",

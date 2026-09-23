@@ -8,7 +8,7 @@ BASE_DIR = Path(__file__).resolve().parents[3]
 RUNTIME_DIR = BASE_DIR / "runtime"
 BROWSER_PROFILES_DIR = RUNTIME_DIR / "browser_profiles"
 
-# 方式1：独立登录 profile（共享）。B站/微信等无法复制常用 Chrome 的站点用，
+# 方式1：独立登录 profile（共享）。无法复制常用 Chrome 的站点用，
 # login_profiles.py 拉起浏览器扫码登录。
 AUTH_PROFILE_DIR = BROWSER_PROFILES_DIR / "auth"
 
@@ -170,25 +170,29 @@ def validate_jiuyangongshe_auth() -> dict[str, object]:
 
 
 def validate_alphapai_auth() -> dict[str, object]:
-    """蓝宝书：检查常用 Chrome Default profile 是否登了蓝宝书（copy 来源）。
+    """Alpha派：抓取走 bsk 后端，复用本机日常 Chrome 登录会话（失败回退 CopyRunner）。
 
-    Chrome 运行时会排他锁定 Default profile 的 Cookies SQLite（Windows 下连
-    只读/复制都被拒），无法精确校验登录态。但抓取走 CopyRunnerSession 复制
-    profile 副本（抓取前关 Chrome），不受此锁影响，且有 401 失效检测兜底。
-    故 Cookies 读不了时降级为"可用"——profile 存在即视为可用，仅 hint 注明
-    未精确校验；Chrome 关闭后自然恢复精确校验。
+    只检查日常 Chrome 是否含 Alpha派域名会话这一**非敏感**状态：只做 COUNT，
+    绝不读取、返回或打印任何 cookie 名或值。Chrome 运行时其 Cookies SQLite 被
+    排他锁定，读不到就降级为「可用」——bsk 直接复用其实时会话，无需复制副本，
+    且有失效检测兜底；状态检查失败时只回可读状态文案，不外泄任何敏感信息。
     """
     cookies = _default_chrome_profile_dir() / "Network" / "Cookies"
     if not cookies.exists():
         return {
             "is_available": False,
             "status_level": "warn",
-            "status_text": "未登录",
-            "hint": "请先在常用 Chrome 中登录蓝宝书（alphapai-web.rabyte.cn），抓取时自动复制登录态。",
+            "status_text": "需在 Chrome 登录",
+            "hint": "请在日常 Chrome 登录 Alpha派。",
         }
-    # Chrome 运行时锁定 Cookies，直接降级，避免 sqlite 死等 1.45s
+    # Chrome 运行时锁定 Cookies，直接降级为可用（bsk 复用实时会话），避免 sqlite 死等。
     if not _cookies_db_readable(cookies):
-        return {"is_available": True, "status_level": "ok", "status_text": "可用", "hint": "常用 Chrome 运行中，未精确校验登录态；抓取走复制副本，不受影响。"}
+        return {
+            "is_available": True,
+            "status_level": "ok",
+            "status_text": "可用",
+            "hint": "日常 Chrome 运行中，复用其实时登录会话（bsk 后端）。",
+        }
     try:
         import sqlite3
 
@@ -198,21 +202,25 @@ def validate_alphapai_auth() -> dict[str, object]:
         ).fetchone()[0]
         conn.close()
     except Exception:
-        # Chrome 占用 Cookies 锁，无法精确校验。profile 存在即可用：
-        # 抓取走复制副本不受影响，且有 401 失效检测兜底。
-        return {"is_available": True, "status_level": "ok", "status_text": "可用", "hint": "常用 Chrome 运行中，未精确校验登录态；抓取走复制副本，不受影响。"}
+        # 读取失败（占用/损坏）：只给可读状态，不暴露异常细节或 cookie 信息。
+        return {
+            "is_available": True,
+            "status_level": "ok",
+            "status_text": "可用",
+            "hint": "日常 Chrome 运行中，复用其实时登录会话（bsk 后端）。",
+        }
     if count <= 0:
         return {
             "is_available": False,
             "status_level": "warn",
-            "status_text": "未登录",
-            "hint": "请在常用 Chrome 中登录蓝宝书（alphapai-web.rabyte.cn），抓取时自动复制。如已登录仍未生效，请确认已关闭 Chrome ABE 并重启。",
+            "status_text": "需在 Chrome 登录",
+            "hint": "请在日常 Chrome 登录 Alpha派。",
         }
     return {
         "is_available": True,
         "status_level": "ok",
         "status_text": "可用",
-        "hint": "蓝宝书登录态从常用 Chrome 复制（单设备限制，不在副本登录）。需已关闭 Chrome ABE。抓取前关 Chrome，抓完自动重开。",
+        "hint": "复用日常 Chrome 登录会话（bsk 后端），bsk 失败自动回退 CopyRunner。",
     }
 
 

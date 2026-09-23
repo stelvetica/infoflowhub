@@ -15,12 +15,11 @@ from connectors._shared.common import (
     validate_douyin_login_prerequisite,
     validate_x_login_prerequisite,
 )
-from connectors.alphapai import fetch_alphapai_with_page
+from connectors.alphapai import fetch_alphapai_social_with_page, fetch_alphapai_with_page
 from connectors.alphapai.browser import ALPHAPAI_TARGET_URL
 from connectors.bilibili import fetch_bilibili_dynamic_feed
 from connectors.douyin import fetch_douyin_subscription_with_page
 from connectors.jiuyangongshe import fetch_jiuyangongshe_with_page
-from connectors.wechat import fetch_wechat_feed
 from connectors.x import fetch_x_with_page
 from connectors.xiaoheihe import fetch_xiaoheihe_profile_with_page
 from connectors.youtube import fetch_youtube_with_page
@@ -28,7 +27,7 @@ from connectors.youtube import fetch_youtube_with_page
 WEB_RETRY_DELAYS = (0.0, 2.0)
 WEB_RUNNER_DEBUG_PORT = 9223
 
-_SHARED_RUNNER_SITES = {"x", "youtube", "douyin", "alphapai", "xiaoheihe"}
+_SHARED_RUNNER_SITES = {"x", "youtube", "douyin", "alphapai", "alphapai_social", "xiaoheihe"}
 
 
 def _needs_profile_rebuild(result: FeedFetchResult) -> bool:
@@ -94,6 +93,10 @@ def _fetch_alphapai_via_session(session: CopyRunnerSession, source: dict, *, lim
     return _fetch_via_shared_runner(session, source, fetch_alphapai_with_page, limit=limit, timeout_ms=timeout_ms, use_url_tab=True)
 
 
+def _fetch_alphapai_social_via_session(session: CopyRunnerSession, source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
+    return _fetch_via_shared_runner(session, source, fetch_alphapai_social_with_page, limit=limit, timeout_ms=timeout_ms, use_url_tab=True)
+
+
 def _fetch_one_via_session(session: CopyRunnerSession, source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
     """在已启动的复制副本 session 上抓单个源（含蓝宝书）。"""
     target = resolve_web_target(source)
@@ -103,11 +106,11 @@ def _fetch_one_via_session(session: CopyRunnerSession, source: dict, *, limit: i
     if target.site == "bilibili":
         return fetch_bilibili_dynamic_feed(source, limit=limit, timeout_ms=timeout_ms)
 
-    if target.site == "wechat":
-        return fetch_wechat_feed(source, limit=limit)
-
     if target.site == "alphapai":
         return _fetch_alphapai_via_session(session, source, limit=limit, timeout_ms=timeout_ms)
+
+    if target.site == "alphapai_social":
+        return _fetch_alphapai_social_via_session(session, source, limit=limit, timeout_ms=timeout_ms)
 
     if target.site == "jiuyangongshe":
         return fetch_jiuyangongshe_with_page(None, source, limit=limit, timeout_ms=timeout_ms)
@@ -194,8 +197,6 @@ def fetch_web_source(source: dict) -> FeedFetchResult:
                     result = result_error(source, "暂不支持的网页直抓源")
                 elif target.site == "bilibili":
                     result = fetch_bilibili_dynamic_feed(source)
-                elif target.site == "wechat":
-                    result = fetch_wechat_feed(source, limit=12)
                 elif target.site == "jiuyangongshe":
                     result = fetch_jiuyangongshe_with_page(None, source)
                 else:
@@ -258,7 +259,7 @@ def fetch_web_many(
             finally:
                 session.shutdown()
 
-    # bilibili / wechat 等非浏览器源各自独立抓取
+    # bilibili 等非浏览器源各自独立抓取
     for i in other_indices:
         source = sources[i]
         last_result: FeedFetchResult | None = None
@@ -271,8 +272,6 @@ def fetch_web_many(
                     result = result_error(source, "暂不支持的网页直抓源")
                 elif target.site == "bilibili":
                     result = fetch_bilibili_dynamic_feed(source, limit=limit, timeout_ms=timeout_ms)
-                elif target.site == "wechat":
-                    result = fetch_wechat_feed(source, limit=limit)
                 elif target.site == "jiuyangongshe":
                     result = fetch_jiuyangongshe_with_page(None, source, limit=limit, timeout_ms=timeout_ms)
                 else:

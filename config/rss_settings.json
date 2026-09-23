@@ -4,12 +4,12 @@
     "self_hosted_base": "http://127.0.0.1:12673",
     "prefer_self_hosted": true
   },
-  "wechat_tool": {
-    "base_url": "http://127.0.0.1:5300"
-  },
   "browser_backend": {
     "default": "copy",
-    "sources": {},
+    "sources": {
+      "alphapai": "bsk",
+      "alphapai-social-media": "bsk"
+    },
     "request_help_timeout": 30,
     "command_timeout": 120
   }

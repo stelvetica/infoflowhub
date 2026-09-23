@@ -11,7 +11,6 @@ from fastapi.templating import Jinja2Templates
 
 from web.services import md_render
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
-from web.services import weread_login
 from web.services.views import (
     build_entries_state_params,
     build_laterhub_state_params,
@@ -256,32 +255,6 @@ async def source_form_fragment(request: Request, source_id: str = ""):
     source_lookup = {item["id"]: item for item in normalize_sources()}
     draft = source_lookup.get(source_id, {"id": "", "name": "", "site_url": "", "feed_url": ""})
     return templates.TemplateResponse(request, "partials/source_modal_form.html", {"draft": draft, "params": params})
-
-
-@router.get("/wechat-login", response_class=HTMLResponse)
-async def wechat_login_page(request: Request, next: str = "/?view=settings"):
-    return templates.TemplateResponse(request, "wechat_login.html", {"next_url": next or "/?view=settings"})
-
-
-# ── 微信读书扫码登录（代理到外部工具 wechat-mp-tools）─────────────────
-# 主仓微信源均走 weread:// 轻量模式，实际登录态在外部工具，主仓仅代理扫码/状态。
-
-@router.get("/actions/weread-login/status")
-async def weread_login_status():
-    status = await run_in_threadpool(weread_login.get_login_status)
-    return JSONResponse(status)
-
-
-@router.post("/actions/weread-login/start")
-async def weread_login_start():
-    result = await run_in_threadpool(weread_login.start_login)
-    return JSONResponse(result)
-
-
-@router.post("/actions/weread-login/cancel")
-async def weread_login_cancel():
-    result = await run_in_threadpool(weread_login.cancel_login)
-    return JSONResponse(result)
 
 
 @router.post("/actions/bilibili-login/sync", response_class=HTMLResponse)

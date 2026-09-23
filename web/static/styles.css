@@ -264,8 +264,6 @@ button, input, select, textarea { font: inherit; }
   font-size: var(--fs-xs);
   padding: 4px 8px;
 }
-.wechat-renew-btn { padding: 5px 9px; font-size: var(--fs-sm); white-space: nowrap; }
-.wechat-renew-btn-active { font-weight: 700; box-shadow: 0 0 0 1px rgba(154, 103, 0, 0.08), 0 6px 16px rgba(154, 103, 0, 0.12); }
 
 .btn:focus-visible, .chip:focus-visible, .sort:focus-visible,
 .settings-link:focus-visible, .split-resizer:focus-visible {

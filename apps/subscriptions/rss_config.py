@@ -59,8 +59,6 @@ def save_sources(sources: List[Dict[str, Any]]) -> None:
     dump_json_utf8(SOURCES_PATH, {"sources": normalized})
 
 
-DEFAULT_WECHAT_TOOL_BASE = "http://127.0.0.1:5300"
-
 # 浏览器抓取后端：copy = 复制常用 Chrome Default profile 到副本（历史默认，行为不变）；
 # bsk = 用 bsk CLI 驱动用户自己已登录的 Chromium。可按 source id 覆盖，默认不动。
 DEFAULT_BROWSER_BACKEND = "copy"
@@ -73,27 +71,16 @@ DEFAULT_COMMAND_TIMEOUT_SECONDS = 120.0
 BROWSER_TIMEOUT_BOUNDS = (5.0, 600.0)
 
 
-def _settings_with_defaults(settings: Dict[str, Any]) -> Dict[str, Any]:
-    """补齐 settings 默认值，避免调用方各自判空（SSOT：wechat_tool.base_url）。"""
-    if "wechat_tool" not in settings or not isinstance(settings.get("wechat_tool"), dict):
-        settings["wechat_tool"] = {}
-    if not settings["wechat_tool"].get("base_url"):
-        settings["wechat_tool"]["base_url"] = DEFAULT_WECHAT_TOOL_BASE
-    return settings
-
-
 def load_settings() -> Dict[str, Any]:
     if not SETTINGS_PATH.exists():
-        return _settings_with_defaults(
-            {
-                "rsshub": {
-                    "public_base": "https://rsshub.app",
-                    "self_hosted_base": "",
-                    "prefer_self_hosted": False,
-                }
+        return {
+            "rsshub": {
+                "public_base": "https://rsshub.app",
+                "self_hosted_base": "",
+                "prefer_self_hosted": False,
             }
-        )
-    return _settings_with_defaults(load_json_utf8(SETTINGS_PATH))
+        }
+    return load_json_utf8(SETTINGS_PATH)
 
 
 def _bounded_seconds(raw: Any, default: float) -> float:

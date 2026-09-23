@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from types import SimpleNamespace
 
 import pytest
 
+from connectors._shared import bsk_browser
 from connectors._shared.bsk_browser import (
     BskBrowser,
     BskCommandError,
@@ -35,12 +37,32 @@ if secret:
 cmd = argv[0] if argv else ""
 
 if cmd == "session" and len(argv) > 1 and argv[1] == "start":
+    time.sleep(scenario.get("start_sleep", 0))
     sys.stdout.write(scenario.get("start_stdout", '{"session_id": "fake-session"}'))
     sys.exit(scenario.get("start_exit", 0))
 
+if cmd == "session" and len(argv) > 1 and argv[1] == "list":
+    sys.stdout.write(json.dumps(scenario.get("list_sessions", []), ensure_ascii=False))
+    sys.exit(scenario.get("list_exit", 0))
+
 if cmd == "session" and len(argv) > 1 and argv[1] == "stop":
+    time.sleep(scenario.get("stop_sleep", 0))
+    exit_code = scenario.get("stop_exit", 0)
+    seq = scenario.get("stop_exit_seq")
+    if seq:
+        # 本次调用已在日志里落过一行，故「已记录的 stop 次数 - 1」就是本次的序号。
+        prior = 0
+        if log_path and os.path.exists(log_path):
+            with open(log_path, encoding="utf-8") as fh:
+                for line in fh:
+                    try:
+                        if json.loads(line).get("argv", [])[0:2] == ["session", "stop"]:
+                            prior += 1
+                    except ValueError:
+                        pass
+        exit_code = seq[min(prior - 1, len(seq) - 1)]
     sys.stdout.write("stopped " + (argv[2] if len(argv) > 2 else ""))
-    sys.exit(scenario.get("stop_exit", 0))
+    sys.exit(exit_code)
 
 if cmd == "evaluate":
     time.sleep(scenario.get("evaluate_sleep", 0))
@@ -354,3 +376,78 @@ def test_no_credentials_in_logs_or_errors(fake_bsk):
         browser.evaluate("1+1")
     blob = "\n".join(logs) + "\n" + str(excinfo.value)
     assert secret not in blob
+
+
+# ---- 超时后收尾：stop 重试（M1） ----
+
+
+def test_timeout_stop_failure_is_retried_once(fake_bsk, monkeypatch):
+    """超时后 session 仍 busy，首次 stop 被 daemon 拒绝（exit=4）→ 延迟重试一次即成功。"""
+    monkeypatch.setattr(bsk_browser, "STOP_RETRY_DELAY_SECONDS", 0)
+    browser, _ = fake_bsk.build(
+        evaluate_sleep=5, timeout=0.3, request_help_timeout=None, stop_exit_seq=[4, 0]
+    )
+    browser.start()
+    with pytest.raises(BskTimeout):
+        browser.evaluate("1+1")
+    stops = _stops(fake_bsk)
+    assert [c["argv"][2] for c in stops] == ["fake-session", "fake-session"]
+    assert browser.session_id is None
+
+
+def test_stop_retry_failure_is_only_logged(fake_bsk, monkeypatch):
+    monkeypatch.setattr(bsk_browser, "STOP_RETRY_DELAY_SECONDS", 0)
+    browser, logs = fake_bsk.build(stop_exit=4)
+    browser.start()
+    browser.stop()  # 重试仍失败也不得抛
+    assert len(_stops(fake_bsk)) == 2
+    assert any("err=retry-failed" in line for line in logs)
+
+
+def test_stop_is_not_killed_by_request_help_watchdog(fake_bsk):
+    """stop 是收尾命令，与登录阻塞无关：极小 request_help_timeout 不得把它提前 kill。"""
+    browser, logs = fake_bsk.build(stop_sleep=0.5, timeout=5.0, request_help_timeout=0.1)
+    browser.start()
+    browser.stop()
+    assert len(_stops(fake_bsk)) == 1
+    assert not any("err=BskHelpTimeout" in line for line in logs)
+
+
+# ---- start 超时：孤儿 session 清理 + 分类（M2） ----
+
+
+def test_start_timeout_is_plain_timeout_not_help_timeout(fake_bsk):
+    browser, logs = fake_bsk.build(start_sleep=5, timeout=0.3, request_help_timeout=0.3)
+    with pytest.raises(BskTimeout) as excinfo:
+        browser.start()
+    # start 阶段尚未打开任何页面，不得被误分类成「疑似登录/验证码阻塞」
+    assert not isinstance(excinfo.value, BskHelpTimeout)
+    assert any("err=BskTimeout" in line for line in logs)
+
+
+def test_start_timeout_cleans_up_orphan_session(fake_bsk):
+    started = int(time.time() * 1000)
+    browser, _ = fake_bsk.build(
+        start_sleep=5,
+        timeout=0.3,
+        request_help_timeout=0.3,
+        list_sessions=[
+            {"session_id": "orphan-new", "created_at_ms": started + 60_000},
+            {"session_id": "not-ours-old", "created_at_ms": started - 600_000},
+        ],
+    )
+    with pytest.raises(BskTimeout):
+        browser.start()
+    assert browser.session_id is None
+    stopped = [c["argv"][2] for c in _stops(fake_bsk)]
+    assert stopped == ["orphan-new"]  # 只清本次新建的孤儿，不动别人的 session
+    assert _subcommand_calls(fake_bsk, "session")[0]["argv"][0:3] == ["session", "start", "--json"]
+    assert any(c["argv"][0:3] == ["session", "list", "--json"] for c in fake_bsk.calls())
+
+
+def test_start_failure_does_not_run_orphan_cleanup(fake_bsk):
+    """非超时的 start 失败走既有路径（解析到 id 才补 stop），不该额外 list。"""
+    browser, _ = fake_bsk.build(start_exit=1, start_stdout="error: no browser connected")
+    with pytest.raises(BskSessionError):
+        browser.start()
+    assert not any(c["argv"][0:3] == ["session", "list", "--json"] for c in fake_bsk.calls())

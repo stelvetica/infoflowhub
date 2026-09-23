@@ -73,17 +73,17 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         login_method="无需登录",
         renew_label="",
     ),
-    # 方式2：copy profile（蓝宝书单设备限制，复制常用 Chrome 登录态）
+    # 方式2：bsk 后端复用日常 Chrome 登录会话（失败自动回退 CopyRunner 复制 profile）
     "alphapai_main": AuthRegistration(
         auth_key="alphapai_main",
         platform="alphapai",
         auth_mode="copy_profile",
-        storage_ref="复制常用 Chrome Default",
+        storage_ref="复用本机 Chrome 会话，不导出 token",
         renew_strategy="copy_default_profile",
-        display_name="蓝宝书",
-        description="单设备登录限制，复制常用 Chrome 登录态，抓取前关 Chrome。需关闭 Chrome ABE。",
-        login_method="复制常用Chrome(单设备限制)",
-        renew_label="在常用 Chrome 登录蓝宝书",
+        display_name="Alpha派",
+        description="抓取后端 bsk，复用日常 Chrome 登录会话；bsk 失败自动回退 CopyRunner。",
+        login_method="日常 Chrome 登录会话",
+        renew_label="请在日常 Chrome 登录 Alpha派",
     ),
     # 方式3：B站特殊——复用登录态拿 cookie，再直接调 API 抓取（不走浏览器）
     # 从常用 Chrome 或共享 profile 读出 SESSDATA/bili_jct/DedeUserID，持久化为
@@ -99,18 +99,6 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         login_method="复用登录态取Cookie",
         renew_label="在常用 Chrome 登录 B站后点同步",
     ),
-    # 方式4：微信公众号（经外部工具微信读书通道）
-    "wechat_mp_main": AuthRegistration(
-        auth_key="wechat_mp_main",
-        platform="wechat",
-        auth_mode="cookie_session",
-        storage_ref="外部工具 wechat-mp-tools 账号池",
-        renew_strategy="scan_qr",
-        display_name="微信公众号",
-        description="9 个公众号文章经外部工具（wechat-mp-tools 微信读书模式）抓取，登录态保存在外部工具。",
-        login_method="扫码登录(微信读书, 外部工具)",
-        renew_label="重新扫码",
-    ),
 }
 
 
@@ -123,13 +111,7 @@ def resolve_auth(auth_key: str) -> AuthRegistration:
 
 def validate_auth(auth_key: str) -> AuthDescriptor:
     registration = resolve_auth(auth_key)
-    if auth_key == "wechat_mp_main":
-        # 微信源实际登录态在外部工具（微信读书账号池），这里透传其归一化状态
-        from web.services.weread_login import get_login_status
-
-        status = get_login_status(cache_unavailable=True)
-        status.setdefault("remaining_hours", -1)
-    elif auth_key == "douyin_shared":
+    if auth_key == "douyin_shared":
         status = validate_douyin_auth()
     elif auth_key == "bilibili_main":
         status = validate_bilibili_auth()

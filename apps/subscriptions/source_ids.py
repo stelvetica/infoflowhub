@@ -4,9 +4,7 @@ from typing import Iterable
 
 from infra.text_normalizer import normalize_utf8_text
 
-SOURCE_ID_ALIASES: dict[str, str] = {
-    "wechat-kindle-jingxuanjun": "wechat-jingxuanjun",
-}
+SOURCE_ID_ALIASES: dict[str, str] = {}
 
 
 def canonicalize_source_id(source_id: str) -> str:

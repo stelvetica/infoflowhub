@@ -19,6 +19,11 @@ DB_PATH = DATA_DIR / "subscriptions.sqlite3"
 # 订阅库体积上限：未超过时一条历史都不清理，超过后从最旧条目开始删到回落。
 MAX_DB_BYTES = 10 * 1024 ** 3
 
+# 一个页面 URL 聚合多条条目的源：link 不唯一，不能参与「按 link 去重 / link 唯一索引」。
+# 蓝宝书详情页与社媒默认页都是这种形态（一条 link 对应多张卡片）。
+SHARED_PAGE_SOURCE_IDS = frozenset({"alphapai", "alphapai-social-media"})
+_SHARED_PAGE_SQL = "('" + "', '".join(sorted(SHARED_PAGE_SOURCE_IDS)) + "')"
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS rss_entries (
@@ -107,15 +112,15 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     if not required_columns.issubset(columns):
         return
     conn.execute(
-        """
+        f"""
         DELETE FROM rss_entries
         WHERE id IN (
             SELECT older.id
             FROM rss_entries AS older
             JOIN rss_entries AS newer
               ON older.link = newer.link
-             AND older.source_id != 'alphapai'
-             AND newer.source_id != 'alphapai'
+             AND older.source_id NOT IN {_SHARED_PAGE_SQL}
+             AND newer.source_id NOT IN {_SHARED_PAGE_SQL}
              AND (
                   COALESCE(NULLIF(older.published_at, ''), NULLIF(older.published, ''), older.created_at)
                     < COALESCE(NULLIF(newer.published_at, ''), NULLIF(newer.published, ''), newer.created_at)
@@ -167,10 +172,10 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.execute("DROP INDEX IF EXISTS idx_rss_entries_link_unique")
     conn.execute("DROP INDEX IF EXISTS idx_rss_entries_link_unique_non_alphapai")
     conn.execute(
-        """
+        f"""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_rss_entries_link_unique_non_alphapai
         ON rss_entries(link)
-        WHERE source_id != 'alphapai'
+        WHERE source_id NOT IN {_SHARED_PAGE_SQL}
         """
     )
     conn.execute(
@@ -260,7 +265,7 @@ def save_entries(entries: Iterable[FeedEntry]) -> int:
                     )
                 continue
 
-            if source_id == "alphapai":
+            if source_id in SHARED_PAGE_SOURCE_IDS:
                 cursor = conn.execute(
                     """
                     INSERT INTO rss_entries

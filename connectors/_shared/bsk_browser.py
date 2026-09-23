@@ -26,6 +26,9 @@ from typing import Any, Callable, Sequence
 DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_REQUEST_HELP_TIMEOUT_SECONDS = 30.0
 BSK_BIN_NAME = "bsk"
+# daemon 会拒绝 stop 一个正在执行命令的 session（退出码 4）；超时路径下 session 仍 busy，
+# 因此 stop 失败后等一小会儿再试一次，避免 daemon 侧 session 泄漏。
+STOP_RETRY_DELAY_SECONDS = 1.5
 
 
 class BskError(Exception):
@@ -128,12 +131,22 @@ class BskBrowser:
     def start(self) -> str:
         if self._session_id:
             return self._session_id
-        result = self._run(
-            ["session", "start", "--json", "--no-focus"],
-            label="session start",
-            check=False,
-            stop_session_on_timeout=False,
-        )
+        started_at_ms = int(time.time() * 1000)
+        try:
+            # start 阶段尚未打开任何页面，不存在「登录/验证码等人」阻塞，故不挂看门狗：
+            # 否则 start 超时会被误分类成 BskHelpTimeout，把排障指向错误方向。
+            result = self._run(
+                ["session", "start", "--json", "--no-focus"],
+                label="session start",
+                check=False,
+                stop_session_on_timeout=False,
+                help_watchdog=False,
+            )
+        except BskTimeout:
+            # 超时被 kill 时拿不到 session_id，但 daemon 可能已建好 session（半开泄漏）：
+            # 按「本次 start 之后新建」清掉孤儿，客户端拿不到 id 也要能收尾。
+            self._cleanup_orphan_sessions(started_at_ms)
+            raise
         session_id = _read_session_id(result.stdout)
         if result.returncode != 0 or not session_id:
             # 起会话失败不得遗留半开的 session：解析到 id 就补一刀 stop。
@@ -150,15 +163,59 @@ class BskBrowser:
         self._session_id = None
         if not session_id:
             return
+        if not self._stop_session_with_retry(session_id):
+            self._log("cmd=session stop err=retry-failed")
+
+    def _stop_session_with_retry(self, session_id: str) -> bool:
+        # 命令超时路径下 session 仍 busy，首次 stop 常被 daemon 拒绝（退出码 4），
+        # 故失败后延迟重试一次；仍失败由调用方记录，不抛。
+        if self._stop_session(session_id):
+            return True
+        time.sleep(STOP_RETRY_DELAY_SECONDS)
+        return self._stop_session(session_id)
+
+    def _stop_session(self, session_id: str) -> bool:
+        """停指定 session；返回是否确认成功（绝不抛）。"""
         try:
-            self._run(
+            result = self._run(
                 ["session", "stop", session_id],
                 label="session stop",
+                timeout=self._control_timeout(),
                 check=False,
                 stop_session_on_timeout=False,
+                # 收尾命令与「登录/验证码等人」无关，不能挂看门狗（否则极小配置下会被
+                # 看门狗提前 kill，收尾永远失败）。
+                help_watchdog=False,
             )
         except BskError as exc:
             self._log(f"cmd=session stop err={type(exc).__name__}")
+            return False
+        return result.returncode == 0
+
+    def _cleanup_orphan_sessions(self, started_at_ms: int) -> None:
+        """清掉「本次 start 之后新建、且不属于我们」的孤儿 session（拿不到 id 时的兜底）。"""
+        try:
+            result = self._run(
+                ["session", "list", "--json"],
+                label="session list",
+                timeout=self._control_timeout(),
+                check=False,
+                stop_session_on_timeout=False,
+                help_watchdog=False,
+            )
+        except BskError as exc:
+            self._log(f"cmd=session list err={type(exc).__name__}")
+            return
+        for session_id in _read_orphan_session_ids(result.stdout, started_at_ms):
+            if session_id == self._session_id:
+                continue
+            if not self._stop_session_with_retry(session_id):
+                self._log(f"cmd=session stop session={session_id} err=retry-failed")
+
+    def _control_timeout(self) -> float:
+        # stop/list 是收尾用的快命令，不能沿用调用方可能极小的业务预算（否则收尾本身超时，
+        # session 照样泄漏）；给一个不小于默认值的下限。
+        return max(self._timeout, DEFAULT_TIMEOUT_SECONDS)
 
     def __enter__(self) -> "BskBrowser":
         self.start()
@@ -327,6 +384,13 @@ class BskLocator:
             return []
         return [str(item or "") for item in value]
 
+    def inner_html(self) -> str:
+        # 与 Playwright Locator.inner_html() 同形：取命中元素的内部 HTML（结构化解析用）。
+        value = self._page.browser.evaluate(
+            f"{_js_pick(self._selector, self._text, self._exact, self._index)}return e?e.innerHTML:null;}})()"
+        )
+        return str(value) if value is not None else ""
+
     def inner_text(self, timeout: float | None = None) -> str:
         # ponytail: 接受但忽略 Playwright 风格 timeout（毫秒），超时统一由 BskBrowser 控制。
         # 未命中返回空串（Playwright 会抛），调用方本来就按空文本降级。
@@ -409,6 +473,27 @@ def _read_error_code(stdout: str) -> str:
     if isinstance(payload, dict):
         return str(payload.get("code") or "")
     return ""
+
+
+def _read_orphan_session_ids(stdout: str, started_at_ms: int) -> list[str]:
+    """从 `session list --json` 输出里挑出「本次 start 之后新建」的 session id。"""
+    try:
+        payload = json.loads(stdout or "")
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    ids: list[str] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        session_id = str(item.get("session_id") or "").strip()
+        created_at = item.get("created_at_ms")
+        if not session_id or not isinstance(created_at, (int, float)):
+            continue
+        if int(created_at) >= started_at_ms:
+            ids.append(session_id)
+    return ids
 
 
 def _read_json_object(stdout: str, label: str) -> dict:

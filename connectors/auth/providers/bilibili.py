@@ -63,7 +63,7 @@ def _cookie_from_env() -> str:
 
 
 def _load_canonical_cookie() -> str:
-    """读持久化文件里的 cookie（对标 wechat 的 canonical 存储）。"""
+    """读持久化文件里的 cookie（本仓 canonical 认证存储）。"""
     try:
         payload = load_json_utf8(BILIBILI_AUTH_PATH, default=None)
     except Exception:

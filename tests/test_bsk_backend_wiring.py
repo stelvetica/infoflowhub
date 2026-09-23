@@ -14,7 +14,7 @@ import pytest
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
 from apps.subscriptions import rss_config
 from connectors._shared import web_fetch
-from connectors._shared.bsk_browser import BskCommandError
+from connectors._shared.bsk_browser import BskCommandError, BskError
 from connectors._shared.bsk_session import BskRunnerSession
 from connectors.alphapai import runner as alphapai_runner
 from test_bsk_browser import FAKE_CLI
@@ -266,6 +266,52 @@ def test_explicit_session_argument_skips_backend_selection(settings_file, fake_b
     assert result.ok
     assert seen == [session]
     assert fake_bsk.calls() == []
+
+
+# ---- bsk 会话构造失败不得炸穿整批（H1） ----
+
+
+def test_bsk_session_construction_failure_does_not_break_batch(settings_file, fake_bsk, monkeypatch):
+    """bsk CLI 未安装 / rss_settings.json 损坏等构造期异常，只作本源失败结果，
+    同批其他源已抓好的结果不得被丢弃（历史上曾整批丢失）。"""
+    settings_file({"sources": {"alphapai": "bsk"}})
+
+    def boom():
+        raise BskError("未找到 bsk CLI，请先安装 browser-skill（bsk）")
+
+    monkeypatch.setattr(alphapai_runner, "_make_bsk_session", boom)
+
+    from connectors.rss import fetch as rss_fetch
+
+    other = {"id": "some-rss", "name": "某 RSS", "feed_url": "https://example.com/feed", "provider": "rss"}
+    monkeypatch.setattr(
+        rss_fetch,
+        "fetch_feed",
+        lambda source_id, source_name, feed_url, timeout=20, limit=60: FeedFetchResult(
+            source_id, source_name, feed_url, True, 200, [], ""
+        ),
+    )
+
+    results = rss_fetch.fetch_many([SOURCE, other])
+
+    by_id = {result.source_id: result for result in results}
+    assert len(results) == 2
+    assert by_id["alphapai"].ok is False
+    assert "bsk 会话构造失败" in by_id["alphapai"].error
+    assert by_id["some-rss"].ok is True  # 同批其他源不受影响
+    assert fake_bsk.calls() == []  # 构造都没成，一个 bsk 子进程都没起
+
+
+def test_broken_settings_does_not_raise_out_of_alphapai_source(tmp_path, monkeypatch):
+    """rss_settings.json 损坏时后端判定本身会抛；bsk 分支也不得把异常抛给调用方。"""
+    broken = tmp_path / "rss_settings.json"
+    broken.write_text("{ not json", encoding="utf-8")
+    monkeypatch.setattr(rss_config, "SETTINGS_PATH", broken)
+
+    result = alphapai_runner.fetch_alphapai_source(SOURCE)
+
+    assert not result.ok
+    assert result.entries == []
 
 
 # ---- 超时取值 ----

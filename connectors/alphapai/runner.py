@@ -75,15 +75,27 @@ def fetch_alphapai_source(
     timeout_ms: int = 120000,
     session=None,
 ) -> FeedFetchResult:
-    if session is None and browser_backend_for(source) == "bsk":
-        # bsk 失败（BskError 任一子类/超时/登录帮助阻塞，或被 feed.py 吞成非 ok 结果）
-        # 时结束 bsk 会话，回退到复制 profile 路径重试一次；只返回一个结果，故只落一次库。
-        return run_bsk_with_copy_fallback(
-            source=source,
-            bsk_session=_make_bsk_session(),
-            copy_session_factory=_make_session,
-            run_once=lambda active: _run_fetch_once(active, source, limit=limit, timeout_ms=timeout_ms),
-        )
+    if session is None:
+        # 后端配置读取与 bsk 会话构造本身都可能失败（bsk CLI 未安装、rss_settings.json 损坏
+        # 导致 load_settings() 抛错等）。这两步都不得向上抛炸穿整批抓取——历史上曾因此
+        # 丢弃同批已抓好的全部源；构造阶段失败只作本源失败结果，与下方 copy 分支同形。
+        try:
+            use_bsk = browser_backend_for(source) == "bsk"
+        except Exception as exc:
+            return result_error(source, f"蓝宝书后端配置读取失败: {exc}")
+        if use_bsk:
+            try:
+                bsk_session = _make_bsk_session()
+            except Exception as exc:
+                return result_error(source, f"蓝宝书 bsk 会话构造失败: {exc}")
+            # bsk 失败（BskError 任一子类/超时/登录帮助阻塞，或被 feed.py 吞成非 ok 结果）
+            # 时结束 bsk 会话，回退到复制 profile 路径重试一次；只返回一个结果，故只落一次库。
+            return run_bsk_with_copy_fallback(
+                source=source,
+                bsk_session=bsk_session,
+                copy_session_factory=_make_session,
+                run_once=lambda active: _run_fetch_once(active, source, limit=limit, timeout_ms=timeout_ms),
+            )
     own_session = session is None
     session = session or _make_session()
     try:

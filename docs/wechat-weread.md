@@ -1,50 +1,26 @@
-# 微信公众号抓取：外部工具微信读书通道（唯一通道）
+# 微信公众号抓取已退役（历史说明）
 
-## 背景
+## 结论
 
-微信于 2026-07-30 关闭了公众号后台文章列表接口 `mp.weixin.qq.com/cgi-bin/appmsgpublish`
-（对一切请求统一返回 `200013 freq control`），旧通道（公众号后台 token+cookie 直连）
-已从本仓代码中删除，不可恢复。
+微信公众号（含微信读书 `weread://` 轻量通道）抓取管线**已退役**，本仓不再运行任何微信抓取逻辑。
 
-现行唯一通道：**外部工具 `wechat-mp-tools`（微信读书模式）**。
-本仓 9 个公众号源配置为 `weread://<fakeid>@127.0.0.1:5300`，
-抓取时由 `connectors/wechat/feed.py` 调工具的 `GET /api/articles/list/<fakeid>`
-直取文章元数据（标题/链接/摘要/时间），不走 RSS 文件。
+## 现状
 
-> ⚠️ 该工具依赖微信读书的非官方接口，且请求会经第三方转发服务（weread 中转域）。
-> 微信读书会话会交给匿名第三方；且**并非所有公众号都被微信读书收录**——未收录的号无法通过此通道抓取。
+- **旧源不再运行**：`config/subscription_sources.json` 中已无 `weread://` 源，
+  抓取链（`connectors/wechat/`）、认证项（`wechat_mp_main`）、
+  扫码登录页与相关路由/前端按钮均已删除。
+- **外部工具保留但不再由本仓拉起**：`wechat-mp-tools/` 子模块仍在仓库中，
+  但 InfoFlowHub 不再启动它（启动脚本的 Phase 1.5/1.6 已移除），也不依赖其 5300 端口。
+- **公众号内容迁移**：公众号内容已统一改由 Alpha派社媒聚合提供，
+  在默认页面（源 `alphapai-social-media`）查看，不再需要单独的微信通道。
+- **认证入口**：原「微信公众号 / 微信读书扫码」认证入口已移除，
+  相关登录态改由 Alpha派认证资产承载。
 
-## 外部工具与启动
+## 历史背景
 
-工具已在 `wechat-mp-tools/`（含独立 venv312）。`scripts/start_infoflow_web.ps1`
-的 Phase 1.5 会在 5300 端口未监听时自动拉起：
+微信于 2026-07-30 关闭公众号后台文章列表接口（旧通道不可恢复），
+此后一度改用外部工具 `wechat-mp-tools` 的微信读书模式抓取。
+该通道依赖微信读书非官方接口且经第三方转发，稳定性与合规性均不理想，
+现已整体退役并迁移至 Alpha派社媒。
 
-```powershell
-wechat-mp-tools\venv312\Scripts\python.exe app.py --port 5300 --no-browser
-# 日志：runtime\mp_tools.log
-```
-
-手动启动也用同一命令（注意 `--port 5300`，工具默认 5200 与配置不符）。
-外部工具地址 SSOT：`config/rss_settings.json -> wechat_tool.base_url`。
-
-## 登录（用户人工，约 3~4 天失效一次）
-
-1. 打开主仓界面 →「微信续期」（或设置页「认证资产」→ 微信公众号「重新扫码」）。
-2. 用**手机微信扫码登录微信读书**。⚠️ 勿勾选「24 小时后自动退出」。
-3. 账号池里的账号 Token 失效（401）后工具自动标记 invalid，需重新扫码。
-
-## 添加公众号
-
-1. 找到该公众号任一篇文章链接（`https://mp.weixin.qq.com/s/...`）。
-2. 在工具里粘贴链接，自动反查 fakeid 并添加订阅。
-3. 在本仓 `config/subscription_sources.json` 增加 `weread://<fakeid>@127.0.0.1:5300` 源。
-
-## 验证
-
-```bash
-curl http://127.0.0.1:5300/api/auth/status          # logged_in 应为 true
-curl http://127.0.0.1:5300/api/articles/list/<fakeid>?count=12
-```
-
-工具未运行时，主仓设置页显示「外部工具未运行」；登录过期时显示需重新扫码，
-对应源抓取报错入库，不回退任何旧通道。
+> 本文档仅作历史说明，不再包含任何启动、扫码或添加公众号的操作手册。
