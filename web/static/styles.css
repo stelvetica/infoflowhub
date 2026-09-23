@@ -181,6 +181,9 @@ button, input, select, textarea { font: inherit; }
 .news-card { --news-row-h: 24px; --news-head-h: 30px; width: 100%; padding-bottom: var(--sp-3); }
 .news-panel-title { margin-bottom: var(--sp-2); }
 .news-header-form { justify-content: flex-end; }
+/* 状态条与范围切换横排在标题右侧(.panel-title 已是两端对齐 flex),两者原本各自带的下边距在此归零 */
+.news-header-meta { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex-wrap: wrap; }
+.news-header-meta .news-flow-status, .news-header-meta .news-scope-bar { margin-bottom: 0; }
 .news-card .entries-table td { height: var(--news-row-h); padding-top: 0; padding-bottom: 0; }
 .news-card .pagination .subtle, .news-card .entries-table th a.sort { font-size: var(--fs-xs); }
 .news-card .table-wrap { max-height: calc(3 * var(--news-row-h) + var(--news-head-h) + 3px); }

@@ -53,16 +53,8 @@
     {% else %}
       <div class="split-shell">
         <section class="split-pane split-pane-main pane-left-stack">
+          {# 标题行(新闻 + 流程状态 + 范围切换)随片段一起渲染:范围切换后选中态要跟着换,放在片段外就得靠 OOB 回写 #}
           <section class="card news-card">
-            <div class="panel-title news-panel-title news-header-panel-title">
-              <h2>新闻</h2>
-              <form class="toolbar toolbar-inline news-header-form">
-                <input type="hidden" name="news_sort" value="{{ news.sort }}">
-                <input type="hidden" name="news_dir" value="{{ news.dir }}">
-                <input type="hidden" name="news_scope" value="{{ news.scope }}">
-                <div id="news-unread-slot" class="entries-unread-slot"></div>
-              </form>
-            </div>
             <div id="news-panel">
               {% include "partials/news_table.html" %}
             </div>

@@ -678,14 +678,14 @@ def build_entries_state_params(query: Mapping[str, Any]) -> dict[str, str]:
 
 
 def build_news_state_params(query: Mapping[str, Any]) -> dict[str, str]:
-    unread_only = query.get("news_unread_only")
     return {
         "news_q": str(query.get("news_q", "") or ""),
         "news_sort": str(query.get("news_sort") or "sort_time"),
         "news_dir": str(query.get("news_dir") or "desc"),
-        # 新闻与订阅的默认刻意不同:新闻是产物清单(条数少、常回看),缺省显示全部;
-        # 订阅缺省只看未读(build_entries_state_params 里为 "1")
-        "news_unread_only": "0" if unread_only is None else str(unread_only),
+        # 新闻面板的未读切换控件已移除,恒按「显示全部」筛:这里忽略 query 里的值,
+        # 是为了让浏览器里残留的旧 cookie(news_unread_only=1)不能把产物静默过滤掉。
+        # 订阅面板不受影响,仍缺省只看未读(build_entries_state_params 里为 "1")。
+        "news_unread_only": "0",
         "news_read_keys": str(query.get("news_read_keys", "") or ""),
         # 范围默认与 get_news_view 一致：flow（本次流程产物）；显式 all 才扫全量白名单
         "news_scope": "all" if query.get("news_scope") == "all" else "flow",

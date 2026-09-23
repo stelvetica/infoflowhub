@@ -21,10 +21,12 @@
       kind: "news",
       formSel: ".news-header-form",
       panelSel: "#news-panel",
-      slotSel: "#news-unread-slot",
+      // 新闻面板不提供未读切换(控件已移除,服务端恒按「显示全部」筛):slotSel 留空即跳过按钮渲染,
+      // setupUnreadToggle 仍会走 syncPanelFields 保 cookie 状态。
+      slotSel: "",
       fragmentUrl: "/fragments/news",
       prefix: "news",
-      unreadOnly: false, // 与订阅相反:新闻缺省显示全部(服务端 build_news_state_params 同此默认)
+      unreadOnly: false,
       button: null,
       lastSyncSignature: "",
     },
@@ -137,14 +139,18 @@
     const form = document.querySelector(panel.formSel);
     if (!form) return;
 
-    let unreadInput = form.querySelector(`input[name="${panel.prefix}_unread_only"]`);
-    if (!unreadInput) {
-      unreadInput = document.createElement("input");
-      unreadInput.type = "hidden";
-      unreadInput.name = `${panel.prefix}_unread_only`;
-      form.appendChild(unreadInput);
+    // 没有未读切换的面板(新闻)不写 unread 字段:服务端会忽略它,但留着旧 cookie 会静默恢复过滤
+    let unreadInput = null;
+    if (panel.slotSel) {
+      unreadInput = form.querySelector(`input[name="${panel.prefix}_unread_only"]`);
+      if (!unreadInput) {
+        unreadInput = document.createElement("input");
+        unreadInput.type = "hidden";
+        unreadInput.name = `${panel.prefix}_unread_only`;
+        form.appendChild(unreadInput);
+      }
+      unreadInput.value = panel.unreadOnly ? "1" : "";
     }
-    unreadInput.value = panel.unreadOnly ? "1" : "";
 
     let readKeysInput = form.querySelector(`input[name="${panel.prefix}_read_keys"]`);
     if (!readKeysInput) {
@@ -155,7 +161,9 @@
     }
     readKeysInput.value = getReadKeys().join(",");
     const cookieParams = new URLSearchParams();
-    cookieParams.set(`${panel.prefix}_unread_only`, unreadInput.value || "");
+    if (unreadInput) {
+      cookieParams.set(`${panel.prefix}_unread_only`, unreadInput.value || "");
+    }
     cookieParams.set(`${panel.prefix}_read_keys`, readKeysInput.value || "");
     // 范围状态(目前仅新闻面板)从片段根 data-<prefix>-scope 读回,让未读切换/续载带上当前范围
     const scopeValue = getPanelFragment(panel)?.dataset[`${panel.prefix}Scope`];
@@ -552,11 +560,16 @@
   }
 
   function setupUnreadToggle(panel) {
-    const slot = document.getElementById(panel.slotSel.replace("#", ""));
-    if (!slot) return;
     const meta = getPanelFragment(panel);
     if (meta) {
       panel.unreadOnly = (meta.dataset.unreadOnly || "0") === "1";
+    }
+    const slot = panel.slotSel ? document.getElementById(panel.slotSel.replace("#", "")) : null;
+    // 无未读切换的面板(新闻)没有 slot:不渲染按钮,但仍要同步 cookie 字段,
+    // 否则切范围/翻页后刷新会退回默认范围。
+    if (!slot) {
+      syncPanelFields(panel);
+      return;
     }
     let button = panel.button;
     if (!button) {
