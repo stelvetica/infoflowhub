@@ -61,6 +61,20 @@ def split_tags(value: str | None) -> list[str]:
     return result
 
 
+def split_read_keys(value: str | None) -> list[str]:
+    """已读 key 专用分割：只按逗号切分，绝不碰冒号。
+
+    不能复用 split_tags——后者为容忍用户手输标签的宽松写法，会把中英文冒号一并当分隔符，
+    而报告的 read_key 格式就是 ``report:文件名.md``（见 views._build_report_row），
+    冒号是 key 的内部结构，拆开即产生 ``report`` / ``文件名.md`` 等脏键，
+    库里无记录时未读过滤会因此失效。
+    """
+    text = strip_invalid_unicode(value or "").strip()
+    if not text:
+        return []
+    return [item.strip() for item in text.split(",") if item.strip()]
+
+
 def join_tags(tags: list[str]) -> str:
     return ",".join(strip_invalid_unicode(item).strip() for item in tags if strip_invalid_unicode(item).strip())
 

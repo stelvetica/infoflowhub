@@ -38,6 +38,7 @@ from web.services.utils import (
     read_entry_key,
     read_link_key,
     source_channel_label,
+    split_read_keys,
     split_tags,
     to_sortable_time,
 )
@@ -49,17 +50,20 @@ STATUS_PATH = RUNTIME_DIR / "health" / "subscriptions_status.json"
 LATERHUB_DB_PATH = BASE_DIR / "data" / "laterhub.sqlite3"
 WEB_LOG_PATH = RUNTIME_DIR / "web.log"
 LATERHUB_LOG_PATH = RUNTIME_DIR / "logs" / "laterhub.log"
+# 自动化流程状态（AutoRunner 写、新闻面板按流程维度读），路径定义在数据层保证 SSOT
+AUTOMATION_RUNTIME_PATH = RUNTIME_DIR / "health" / "automation_runtime.json"
 
 DELETED_SITE_URLS = {"https://www.huxiu.com/member/2321131.html"}
 # 首屏页数要盖过常见窗口的可见行数:否则首屏填不满区格,滚动续载会立刻补一页,
 # 用户会看到「先少后多」的跳动。取 30(订阅行约 33px、稍后处理行约 60px,足够高)。
 ENTRIES_PAGE_SIZE = 30
 REPORTS_DIR = BASE_DIR / "data" / "reports"
-# 「新闻」面板的数据源白名单：只认这两类产物（今日新闻.md 与各 json 一律不计入）
+# 「新闻」面板的数据源白名单：流程产物都计入（含流程中间产物 今日新闻.md），其余 json 一律不计入
 REPORT_PATTERNS: tuple[tuple[str, str], ...] = (
     ("新闻影响分析_*.md", "新闻影响分析"),
     ("公告清单_*.md", "公告清单"),
     ("公告清单_*.png", "公告图片"),
+    ("今日新闻.md", "今日热点"),
 )
 # 订阅源 → 本地正文目录标识（路由 /markdown/{kind}/{name} 的 kind）
 MARKDOWN_KINDS: dict[str, str] = {
@@ -708,6 +712,8 @@ def build_news_state_params(query: Mapping[str, Any], *, page: int | None = None
         "news_dir": str(query.get("news_dir") or "desc"),
         "news_unread_only": "1" if unread_only is None else str(unread_only),
         "news_read_keys": str(query.get("news_read_keys", "") or ""),
+        # 范围默认与 get_news_view 一致：flow（本次流程产物）；显式 all 才扫全量白名单
+        "news_scope": "all" if query.get("news_scope") == "all" else "flow",
         "news_page": str(max(safe_page, 1)),
     }
 
@@ -782,7 +788,7 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
     # 条目列表不展示登录态，跳过 auth 校验避免主界面首载阻塞
     keyword = normalize_text(query.get("entries_q", ""))
     unread_only = query.get("entries_unread_only", "0") == "1"
-    read_keys = {item for item in split_tags(query.get("entries_read_keys", "")) if item}
+    read_keys = set(split_read_keys(query.get("entries_read_keys", "")))
     persisted_read_keys = list_read_entry_keys()
     effective_read_keys = read_keys | persisted_read_keys
     sort = query.get("entries_sort") or "sort_time"
@@ -827,6 +833,38 @@ def markdown_url(source_id: str, markdown_path: str) -> str:
     return f"/markdown/{kind}/{quote(name, safe='')}"
 
 
+def get_flow_state() -> dict[str, Any]:
+    """读取最近一次自动化流程状态（flow 对象）；文件缺失或无该字段时返回空 dict。"""
+    state = read_json(AUTOMATION_RUNTIME_PATH, {})
+    flow = state.get("flow") if isinstance(state, dict) else None
+    return flow if isinstance(flow, dict) else {}
+
+
+def _build_report_row(path: Path, kind: str) -> dict[str, Any]:
+    """单文件 → 完整产物行；白名单扫描与流程产物补全共用（SSOT）。"""
+    matched = re.search(r"\d{4}-\d{2}-\d{2}", path.name)
+    if matched:
+        date_text = matched.group(0)
+        display_time = date_text.replace("-", "/")
+        sort_time = to_sortable_time(date_text)
+    else:
+        # 文件名没日期时用文件 mtime 兜底，保证排序稳定可读
+        fallback = datetime.fromtimestamp(path.stat().st_mtime)
+        display_time = fallback.strftime("%Y/%m/%d")
+        sort_time = fallback.timestamp()
+    return {
+        "name": path.name,
+        "kind": kind,
+        "is_image": path.suffix.lower() == ".png",
+        "title": path.stem,
+        "link": f"/reports/view/{quote(path.name, safe='')}",
+        "has_link": True,
+        "read_key": f"report:{path.name}",
+        "display_time": display_time,
+        "sort_time": sort_time,
+    }
+
+
 def _iter_report_rows() -> list[dict[str, Any]]:
     """扫描产物目录（白名单 glob）构建「生成产物」行；目录不存在时返回空列表。"""
     rows: list[dict[str, Any]] = []
@@ -834,44 +872,44 @@ def _iter_report_rows() -> list[dict[str, Any]]:
         for path in sorted(REPORTS_DIR.glob(pattern)):
             if not path.is_file():
                 continue
-            matched = re.search(r"\d{4}-\d{2}-\d{2}", path.name)
-            if matched:
-                date_text = matched.group(0)
-                display_time = date_text.replace("-", "/")
-                sort_time = to_sortable_time(date_text)
-            else:
-                # 文件名没日期时用文件 mtime 兜底，保证排序稳定可读
-                fallback = datetime.fromtimestamp(path.stat().st_mtime)
-                display_time = fallback.strftime("%Y/%m/%d")
-                sort_time = fallback.timestamp()
-            rows.append(
-                {
-                    "name": path.name,
-                    "kind": kind,
-                    "is_image": path.suffix.lower() == ".png",
-                    "title": path.stem,
-                    "link": f"/reports/view/{quote(path.name, safe='')}",
-                    "has_link": True,
-                    "read_key": f"report:{path.name}",
-                    "display_time": display_time,
-                    "sort_time": sort_time,
-                }
-            )
+            rows.append(_build_report_row(path, kind))
+    return rows
+
+
+def _iter_flow_report_rows(flow: dict[str, Any]) -> list[dict[str, Any]]:
+    """按最近一次流程的 products 清单补全为完整行；清单缺项或文件已被清理的条目跳过。"""
+    products = flow.get("products")
+    if not isinstance(products, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in products:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "")
+        path = REPORTS_DIR / name
+        if not name or not path.is_file():
+            continue
+        rows.append(_build_report_row(path, str(item.get("kind") or "")))
     return rows
 
 
 def get_news_view(query: dict[str, str]) -> dict[str, Any]:
-    """新闻卡片：展示 data/reports 下的生成产物（新闻影响分析/公告清单/公告图片），每页 5 条。"""
+    """新闻卡片：展示 data/reports 下的生成产物，每页 5 条。
+
+    news_scope=flow（默认）只看最近一次流程新增的产物，=all 扫全部白名单文件。
+    """
     keyword = normalize_text(query.get("news_q", ""))
     unread_only = query.get("news_unread_only", "0") == "1"
-    read_keys = {item for item in split_tags(query.get("news_read_keys", "")) if item}
+    read_keys = set(split_read_keys(query.get("news_read_keys", "")))
     persisted_read_keys = list_read_entry_keys()
     effective_read_keys = read_keys | persisted_read_keys
     sort = query.get("news_sort") or "sort_time"
     direction = query.get("news_dir") or "desc"
     page = max(int(query.get("news_page", "1") or "1"), 1)
+    scope = "all" if query.get("news_scope") == "all" else "flow"
+    source_rows = _iter_report_rows() if scope == "all" else _iter_flow_report_rows(get_flow_state())
     rows: list[dict[str, Any]] = []
-    for row in _iter_report_rows():
+    for row in source_rows:
         if keyword and keyword not in normalize_text(row["title"]):
             continue
         # 产物是新文件，不套用 ENTRIES_READ_CUTOFF（历史条目才需要按时间兜底判已读）
@@ -894,6 +932,7 @@ def get_news_view(query: dict[str, str]) -> dict[str, Any]:
         "filtered_total": total,
         "unread_only": unread_only,
         "read_keys_text": ",".join(sorted(effective_read_keys)),
+        "scope": scope,
     }
 
 

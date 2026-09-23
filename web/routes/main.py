@@ -20,6 +20,7 @@ from web.services.views import (
     format_success_sources_text,
     get_laterhub_actionable_ids,
     get_entries_view,
+    get_flow_state,
     get_laterhub_summary,
     get_laterhub_view,
     get_nav_settings,
@@ -57,9 +58,16 @@ def _resolve_inside(root: Path, name: str, suffixes: tuple[str, ...]) -> Path | 
     basename = Path(name).name
     if not basename or basename != name:
         return None
+    # 控制字符（含 NUL）会让后续 resolve/is_file 抛 ValueError 而非返回 None，
+    # 调用点无捕获会变成 500；此处直接判非法，兑现「一律 404」契约。
+    if any(ord(char) < 32 for char in name):
+        return None
     root_resolved = root.resolve()
-    target = (root_resolved / basename).resolve()
-    if target.parent != root_resolved or not target.is_file():
+    try:
+        target = (root_resolved / basename).resolve()
+        if target.parent != root_resolved or not target.is_file():
+            return None
+    except (OSError, ValueError):
         return None
     if target.suffix.lower() not in suffixes:
         return None
@@ -151,6 +159,7 @@ def render_main(request: Request, params: dict[str, str]):
             "entries": entries,
             "news": news,
             "news_params": news_params,
+            "flow": get_flow_state(),
             "laterhub": laterhub,
             "laterhub_params": laterhub_params,
             "settings": settings,
@@ -181,9 +190,41 @@ async def entries_fragment(request: Request):
 @router.get("/fragments/news", response_class=HTMLResponse)
 async def news_fragment(request: Request):
     params = load_news_state(request)
-    response = templates.TemplateResponse(request, "partials/news_table.html", {"news": get_news_view(params), "news_params": params, "params": params})
+    response = templates.TemplateResponse(
+        request,
+        "partials/news_table.html",
+        {"news": get_news_view(params), "news_params": params, "params": params, "flow": get_flow_state()},
+    )
     persist_news_state(response, params)
     return response
+
+
+@router.get("/fragments/news-flow-status", response_class=HTMLResponse)
+async def news_flow_status_fragment(request: Request):
+    """流程状态片段：运行中由片段自带 10s 轮询，终态不带触发器（空闲不产生请求）。"""
+    return templates.TemplateResponse(
+        request,
+        "partials/news_flow_status.html",
+        {"flow": get_flow_state(), "params": query_dict(request)},
+    )
+
+
+@router.get("/fragments/news-report/{name}", response_class=HTMLResponse)
+async def news_report_fragment(request: Request, name: str):
+    """新闻面板内联内容片段：md 渲染为 HTML，png 输出 img 标签；非法/缺失一律 404。
+
+    白名单与目录穿越防护复用 _resolve_inside（与 /reports/raw、/reports/view 同一实现）。
+    """
+    target = _resolve_inside(REPORTS_DIR, name, (".md", ".png"))
+    if target is None:
+        return PlainTextResponse("Report not found", status_code=404)
+    is_image = target.suffix.lower() == ".png"
+    body_html = "" if is_image else md_render.render(target.read_text(encoding="utf-8", errors="replace"))
+    return templates.TemplateResponse(
+        request,
+        "partials/news_report_content.html",
+        {"title": target.stem, "name": target.name, "is_image": is_image, "body_html": body_html},
+    )
 
 
 @router.post("/actions/entries/mark-read")
