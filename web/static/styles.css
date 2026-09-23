@@ -176,8 +176,9 @@ button, input, select, textarea { font: inherit; }
 .panel-title-settings-nowrap, .panel-title-settings-nowrap .panel-title-inline { flex-wrap: wrap; align-items: center; }
 .panel-heading-nowrap { white-space: nowrap; }
 
-/* 新闻条带:行高固定,只露 3 行,其余靠滚动续载(表头高=字号×1.5+上下 padding 12px;
-   +3px 让第 3 行完整露出并留一线提示下方还有内容,抵消子像素边框取整) */
+/* 新闻条带:行高固定,只露 4 行,其余靠滚动续载(表头高=字号×1.5+上下 padding 12px;
+   +3px 让第 4 行完整露出并留一线提示下方还有内容,抵消子像素边框取整;
+   露 4 行 < 每批 NEWS_BATCH_SIZE=5,首屏必留一条在滚动区,续载才有的可滚) */
 .news-card { --news-row-h: 24px; --news-head-h: 30px; width: 100%; padding-bottom: var(--sp-3); }
 .news-panel-title { margin-bottom: var(--sp-2); }
 .news-header-form { justify-content: flex-end; }
@@ -186,7 +187,7 @@ button, input, select, textarea { font: inherit; }
 .news-header-meta .news-flow-status, .news-header-meta .news-scope-bar { margin-bottom: 0; }
 .news-card .entries-table td { height: var(--news-row-h); padding-top: 0; padding-bottom: 0; }
 .news-card .pagination .subtle, .news-card .entries-table th a.sort { font-size: var(--fs-xs); }
-.news-card .table-wrap { max-height: calc(3 * var(--news-row-h) + var(--news-head-h) + 3px); }
+.news-card .table-wrap { max-height: calc(4 * var(--news-row-h) + var(--news-head-h) + 3px); }
 
 /* 展开报告时解除上面的 3 行限高:改由报告内容区自身限高滚动,并给新闻卡设总高上限,
    避免两万多像素的长报告把下方「订阅内容」卡挤没。:has() 让「是否展开」纯由 DOM 状态决定,
