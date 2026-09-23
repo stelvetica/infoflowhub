@@ -17,14 +17,18 @@ from web.services import views
 
 
 def test_wechat_runtime_modules_removed():
-    with pytest.raises(ModuleNotFoundError):
-        import connectors.wechat  # noqa: F401
-    with pytest.raises(ModuleNotFoundError):
-        import web.services.weread_login  # noqa: F401
-    with pytest.raises(ModuleNotFoundError):
-        import web.services.wechat_login  # noqa: F401
-    with pytest.raises(ModuleNotFoundError):
-        import connectors.auth.providers.wechat  # noqa: F401
+    # 按源码文件是否存在判定：删掉的包目录若只剩 __pycache__，Python 会把它当
+    # 命名空间包导入成功（__file__ 为 None），用 import 断言会因文件系统残留而误判。
+    root = Path(__file__).resolve().parents[1]
+    for rel in (
+        "connectors/wechat/__init__.py",
+        "connectors/wechat/feed.py",
+        "web/services/weread_login.py",
+        "web/services/wechat_login.py",
+        "web/templates/wechat_login.html",
+        "connectors/auth/providers/wechat.py",
+    ):
+        assert not (root / rel).exists(), f"{rel} 应已随微信管线退役删除"
 
 
 def test_auth_registry_has_no_wechat_asset():
