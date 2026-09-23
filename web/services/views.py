@@ -199,9 +199,10 @@ def auth_requirement_meta(auth_key: str) -> dict[str, str] | None:
 
 def infer_source_meta(feed_url: str, site_url: str) -> tuple[str, str, str]:
     feed = normalize_text(feed_url)
-    site = normalize_text(site_url)
-    combined = f"{feed} {site}"
-    if any(host in combined for host in ("bilibili.com", "x.com", "twitter.com", "douyin.com", "youtube.com", "youtu.be", "jiuyangongshe.com")):
+    # 是否走浏览器抓取以 connector 侧的站点识别为准（唯一真源）；纯 RSS 源返回 None。
+    # 原先这里另存一份硬编码域名白名单，两处不同步会把新站点误判成 native，
+    # 保存后该源掉进 RSS 路径抓不到内容（Alpha派社媒即因此被降级）。
+    if resolve_web_target({"feed_url": feed_url, "site_url": site_url}):
         return ("web", "web", "web")
     if "rsshub" in feed:
         return ("rsshub", "rsshub-self-hosted", "rsshub")

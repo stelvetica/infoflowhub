@@ -101,10 +101,25 @@ def test_settings_page_has_no_forbidden_wording(client: TestClient) -> None:
 def test_both_alphapai_sources_depend_on_alpha_auth(client: TestClient) -> None:
     html = client.get("/?view=settings").text
 
-    assert "资讯 Alpha派蓝宝书" in html
-    assert "资讯 Alpha派公众号" in html
+    # 按源 id 判定（渲染在操作 URL 里），不用展示名——展示名用户随时可改。
+    assert "/actions/source/alphapai/toggle-enabled" in html
+    assert "/actions/source/alphapai-social-media/toggle-enabled" in html
     # 依赖认证资产列（requirement-badge）两条都指向 Alpha派。
     assert html.count('<span class="requirement-badge">Alpha派</span>') >= 2
+
+
+def test_infer_source_meta_treats_recognized_sites_as_web() -> None:
+    """浏览器抓取的源必须判为 web：判成 native 会在保存时掉进 RSS 路径，抓不到内容。"""
+    for url in (
+        SOCIAL_URL,
+        ALPHAPAI_URL,
+        "https://space.bilibili.com/123/dynamic",
+        "https://www.jiuyangongshe.com/u/abc",
+    ):
+        assert views.infer_source_meta(url, url) == ("web", "web", "web"), url
+    # 纯 RSS 源仍归 native，rsshub 源仍归 rsshub。
+    assert views.infer_source_meta("https://example.com/feed.xml", "https://example.com") == ("native", "direct", "native")
+    assert views.infer_source_meta("https://rsshub.app/x/user/abc", "") == ("rsshub", "rsshub-self-hosted", "rsshub")
 
 
 def test_channel_column_shows_localized_labels(client: TestClient) -> None:
