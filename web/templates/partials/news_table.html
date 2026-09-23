@@ -4,9 +4,9 @@
 } %}
 <div data-news-fragment="1" data-next-cursor="{{ news.next_cursor }}" data-total="{{ news.filtered_total }}" data-read-keys="{{ news.read_keys_text }}" data-news-scope="{{ news.scope }}" data-panel-kind="news">
   {# 标题行随片段渲染:范围切换后 chip 选中态要跟着换,放片段外就得靠 OOB 回写。
-     .panel-title 本身是两端对齐的 flex,状态条与 chip 横排在右侧、与「新闻」同基线。 #}
+     .panel-title 本身是两端对齐的 flex,状态条与 chip 横排在右侧、与标题同基线。 #}
   <div class="panel-title news-panel-title">
-    <h2>新闻</h2>
+    <h2>新闻公告</h2>
     <div class="news-header-meta">
       {% include "partials/news_flow_status.html" %}
       {# 范围切换：与表头排序同款纯 HTMX 链接，不做 JS 状态机。base_params 不含 scope，各处显式拼一次，避免重复参数 #}
