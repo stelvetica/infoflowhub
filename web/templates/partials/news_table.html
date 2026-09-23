@@ -3,12 +3,12 @@
   'news_unread_only': '1' if news.unread_only else '',
   'news_read_keys': news.read_keys_text,
 } %}
-<div data-news-fragment="1" data-page="{{ news.page }}" data-total-pages="{{ news.total_pages }}" data-total="{{ news.filtered_total }}" data-unread-only="{{ '1' if news.unread_only else '0' }}" data-read-keys="{{ news.read_keys_text }}" data-news-scope="{{ news.scope }}" data-panel-kind="news">
+<div data-news-fragment="1" data-next-cursor="{{ news.next_cursor }}" data-total="{{ news.filtered_total }}" data-unread-only="{{ '1' if news.unread_only else '0' }}" data-read-keys="{{ news.read_keys_text }}" data-news-scope="{{ news.scope }}" data-panel-kind="news">
   {% include "partials/news_flow_status.html" %}
-  {# 范围切换：与表头排序同款纯 HTMX 链接，不做 JS 状态机 #}
+  {# 范围切换：与表头排序同款纯 HTMX 链接，不做 JS 状态机。base_params 不含 scope，各处显式拼一次，避免重复参数 #}
   <div class="news-scope-bar" role="group" aria-label="产物范围">
-    <a class="chip {% if news.scope == 'flow' %}active{% endif %}" href="/fragments/news?{{ base_params|urlencode }}&news_scope=flow&news_page=1" hx-get="/fragments/news?{{ base_params|urlencode }}&news_scope=flow&news_page=1" hx-target="#news-panel" hx-swap="innerHTML" {% if news.scope == 'flow' %}aria-current="true"{% endif %}>本次流程</a>
-    <a class="chip {% if news.scope == 'all' %}active{% endif %}" href="/fragments/news?{{ base_params|urlencode }}&news_scope=all&news_page=1" hx-get="/fragments/news?{{ base_params|urlencode }}&news_scope=all&news_page=1" hx-target="#news-panel" hx-swap="innerHTML" {% if news.scope == 'all' %}aria-current="true"{% endif %}>全部历史</a>
+    <a class="chip {% if news.scope == 'flow' %}active{% endif %}" href="/fragments/news?{{ base_params|urlencode }}&news_scope=flow" hx-get="/fragments/news?{{ base_params|urlencode }}&news_scope=flow" hx-target="#news-panel" hx-swap="innerHTML" {% if news.scope == 'flow' %}aria-current="true"{% endif %}>本次流程</a>
+    <a class="chip {% if news.scope == 'all' %}active{% endif %}" href="/fragments/news?{{ base_params|urlencode }}&news_scope=all" hx-get="/fragments/news?{{ base_params|urlencode }}&news_scope=all" hx-target="#news-panel" hx-swap="innerHTML" {% if news.scope == 'all' %}aria-current="true"{% endif %}>全部历史</a>
   </div>
   <div class="table-wrap">
     <table class="entries-table news-table">
@@ -31,8 +31,8 @@
             <td class="cell-time">{{ item.display_time[:10] }}</td>
             <td class="cell-ellipsis cell-muted" title="{{ item.kind }}">{{ item.kind }}</td>
             <td>
-              {# id 带页码前缀：续载页的 loop.index 会重置，只靠 index 会撞 id #}
-              {% set report_id = 'news-report-%s-%s' % (news.page, loop.index0) %}
+              {# id 用产物文件名派生（文件在目录内唯一），续载是追加多批，只靠 loop.index 会撞 id；点号换成连字符以免选择器解析出错 #}
+              {% set report_id = 'news-report-%s-%s' % (item.name|replace('.', '-'), loop.index0) %}
               <div class="news-detail">
                 <a class="cell-ellipsis cell-link cell-unread read-track news-title-link"
                    href="{{ item.link }}"

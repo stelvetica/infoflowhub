@@ -24,7 +24,7 @@
       slotSel: "#news-unread-slot",
       fragmentUrl: "/fragments/news",
       prefix: "news",
-      unreadOnly: true,
+      unreadOnly: false, // 与订阅相反:新闻缺省显示全部(服务端 build_news_state_params 同此默认)
       button: null,
       lastSyncSignature: "",
     },
@@ -158,7 +158,6 @@
     }
     readKeysInput.value = getReadKeys().join(",");
     const cookieParams = new URLSearchParams();
-    const pageValue = getPanelFragment(panel)?.dataset.page || "1";
     cookieParams.set(`${panel.prefix}_unread_only`, unreadInput.value || "");
     cookieParams.set(`${panel.prefix}_read_keys`, readKeysInput.value || "");
     // 范围状态(目前仅新闻面板)从片段根 data-<prefix>-scope 读回,让未读切换/续载带上当前范围
@@ -180,7 +179,6 @@
     cookieParams.set(`${panel.prefix}_q`, keyword);
     cookieParams.set(`${panel.prefix}_sort`, form.querySelector(`input[name="${panel.prefix}_sort"]`)?.value || "sort_time");
     cookieParams.set(`${panel.prefix}_dir`, form.querySelector(`input[name="${panel.prefix}_dir"]`)?.value || "desc");
-    cookieParams.set(`${panel.prefix}_page`, pageValue);
     setCookie(`ifh_${panel.kind}_state_v1`, cookieParams.toString());
   }
 
@@ -195,11 +193,6 @@
       const text = String(value || "");
       if (text) params.set(key, text);
     });
-
-    const meta = getPanelFragment(panel);
-    if (meta?.dataset.page && !Object.prototype.hasOwnProperty.call(extraParams, `${panel.prefix}_page`)) {
-      params.set(`${panel.prefix}_page`, meta.dataset.page);
-    }
 
     Object.entries(extraParams).forEach(([key, value]) => {
       const text = String(value || "");
@@ -228,11 +221,10 @@
     return panels.find((panel) => panel.kind === kind) || null;
   }
 
-  // 表格续载:先把表格区填满(不留空白),滚到接近底部再追加下一页,故不再需要「下一页」按钮。
-  // 已加载页数按片段根元素记(WeakMap):HTMX 换掉片段根即自动归零,无需额外重置逻辑。
+  // 表格续载:先把表格区填满(不留空白),滚到接近底部再按游标追加下一批,故不再需要「下一页」。
+  // 游标锚在「上一批最后一行的排序键+身份」上(片段根 data-next-cursor),列表被增删也不会跳条/重复。
   const AUTO_LOAD_TRIGGER_PX = 160;
   const AUTO_LOAD_FILL_ROUNDS = 5;
-  const autoLoadPages = new WeakMap();
   const autoLoadPanels = [
     {
       key: "news",
@@ -241,9 +233,9 @@
       tbodySel: "#news-panel tbody",
       countSel: "#news-panel .pagination .subtle",
       loading: false,
-      nextUrl(page) {
+      nextUrl(cursor) {
         const panel = findPanel("news");
-        const params = panel ? buildPanelQuery(panel, { news_page: String(page) }) : null;
+        const params = panel ? buildPanelQuery(panel, { news_after: cursor }) : null;
         return params ? `${panel.fragmentUrl}?${params.toString()}` : "";
       },
     },
@@ -254,9 +246,9 @@
       tbodySel: "#entries-panel tbody",
       countSel: "#entries-panel .pagination .subtle",
       loading: false,
-      nextUrl(page) {
+      nextUrl(cursor) {
         const panel = findPanel("entries");
-        const params = panel ? buildPanelQuery(panel, { entries_page: String(page) }) : null;
+        const params = panel ? buildPanelQuery(panel, { entries_after: cursor }) : null;
         return params ? `${panel.fragmentUrl}?${params.toString()}` : "";
       },
     },
@@ -267,9 +259,9 @@
       tbodySel: ".pane-right-stack tbody",
       countSel: ".pane-right-stack .pagination .subtle",
       loading: false,
-      nextUrl(page) {
+      nextUrl(cursor) {
         const params = new URLSearchParams(getLaterhubQueryString());
-        params.set("laterhub_page", String(page));
+        params.set("laterhub_after", cursor);
         return `/fragments/laterhub?${params.toString()}`;
       },
     },
@@ -284,8 +276,7 @@
       meta,
       wrap,
       tbody,
-      basePage: Number(meta.dataset.page || 1) || 1,
-      totalPages: Number(meta.dataset.totalPages || 1) || 1,
+      cursor: meta.dataset.nextCursor || "",
       total: Number(meta.dataset.total || 0) || 0,
     };
   }
@@ -344,11 +335,10 @@
     if (fresh) {
       row.replaceWith(document.importNode(fresh, true));
     } else {
-      // 当前筛选(如「未处理」)已不含该条目
-      // ponytail: 分页按绝对偏移取,完成一条后列表左移,继续下滚可能跳过一条(刷新即恢复);
-      // 升级路径=游标式续载(按排序键取下一页)。见 TECH_DEBT.md
+      // 当前筛选(如「未处理」)已不含该条目。游标锚在「排序键+身份」上,移除一行不影响续载定位
       row.remove();
     }
+    // 只同步总数:该响应是整块面板(首批),其 data-next-cursor 会倒退,不能覆盖当前游标
     const total = parsed.querySelector("[data-laterhub-fragment]")?.dataset.total;
     const meta = document.querySelector("[data-laterhub-fragment]");
     if (total && meta) meta.dataset.total = total;
@@ -381,10 +371,8 @@
   async function appendNextPage(descriptor) {
     if (descriptor.loading) return false;
     const state = readAutoLoadState(descriptor);
-    if (!state) return false;
-    const loaded = autoLoadPages.get(state.meta) ?? state.basePage;
-    if (loaded >= state.totalPages) return false;
-    const url = descriptor.nextUrl(loaded + 1);
+    if (!state || !state.cursor) return false; // 没有下一游标 = 已取完
+    const url = descriptor.nextUrl(state.cursor);
     if (!url) return false;
 
     descriptor.loading = true;
@@ -392,7 +380,8 @@
       const response = await fetch(url, { credentials: "same-origin" });
       if (!response.ok) throw new Error(String(response.status));
       const html = await response.text();
-      const source = new DOMParser().parseFromString(html, "text/html").querySelector("tbody");
+      const parsed = new DOMParser().parseFromString(html, "text/html");
+      const source = parsed.querySelector("tbody");
       const target = document.querySelector(descriptor.tbodySel);
       if (!source || !target) return false;
       const existingRows = target.children.length;
@@ -400,7 +389,13 @@
       // 追加的行没经过 HTMX 交换,需手动 process 才能让 hx-post 等属性生效(否则「完成」按钮是死的)
       const appendedRows = [...target.children].slice(existingRows);
       if (window.htmx?.process) appendedRows.forEach((row) => window.htmx.process(row));
-      autoLoadPages.set(state.meta, loaded + 1);
+      // 游标与总数取自已加载批次,写回片段根供下一次续载使用
+      const parsedRoot = parsed.querySelector(descriptor.metaSel);
+      const meta = document.querySelector(descriptor.metaSel);
+      if (parsedRoot && meta) {
+        meta.dataset.nextCursor = parsedRoot.dataset.nextCursor || "";
+        meta.dataset.total = parsedRoot.dataset.total || meta.dataset.total;
+      }
       updateAutoLoadCount(descriptor, state);
       applyReadState();
       setupLaterhubOpenedTracking();
@@ -574,7 +569,7 @@
       button.onclick = () => {
         panel.unreadOnly = !panel.unreadOnly;
         renderUnreadToggle(panel);
-        refreshPanel(panel, { [`${panel.prefix}_page`]: "1" });
+        refreshPanel(panel);
       };
       panel.button = button;
     }
@@ -585,16 +580,15 @@
     renderUnreadToggle(panel);
     const currentReadKeys = getReadKeys().join(",");
     if (!meta) return;
-    const currentPage = meta.dataset.page || "1";
-    // 面板内有展开的内联报告时跳过签名驱动的重绘:重绘会清空 .news-report,用户刚展开的内容随即消失。
+// 面板内有展开的内联报告时跳过签名驱动的重绘:重绘会清空 .news-report,用户刚展开的内容随即消失。
     // 已读状态存在全局 localStorage,在订阅面板点击也会改到本面板的签名,故必须在这里统一拦。
     // 收起后差异仍在,下一次 init(任意 afterSwap)会补刷,状态不会丢。
     if (document.querySelector(`${panel.panelSel} .news-report:not(:empty)`)) return;
-    const renderedSignature = `${currentPage}|${meta.dataset.unreadOnly || "0"}|${meta.dataset.readKeys || ""}`;
-    const targetSignature = `${currentPage}|${panel.unreadOnly ? "1" : "0"}|${currentReadKeys}`;
+    const renderedSignature = `${meta.dataset.unreadOnly || "0"}|${meta.dataset.readKeys || ""}`;
+    const targetSignature = `${panel.unreadOnly ? "1" : "0"}|${currentReadKeys}`;
     if (renderedSignature !== targetSignature && panel.lastSyncSignature !== targetSignature) {
       panel.lastSyncSignature = targetSignature;
-      refreshPanel(panel, { [`${panel.prefix}_page`]: currentPage });
+      refreshPanel(panel);
       return;
     }
     panel.lastSyncSignature = targetSignature;
@@ -624,7 +618,7 @@
       const term = input.value.trim();
       input.value = term;
       panels.forEach((panel) => {
-        refreshPanel(panel, { [`${panel.prefix}_q`]: term, [`${panel.prefix}_page`]: "1" });
+        refreshPanel(panel, { [`${panel.prefix}_q`]: term });
       });
       const laterhubPanel = document.getElementById("laterhub-panel");
       if (laterhubPanel) {

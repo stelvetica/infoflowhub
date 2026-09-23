@@ -129,7 +129,7 @@ captured.ajax.forEach((url) => {
 assert(preventDefaultCalled, "回车提交被拦截,不整页刷新");
 assert(captured.ajax.length === 2, "新闻与订阅两个面板发起刷新");
 assert(panelParams["/fragments/entries"]?.get("entries_q") === "AI", "订阅面板按关键词过滤");
-assert(panelParams["/fragments/entries"]?.get("entries_page") === "1", "订阅面板回到第 1 页");
+assert(panelParams["/fragments/entries"]?.get("entries_after") === null, "订阅面板从首批重新取(不带续载游标)");
 assert(panelParams["/fragments/entries"]?.get("entries_sort") === "sort_time", "订阅面板保留排序状态");
 assert(panelParams["/fragments/news"]?.get("news_q") === "AI", "新闻面板按关键词过滤");
 assert(laterhubQInputs.every((el) => el.value === "AI"), "关键词同步到稍后处理表单");

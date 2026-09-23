@@ -4,4 +4,6 @@
 
 | 位置 | 天花板 | 升级路径 |
 | --- | --- | --- |
-| `web/static/app.js` — 稍后处理「完成」就地移除行（`applyLaterhubToggle`） | 续载按绝对偏移取页（`laterhub_page=N`）；在「未处理/已打开」筛选下完成一条会把列表左移一位，此后继续下滚可能**跳过一条**（刷新或改筛选即恢复，不会丢数据） | 改成游标式续载：按最后一条的排序键（`sort_time + id`）取下一页，前后端各加一个 `after=` 参数 |
+| `web/services/md_render.py`（极简 Markdown 渲染器） | 只支持产物实际用到的语法子集（ATX 标题、有序/无序列表、单行管道表、加粗、行内码、链接、空行分段）；不支持嵌套列表、代码围栏与高亮、引用块、图片、脚注、表格合并单元格。产物一旦用到这些语法会退化为纯文本 | 换 `mistune`（`render = mistune.html`，或函数内改调它），调用方 `web/routes/main.py` 无需改动 |
+| `web/services/views.py` `read_log_tail()`（稍后处理运行日志尾部） | 以固定起始行标记切片取最近一次运行，省去结构化日志头；日志格式变更（标记文案改动）时会退化为取全部行 | 改为结构化日志（每次运行写独立段/JSON），或按标记正则匹配多套文案 |
+| `collect_announcements.py`（portfolio-announcements skill，非本仓）重写清单 | AI 层捞回/删除的行不进 `seen` 留痕，被捞回的行（脚本正则误剔）在同日重跑时仍判为"新增"→重写清单并把已补的介绍重置为"待补" | 重写时解析旧清单、按 art_code 保留已有介绍格；或 AI 层定稿后把最终 art_code 回写 `seen` |
