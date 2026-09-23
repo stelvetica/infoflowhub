@@ -74,6 +74,9 @@ MARKDOWN_KINDS: dict[str, str] = {
 }
 LATERHUB_BATCH_SIZE = 30  # 同 ENTRIES_BATCH_SIZE:首批必须盖过可见行数,避免续载紧接着补批造成跳动
 ENTRIES_READ_CUTOFF = datetime(2026, 5, 1).timestamp()
+# 资讯类来源（名字前缀即列表「来源」列里显示的分类标签）条目量大、属汇总型资讯，默认按已读处理：
+# 不进未读列表，标题也按已读样式渲染。来源改名去掉前缀即恢复未读，故不另设字段。
+DEFAULT_READ_SOURCE_PREFIXES = ("资讯",)
 ABSOLUTE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 BILIBILI_DYNAMIC_PATH_RE = re.compile(r"^/(\d+)$")
 
@@ -716,6 +719,7 @@ def _build_entry_row(item: dict[str, Any], current_name_map: dict[str, str], cur
         "source_name": display_source_name,
         "display_time": format_datetime(display_time_raw),
         "sort_time": sort_time,
+        "default_read": display_source_name.startswith(DEFAULT_READ_SOURCE_PREFIXES),
     }
 
 
@@ -749,7 +753,7 @@ def _iter_entry_rows(
         if keyword and not any(keyword in normalize_text(str(item.get(field) or "")) for field in ("source_name", "title", "summary")):
             continue
         row = _build_entry_row(item, current_name_map, current_site_map)
-        if unread_only and (row["sort_time"] < ENTRIES_READ_CUTOFF or row["read_key"] in effective_read_keys):
+        if unread_only and (row["default_read"] or row["sort_time"] < ENTRIES_READ_CUTOFF or row["read_key"] in effective_read_keys):
             continue
         rows.append(row)
     return rows
