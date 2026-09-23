@@ -1,5 +1,8 @@
 ﻿# InfoFlowHub 一键启动：Web 服务（仅本地）
 # 隧道（cloudflared + Chrome 书签同步）见 start_tunnel.ps1
+# -NoBrowser：跳过 Phase 3 的打开浏览器，供计划任务自启使用（避免每次登录弹窗）
+param([switch]$NoBrowser)
+
 $ErrorActionPreference = "Stop"
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
@@ -88,10 +91,13 @@ Write-Host "[OK] Web service running at $localUrl" -ForegroundColor Green
 # ============================================================
 # Phase 3: Open browser
 # ============================================================
-Write-Host "=== Phase 3: Open browser ===" -ForegroundColor Cyan
-
-Start-Process $localUrl | Out-Null
-Write-Host "[OK] Default browser opened (local URL)" -ForegroundColor Green
+if ($NoBrowser) {
+    Write-Host "[skip] Phase 3: browser not opened (-NoBrowser)" -ForegroundColor DarkGray
+} else {
+    Write-Host "=== Phase 3: Open browser ===" -ForegroundColor Cyan
+    Start-Process $localUrl | Out-Null
+    Write-Host "[OK] Default browser opened (local URL)" -ForegroundColor Green
+}
 
 Write-Host "=== All done ===" -ForegroundColor Green
 Write-Host "Local: $localUrl" -ForegroundColor Green
