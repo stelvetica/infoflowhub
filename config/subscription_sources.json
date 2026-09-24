@@ -160,9 +160,9 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "小黑盒用户主页帖子，复用 CopyRunnerSession 复制常用 Chrome 登录态抓取",
+      "note": "小黑盒用户主页帖子，bsk 复用日常 Chrome 登录态抓取；失败不回退 copy",
       "channel": "xiaoheihe",
-      "auth_key": "xiaoheihe_main",
+      "auth_key": "xiaoheihe_shared",
       "fallback_mode": "none"
     },
     {
