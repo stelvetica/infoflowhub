@@ -73,7 +73,7 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         login_method="无需登录",
         renew_label="",
     ),
-    # 方式2：bsk 后端复用日常 Chrome 登录会话（失败自动回退 CopyRunner 复制 profile）
+    # 方式2：bsk 后端复用日常 Chrome 登录会话（失败不回退，需在源表显式用 copy 重试）
     "alphapai_main": AuthRegistration(
         auth_key="alphapai_main",
         platform="alphapai",
@@ -81,7 +81,7 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         storage_ref="复用本机 Chrome 会话，不导出 token",
         renew_strategy="copy_default_profile",
         display_name="Alpha派",
-        description="抓取后端 bsk，复用日常 Chrome 登录会话；bsk 失败自动回退 CopyRunner。",
+        description="抓取后端 bsk，复用日常 Chrome 登录会话；bsk 失败不回退，可在源表手动用 copy 重试。",
         login_method="日常 Chrome 登录会话",
         renew_label="请在日常 Chrome 登录 Alpha派",
     ),
