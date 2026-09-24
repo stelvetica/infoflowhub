@@ -29,6 +29,18 @@ SOCIAL_URL = "https://alphapai-web.rabyte.cn/reading/social-media/index"
 # 设置页不应出现的字样（微信系退役、内部名、bsk 凭据类表述）。
 FORBIDDEN_TEXT = ("微信", "alphapai_social", "ALPHAPAI_SOCIAL", "复制 profile", "bsk token")
 
+# 走 bsk 后端的认证资产：登录方式统一为「日常 Chrome 登录会话」。
+BSK_AUTH_KEYS = (
+    "douyin_shared",
+    "x_profile2",
+    "xiaoheihe_shared",
+    "youtube_main",
+    "alphapai_main",
+    "bilibili_main",
+)
+# 旧「复制 profile」机制的文案，走 bsk 的站点不得再出现。
+COPY_PROFILE_WORDING = ("复制常用 Chrome Default", "复制常用Chrome登录态", "抓取时复制")
+
 
 @pytest.fixture()
 def bsk_invocations(tmp_path, monkeypatch):
@@ -192,3 +204,38 @@ def test_alphapai_status_readable_when_cookie_db_missing(tmp_path, monkeypatch) 
 
     assert status["status_text"] == "需在 Chrome 登录"
     assert "微信" not in json.dumps(status, ensure_ascii=False)
+
+
+# ---- 认证资产文案：走 bsk 的站点统一口径，不再描述旧「复制 profile」机制 ----
+
+
+def test_bsk_auth_assets_use_daily_chrome_wording() -> None:
+    """走 bsk 的站点登录方式统一，且文案里不再出现旧复制机制字样。"""
+    for key in BSK_AUTH_KEYS:
+        reg = registry.resolve_auth(key)
+        assert reg.login_method == "日常 Chrome 登录会话", key
+        blob = " ".join((reg.description, reg.login_method, reg.storage_ref, reg.renew_label))
+        for bad in COPY_PROFILE_WORDING:
+            assert bad not in blob, (key, bad)
+
+
+def test_bsk_site_status_hints_do_not_mention_copying(tmp_path, monkeypatch) -> None:
+    """browser_profiles 的状态 hint 也渲染在同一行说明里，不得再提复制机制。"""
+    monkeypatch.setattr(browser_profiles, "_default_chrome_profile_dir", lambda: tmp_path / "Default")
+    for status in (
+        browser_profiles.validate_douyin_auth(),
+        browser_profiles.validate_x_auth(),
+        browser_profiles.validate_xiaoheihe_auth(),
+        browser_profiles.validate_youtube_auth(),
+    ):
+        for bad in COPY_PROFILE_WORDING:
+            assert bad not in status["hint"], bad
+
+
+def test_settings_page_auth_assets_drop_copy_profile_wording(client: TestClient) -> None:
+    html = client.get("/?view=settings").text
+
+    for bad in COPY_PROFILE_WORDING:
+        assert bad not in html
+    # 走 bsk 的 6 个站点，登录方式统一为「日常 Chrome 登录会话」。
+    assert html.count("日常 Chrome 登录会话") >= len(BSK_AUTH_KEYS)

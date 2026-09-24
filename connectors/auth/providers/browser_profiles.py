@@ -89,10 +89,11 @@ def _validate_auth_profile_cookie(
 ) -> dict[str, object]:
     """检查常用 Chrome Default profile 里是否含某域名 cookie（判定已登录该站点）。
 
-    订阅/收藏现已统一走 CopyRunnerSession 复制常用 Chrome 登录态，故校验来源
-    也从"共享 auth profile"改为常用 Chrome Default（同 validate_alphapai_auth）。
-    required_cookies 非空时，要求这些 cookie 名（任一存在即可）在匹配域名下
-    存在才算已登录--避免被追踪/指纹类 cookie（GA、百度统计、设备指纹等）蒙混。
+    抖音/X/小黑盒/YouTube 订阅与收藏现已统一走 bsk 后端，直接复用日常 Chrome
+    的实时登录会话（不复制副本、不导出 token），故校验来源是常用 Chrome Default
+    （同 validate_alphapai_auth）。required_cookies 非空时，要求这些 cookie 名
+    （任一存在即可）在匹配域名下存在才算已登录--避免被追踪/指纹类 cookie
+    （GA、百度统计、设备指纹等）蒙混。
     """
     cookies = _default_chrome_cookies()
     if not cookies.exists():
@@ -100,11 +101,11 @@ def _validate_auth_profile_cookie(
             "is_available": False,
             "status_level": "warn",
             "status_text": "未登录",
-            "hint": f"请先在常用 Chrome 中登录 {label}，抓取时自动复制登录态。",
+            "hint": f"请先在常用 Chrome 中登录 {label}；抓取走 bsk，复用日常 Chrome 登录会话。",
         }
     # Chrome 运行时锁定 Cookies，读打不开；此时挖不到登录态信息、也降级为"可用"。
     if not _cookies_db_readable(cookies):
-        return {"is_available": True, "status_level": "ok", "status_text": "可用", "hint": "常用 Chrome 运行中，未精确校验登录态；抓取走复制副本，不受影响。"}
+        return {"is_available": True, "status_level": "ok", "status_text": "可用", "hint": "常用 Chrome 运行中，未精确校验登录态；抓取走 bsk 复用其实时会话。"}
     try:
         import sqlite3
 
@@ -122,21 +123,21 @@ def _validate_auth_profile_cookie(
         conn.close()
     except Exception:
         # Chrome 运行时会排他锁定 Default profile 的 Cookies SQLite，无法精确校验。
-        # 抓取走 CopyRunnerSession 复制副本（抓取前关 Chrome）不受此锁影响，且有
-        # 401 失效检测兜底。故读不了时降级为"可用"——profile 存在即视为可用。
-        return {"is_available": True, "status_level": "ok", "status_text": "可用", "hint": "常用 Chrome 运行中，未精确校验登录态；抓取走复制副本，不受影响。"}
+        # 抓取走 bsk 复用其实时会话，不受此锁影响，且有失效检测兜底；故读不了时
+        # 降级为"可用"——profile 存在即视为可用。
+        return {"is_available": True, "status_level": "ok", "status_text": "可用", "hint": "常用 Chrome 运行中，未精确校验登录态；抓取走 bsk 复用其实时会话。"}
     if auth_count <= 0:
         return {
             "is_available": False,
             "status_level": "warn",
             "status_text": "未登录",
-            "hint": f"请先在常用 Chrome 中登录 {label}，抓取时自动复制。如已登录仍显示未登录，请确认已关闭 Chrome ABE 并重启。",
+            "hint": f"请先在常用 Chrome 中登录 {label}；抓取走 bsk，复用日常 Chrome 登录会话。如已登录仍显示未登录，请确认已关闭 Chrome ABE 并重启。",
         }
     return {
         "is_available": True,
         "status_level": "ok",
         "status_text": "可用",
-        "hint": "登录态从常用 Chrome 复制（需已关闭 Chrome ABE）。抓取前需关 Chrome，抓完自动重开。",
+        "hint": "登录态来自日常 Chrome 会话；抓取走 bsk 复用其实时登录态，不导出 token。",
     }
 
 

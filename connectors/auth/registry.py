@@ -17,50 +17,50 @@ from connectors.auth.providers import (
 
 
 AUTH_REGISTRY: dict[str, AuthRegistration] = {
-    # 方式1：独立登录 profile（共享 auth profile，扫码登录）
+    # 方式1：bsk 后端复用日常 Chrome 登录会话（失败不回退，需在源表显式用 copy 重试）
     "douyin_shared": AuthRegistration(
         auth_key="douyin_shared",
         platform="douyin",
         auth_mode="browser_profile",
-        storage_ref="复制常用 Chrome Default",
-        renew_strategy="copy_default_profile",
+        storage_ref="复用本机 Chrome 会话，不导出 token",
+        renew_strategy="login_daily_chrome",
         display_name="抖音",
-        description="订阅抖音主页 + laterhub 抖音收藏。抓取时复制常用 Chrome 登录态。",
-        login_method="复制常用Chrome登录态",
-        renew_label="在常用 Chrome 登录抖音",
+        description="订阅抖音主页 + laterhub 抖音收藏。抓取走 bsk，复用日常 Chrome 登录会话。",
+        login_method="日常 Chrome 登录会话",
+        renew_label="请在日常 Chrome 登录抖音",
     ),
     "x_profile2": AuthRegistration(
         auth_key="x_profile2",
         platform="x",
         auth_mode="browser_profile",
-        storage_ref="复制常用 Chrome Default",
-        renew_strategy="copy_default_profile",
+        storage_ref="复用本机 Chrome 会话，不导出 token",
+        renew_strategy="login_daily_chrome",
         display_name="X (Twitter)",
-        description="订阅 MacroMargin 时间线。需先在常用 Chrome 登录 X。",
-        login_method="复制常用Chrome登录态",
-        renew_label="在常用 Chrome 登录 X",
+        description="订阅 MacroMargin 时间线。抓取走 bsk，复用日常 Chrome 登录会话。",
+        login_method="日常 Chrome 登录会话",
+        renew_label="请在日常 Chrome 登录 X",
     ),
     "xiaoheihe_shared": AuthRegistration(
         auth_key="xiaoheihe_shared",
         platform="xiaoheihe",
         auth_mode="browser_profile",
-        storage_ref="复制常用 Chrome Default",
-        renew_strategy="copy_default_profile",
+        storage_ref="复用本机 Chrome 会话，不导出 token",
+        renew_strategy="login_daily_chrome",
         display_name="小黑盒",
-        description="laterhub 小黑盒收藏。抓取时复制常用 Chrome 登录态。",
-        login_method="复制常用Chrome登录态",
-        renew_label="在常用 Chrome 登录小黑盒",
+        description="laterhub 小黑盒收藏。抓取走 bsk，复用日常 Chrome 登录会话。",
+        login_method="日常 Chrome 登录会话",
+        renew_label="请在日常 Chrome 登录小黑盒",
     ),
     "youtube_main": AuthRegistration(
         auth_key="youtube_main",
         platform="youtube",
         auth_mode="browser_profile",
-        storage_ref="复制常用 Chrome Default",
-        renew_strategy="copy_default_profile",
+        storage_ref="复用本机 Chrome 会话，不导出 token",
+        renew_strategy="login_daily_chrome",
         display_name="YouTube",
-        description="订阅 YouTube 频道。公开内容可不登录，登录后抓取更稳定。",
-        login_method="复制常用Chrome登录态",
-        renew_label="在常用 Chrome 登录 YouTube",
+        description="订阅 YouTube 频道。公开内容无需登录；抓取走 bsk 复用日常 Chrome 登录会话。",
+        login_method="日常 Chrome 登录会话",
+        renew_label="请在日常 Chrome 登录 YouTube",
     ),
     "jiuyangongshe_main": AuthRegistration(
         auth_key="jiuyangongshe_main",
@@ -73,31 +73,31 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         login_method="无需登录",
         renew_label="",
     ),
-    # 方式2：bsk 后端复用日常 Chrome 登录会话（失败不回退，需在源表显式用 copy 重试）
+    # 方式2：同上，蓝宝书/公众号两条源共用
     "alphapai_main": AuthRegistration(
         auth_key="alphapai_main",
         platform="alphapai",
-        auth_mode="copy_profile",
+        auth_mode="browser_profile",
         storage_ref="复用本机 Chrome 会话，不导出 token",
-        renew_strategy="copy_default_profile",
+        renew_strategy="login_daily_chrome",
         display_name="Alpha派",
         description="抓取后端 bsk，复用日常 Chrome 登录会话；bsk 失败不回退，可在源表手动用 copy 重试。",
         login_method="日常 Chrome 登录会话",
         renew_label="请在日常 Chrome 登录 Alpha派",
     ),
-    # 方式3：B站特殊——复用登录态拿 cookie，再直接调 API 抓取（不走浏览器）
-    # 从常用 Chrome 或共享 profile 读出 SESSDATA/bili_jct/DedeUserID，持久化为
-    # 本地认证文件，抓取时用该 cookie 直接请求 api.bilibili.com（HTTP），性能高。
+    # 方式3：B站混合——订阅动态走 bsk 页内调 API（复用日常 Chrome 登录态，不走 HTTP）；
+    # 稍后看仍走 HTTP，读本地认证文件 bilibili_main.json 里的 SESSDATA/bili_jct/DedeUserID。
+    # 该文件由「同步登录态」从常用 Chrome 导入，故保留同步按钮。
     "bilibili_main": AuthRegistration(
         auth_key="bilibili_main",
         platform="bilibili",
         auth_mode="browser_profile",
-        storage_ref="本地认证文件 bilibili_main.json",
+        storage_ref="本地认证文件 bilibili_main.json（稍后看）",
         renew_strategy="scan_qr_sync",
         display_name="B站",
-        description="订阅 B站动态 + 稍后看。复用登录态取 cookie 后直接调 API 抓取（不走浏览器），比浏览器抓取更快。",
-        login_method="复用登录态取Cookie",
-        renew_label="在常用 Chrome 登录 B站后点同步",
+        description="订阅 B站动态已改走 bsk（页内调 API，复用日常 Chrome 登录态）；稍后看仍用本地认证文件。",
+        login_method="日常 Chrome 登录会话",
+        renew_label="在常用 Chrome 登录 B站后点「同步登录态」",
     ),
 }
 
