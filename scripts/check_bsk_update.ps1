@@ -2,14 +2,14 @@
 #
 # 退出码约定（供计划任务「上次运行结果」判读）：
 #   0 = 全部最新：CLI 已是最新，且无 CLI/扩展版本错配
-#   2 = 有更新可用，或存在 CLI/扩展版本错配（daemon 未运行时错配未知，不据此判 2）
+#   2 = 有更新可用，或存在 CLI/扩展版本错配（daemon 状态未知时错配未知，不据此判 2）
 #   1 = 检查本身失败（如 bsk 不在 PATH、update 子命令无有效 JSON）
 #
 # 注意：`bsk update` 只管 CLI/daemon；浏览器扩展走扩展自己的更新渠道，CLI 无法更新它，
 # 故扩展版本错配只能提示用户手动更新扩展。
 #
-# 不挂起：daemon 没在跑时 `bsk status` 会失败，这里优雅降级（仍报 CLI 检查结果，
-# 并注明 daemon 未运行），不会因此整体失败。
+# 不挂起：拿不到 daemon 状态时（没在跑、或权限级别低于 daemon 导致管道拒绝访问）
+# 这里优雅降级（仍报 CLI 检查结果，并如实写明失败原因），不会因此整体失败。
 $ErrorActionPreference = 'Stop'
 
 $logPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'runtime\bsk_update_check.log'
@@ -62,12 +62,16 @@ $cliLatest = [string]$update.latest_version
 $cliStatus = [string]$update.status
 $releaseUrl = [string]$update.release_url
 
-# 2) daemon / 扩展版本：daemon 未运行则优雅降级，不影响 CLI 结论。
+# 2) daemon / 扩展版本：拿不到就优雅降级（仍报 CLI 结论），并如实写明失败原因。
+#    注意：若原因是「os error 5 拒绝访问」，那不是 daemon 没跑，而是本任务的权限级别
+#    低于 daemon（daemon 由 Highest 任务启动，其命名管道拒绝 LIMITED 客户端）。
 $status = $null
+$statusErr = ''
 try {
     $raw = (& $bsk status --json 2>$null) -join "`n"
     if ($raw) { $status = $raw | ConvertFrom-Json }
-} catch { $status = $null }
+    if (-not $status) { $statusErr = ($raw -replace '\s+', ' ') }
+} catch { $statusErr = $_.Exception.Message }
 
 $parts = @()
 $updateAvailable = ($cliStatus -ne 'up_to_date')
@@ -90,7 +94,8 @@ if ($status -and $status.daemon_version) {
     else { $parts += '无版本错配' }
 }
 else {
-    $parts += 'daemon 未运行（bsk status 失败，扩展状态未知）'
+    $reason = if ($statusErr) { ($statusErr.Substring(0, [Math]::Min(110, $statusErr.Length))) } else { '原因未知' }
+    $parts += "daemon 状态未知（bsk status 失败：$reason）"
 }
 
 Write-Line ($parts -join ' | ')
