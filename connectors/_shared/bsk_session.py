@@ -112,12 +112,16 @@ def run_bsk_with_retry(
     bsk_session: BskRunnerSession,
     run_once: Callable[[Any], FeedFetchResult],
     attempts: int | None = None,
+    manage_session: bool = True,
 ) -> FeedFetchResult:
     """在 bsk 会话上重试抓取；仍失败则返回可读失败结果——绝不自动回退 copy。
 
     copy 会带着 Google 身份/会话从第二个 profile 路径联网，触发账号双活吊销，
     并会 taskkill 强杀用户 Chrome，因此只作为用户在设置页显式触发的最后手段。
     无论重试几次都只返回一个 FeedFetchResult——调用方据此落库，同一源不会重复保存条目。
+
+    manage_session=False：调用方已持有并启动了一个跨源复用的会话（如批量抓取 B 站多源），
+    本函数只重试、不 start/shutdown，避免把共享会话拆掉。
     """
     total = max(1, int(bsk_attempts() if attempts is None else attempts))
     last_result: FeedFetchResult | None = None
@@ -126,7 +130,8 @@ def run_bsk_with_retry(
         if attempt > 1:
             time.sleep(BSK_RETRY_DELAY_SECONDS)
         try:
-            bsk_session.start()
+            if manage_session:
+                bsk_session.start()
             result = run_once(bsk_session)
             if result.ok:
                 return result
@@ -137,7 +142,8 @@ def run_bsk_with_retry(
             bsk_error = f"{type(exc).__name__}: {exc}"
             last_result = None
         finally:
-            bsk_session.shutdown()
+            if manage_session:
+                bsk_session.shutdown()
     error = _bsk_failure_error(total, bsk_error)
     if last_result is not None:
         return replace(last_result, error=error)
