@@ -82,6 +82,16 @@ if cmd == "get-html":
     sys.stdout.write(scenario.get("html", "<html></html>"))
     sys.exit(scenario.get("html_exit", 0))
 
+if cmd == "wait-ms":
+    time.sleep(scenario.get("wait_ms_sleep", 0))
+    sys.stdout.write("slept " + (argv[1] if len(argv) > 1 else ""))
+    sys.exit(scenario.get("wait_ms_exit", 0))
+
+if cmd == "wheel":
+    time.sleep(scenario.get("wheel_sleep", 0))
+    sys.stdout.write("wheeled")
+    sys.exit(scenario.get("wheel_exit", 0))
+
 sys.stdout.write("unknown")
 sys.exit(0)
 '''
@@ -451,3 +461,156 @@ def test_start_failure_does_not_run_orphan_cleanup(fake_bsk):
     with pytest.raises(BskSessionError):
         browser.start()
     assert not any(c["argv"][0:3] == ["session", "list", "--json"] for c in fake_bsk.calls())
+
+# ---- P1: Playwright 同形方法（evaluate / evaluate_all / wait / 滚轮） ----
+
+
+def test_new_method_timeout_defaults_exceed_watchdog():
+    """新方法的默认预算必须明显高于 30s 看门狗门限，避免被误分类成 BskHelpTimeout。"""
+    assert bsk_browser.DEFAULT_EVALUATE_TIMEOUT_SECONDS > bsk_browser.DEFAULT_REQUEST_HELP_TIMEOUT_SECONDS
+    assert bsk_browser.DEFAULT_WAIT_TIMEOUT_MS / 1000.0 > bsk_browser.DEFAULT_REQUEST_HELP_TIMEOUT_SECONDS
+
+
+def test_page_evaluate_without_arg_passes_expression_as_is(fake_bsk):
+    browser, _ = fake_bsk.build(evaluate={"document.title": {"ok": True, "value": "标题"}})
+    browser.start()
+    assert browser.page().evaluate("document.title") == "标题"
+    assert fake_bsk.evaluate_exprs()[-1] == "document.title"
+    # --await-promise 保持默认 true（不显式关掉），供 await fetch(...) 使用
+    assert "--await-promise" not in _subcommand_calls(fake_bsk, "evaluate")[-1]["argv"]
+
+
+def test_page_evaluate_with_arg_serializes_non_ascii_safely(fake_bsk):
+    arg = {"标题": "甲", "n": 1}
+    browser, _ = fake_bsk.build(evaluate_default={"ok": True, "value": 42})
+    browser.start()
+    assert browser.page().evaluate("(a) => a.n", arg) == 42
+    expr = fake_bsk.evaluate_exprs()[-1]
+    # 传参约定：函数表达式被 (js)(<json arg>) 调用；arg 由 json.dumps 默认转义非 ASCII
+    assert expr == f"((a) => a.n)({json.dumps(arg)})"
+    assert r"\u6807\u9898" in expr
+    assert "标题" not in expr  # 非 ASCII 已转义，规避 Windows 命令行编码
+
+
+def test_page_evaluate_async_fetch_keeps_await_promise(fake_bsk):
+    browser, _ = fake_bsk.build(evaluate={"fetch(": {"ok": True, "value": 200}})
+    browser.start()
+    assert browser.page().evaluate("fetch(location.href).then(r=>r.status)") == 200
+    argv = _subcommand_calls(fake_bsk, "evaluate")[-1]["argv"]
+    assert "--await-promise" not in argv  # 未显式传 false，即保持默认 true
+
+
+def test_page_evaluate_default_timeout_is_60s_and_watchdog_off(fake_bsk):
+    browser, logs = fake_bsk.build(evaluate_sleep=0.3, timeout=30.0, request_help_timeout=0.1)
+    browser.start()
+    # request_help_timeout 极小也不得把慢 evaluate 误判成 BskHelpTimeout
+    assert browser.page().evaluate("1+1") is None
+    assert not any("err=BskHelpTimeout" in line for line in logs)
+    argv = _subcommand_calls(fake_bsk, "evaluate")[-1]["argv"]
+    assert argv[argv.index("--timeout") + 1] == "60s"
+
+
+def test_page_evaluate_accepts_larger_timeout(fake_bsk):
+    browser, _ = fake_bsk.build()
+    browser.start()
+    browser.page().evaluate("1+1", timeout=120)
+    argv = _subcommand_calls(fake_bsk, "evaluate")[-1]["argv"]
+    assert argv[argv.index("--timeout") + 1] == "120s"
+
+
+def test_locator_evaluate_all_passes_element_array_and_returns_list(fake_bsk):
+    browser, _ = fake_bsk.build(evaluate_default={"ok": True, "value": [{"id": "1"}, {"id": "2"}]})
+    browser.start()
+    items = browser.page().locator(".item").evaluate_all("els => els.map(e => ({id: e.id}))")
+    assert items == [{"id": "1"}, {"id": "2"}]
+    expr = fake_bsk.evaluate_exprs()[-1]
+    # Playwright 语义：第一入参是「全部命中元素数组」，非单元素
+    assert "els.map(e => ({id: e.id}))" in expr
+    assert "querySelectorAll" in expr
+    assert json.dumps(None) in expr  # 未传 arg → null 占位
+    assert len(fake_bsk.evaluate_exprs()) == 1  # 单次往返
+
+
+def test_locator_evaluate_all_with_arg_and_no_match_returns_empty(fake_bsk):
+    browser, _ = fake_bsk.build(evaluate_default={"ok": True, "value": []})
+    browser.start()
+    assert browser.page().locator(".nope").evaluate_all("(els, limit) => els.slice(0, limit)", 5) == []
+    expr = fake_bsk.evaluate_exprs()[-1]
+    assert json.dumps(5) in expr
+    assert json.dumps(".nope") in expr
+
+
+def test_wait_for_timeout_uses_wait_ms_and_clamps_invalid(fake_bsk):
+    browser, _ = fake_bsk.build()
+    browser.start()
+    page = browser.page()
+    page.wait_for_timeout(1500)
+    calls = _subcommand_calls(fake_bsk, "wait-ms")
+    assert calls and calls[-1]["argv"][1] == "1500ms"
+    assert "--session" not in calls[-1]["argv"]  # wait-ms 不需要 session
+    before = len(calls)
+    page.wait_for_timeout(-5)
+    page.wait_for_timeout("abc")
+    assert len(_subcommand_calls(fake_bsk, "wait-ms")) == before  # 非法值不产生命令
+
+
+def test_wait_for_selector_found_returns_with_polling_budget(fake_bsk):
+    browser, _ = fake_bsk.build(evaluate_default={"ok": True, "value": True})
+    browser.start()
+    browser.page().wait_for_selector(".ready", timeout=2000)
+    expr = fake_bsk.evaluate_exprs()[-1]
+    assert "new Promise" in expr and "querySelectorAll" in expr and ".ready" in expr
+    argv = _subcommand_calls(fake_bsk, "evaluate")[-1]["argv"]
+    assert argv[argv.index("--timeout") + 1] == "12s"  # 页内 2s + 10s 余量
+
+
+def test_wait_for_selector_timeout_raises_command_error(fake_bsk):
+    browser, _ = fake_bsk.build(
+        evaluate_default={"ok": False, "error": {"text": "等待选择器超时（2000ms 内未满足 visible）"}}
+    )
+    browser.start()
+    with pytest.raises(BskCommandError) as excinfo:
+        browser.page().wait_for_selector(".nope", timeout=2000)
+    assert "等待选择器超时" in str(excinfo.value)
+
+
+def test_locator_wait_for_routes_through_page_wait(fake_bsk):
+    browser, _ = fake_bsk.build(evaluate_default={"ok": True, "value": True})
+    browser.start()
+    browser.page().locator(".card").first.wait_for(timeout=1000)
+    expr = fake_bsk.evaluate_exprs()[-1]
+    assert json.dumps(".card") in expr
+    assert "new Promise" in expr and "querySelectorAll" in expr  # 复用页内轮询实现
+
+
+def test_wait_for_state_visible_attached_and_fallback(fake_bsk):
+    browser, _ = fake_bsk.build(evaluate_default={"ok": True, "value": True})
+    browser.start()
+    page = browser.page()
+    page.wait_for_selector(".a", timeout=500, state="attached")
+    assert "const attachedOnly=true" in fake_bsk.evaluate_exprs()[-1]
+    page.wait_for_selector(".b", timeout=500)  # 默认 visible
+    assert "const attachedOnly=false" in fake_bsk.evaluate_exprs()[-1]
+    page.wait_for_selector(".c", timeout=500, state="hidden")  # 未知态降级为 attached
+    assert "const attachedOnly=true" in fake_bsk.evaluate_exprs()[-1]
+
+
+def test_mouse_wheel_sends_both_deltas(fake_bsk):
+    browser, _ = fake_bsk.build()
+    browser.start()
+    browser.page().mouse.wheel(0, 2600)
+    argv = _subcommand_calls(fake_bsk, "wheel")[-1]["argv"]
+    assert argv[argv.index("--delta-y") + 1] == "2600"
+    assert argv[argv.index("--delta-x") + 1] == "0"
+    assert "--session" in argv
+    browser.page().mouse.wheel(30, -40)  # 负 delta 表示反向滚动，不得被钳成 0
+    argv = _subcommand_calls(fake_bsk, "wheel")[-1]["argv"]
+    assert argv[argv.index("--delta-x") + 1] == "30"
+    assert argv[argv.index("--delta-y") + 1] == "-40"
+
+
+def test_mouse_wheel_both_zero_is_noop(fake_bsk):
+    browser, _ = fake_bsk.build()
+    browser.start()
+    browser.page().mouse.wheel(0, 0)
+    assert _subcommand_calls(fake_bsk, "wheel") == []

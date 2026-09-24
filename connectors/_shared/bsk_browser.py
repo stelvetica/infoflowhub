@@ -25,6 +25,16 @@ from typing import Any, Callable, Sequence
 
 DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_REQUEST_HELP_TIMEOUT_SECONDS = 30.0
+# page.evaluate 可能跑 await fetch(...) 等慢表达式：默认放宽到 60s，且不挂看门狗
+# （看门狗只用于识别「登录/验证码等人」阻塞，慢 evaluate 超时应定性为普通超时）。
+DEFAULT_EVALUATE_TIMEOUT_SECONDS = 60.0
+# wait_for_selector / locator.wait_for 默认预算（毫秒）：明显高于 30s 看门狗门限，
+# 且这类调用一律关看门狗，避免正常慢等待被误分类成 BskHelpTimeout。
+DEFAULT_WAIT_TIMEOUT_MS = 60_000
+# 页内轮询间隔：够密以贴近 Playwright 的命中时机，又不至于空转烧 CPU。
+DEFAULT_WAIT_POLL_INTERVAL_MS = 100
+# 子进程预算要比页内轮询预算多留一点，避免页内 reject 之前子进程先被 kill。
+WAIT_BUDGET_MARGIN_SECONDS = 10.0
 BSK_BIN_NAME = "bsk"
 # daemon 会拒绝 stop 一个正在执行命令的 session（退出码 4）；超时路径下 session 仍 busy，
 # 因此 stop 失败后等一小会儿再试一次，避免 daemon 侧 session 泄漏。
@@ -97,6 +107,66 @@ def _js_find(selector: str | None, text: str | None, exact: bool) -> str:
 
 def _js_pick(selector: str | None, text: str | None, exact: bool, index: int) -> str:
     return f"(()=>{{const els={_js_find(selector, text, exact)};const e=els[{index}];"
+
+
+def _js_call(js: str, arg: Any) -> str:
+    # page.evaluate(js, arg) 的传参约定（对齐 Playwright）：js 是「函数表达式」时，
+    # 构造成 `(js)(<json arg>)` 由 bsk 调用；arg 为 None 时按普通表达式求值（js 原样下发）。
+    # arg 用 json.dumps 默认 ensure_ascii=True，非 ASCII 转义成 \uXXXX，规避 Windows
+    # 命令行编码问题（与 _js_find 里 json.dumps 的处理一致）。
+    if arg is None:
+        return js
+    return f"({js})({json.dumps(arg)})"
+
+
+def _js_wait(selector: str | None, text: str | None, exact: bool, state: str, timeout_ms: int, interval_ms: int) -> str:
+    # bsk 没有原生等待命令：在页内跑一个轮询 Promise，命中即 resolve，超时 reject。
+    # 一次 evaluate 内完成轮询，避免多次往返；bsk evaluate 默认 await-promise=true 会等它。
+    # state 语义：visible（默认）要求元素有非零尺寸且 visibility!=hidden；其余一律按
+    # attached（只要存在）处理，见 _normalize_wait_state 的取舍说明。
+    attached_only = "false" if state == "visible" else "true"
+    return (
+        "(()=>{"
+        f"const deadline=Date.now()+{int(timeout_ms)};"
+        "return new Promise((resolve,reject)=>{"
+        "const check=()=>{"
+        f"const els={_js_find(selector, text, exact)};"
+        "const el=els[0];"
+        f"const attachedOnly={attached_only};"
+        "let ok=false;"
+        "if(el){"
+        "if(attachedOnly){ok=true;}"
+        "else{const r=el.getBoundingClientRect();"
+        "ok=r.width+r.height>0&&getComputedStyle(el).visibility!=='hidden';}"
+        "}"
+        "if(ok){resolve(true);return;}"
+        "if(Date.now()>=deadline){"
+        f"reject(new Error('等待选择器超时（{int(timeout_ms)}ms 内未满足 {state}）'));return;}}"
+        f"setTimeout(check,{int(interval_ms)});"
+        "};"
+        "check();"
+        "});"
+        "})()"
+    )
+
+
+def _normalize_wait_state(state: str | None) -> str:
+    # 只区分 visible / attached 两态：Playwright 的 hidden/detached 等本层不实现，
+    # 一律降级为 attached（「元素存在即可」），宁可放行也不误伤正常路径。
+    return "visible" if state == "visible" else "attached"
+
+
+def _to_int(value: Any) -> int:
+    # 非数字按 0；保留正负号（滚轮 delta 可为负，表示反向）。
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _clamp_wait_ms(value: Any) -> int:
+    # wait_for_timeout 的入参容错：非数字按 0（不调用），负数钳到 0。
+    return max(_to_int(value), 0)
 
 
 class BskBrowser:
@@ -285,12 +355,24 @@ class BskBrowser:
 
     # ---- 原语 ----
 
-    def evaluate(self, expression: str, *, timeout: float | None = None) -> Any:
+    def evaluate(self, expression: str, *, timeout: float | None = None, help_watchdog: bool = True) -> Any:
         # evaluate 的 JS 异常也返回退出码 0，必须看信封里的 ok 字段。
+        # 显式把预算透传给 bsk --timeout：bsk 自身默认 30s，否则页内长轮询/await fetch
+        # 会被 bsk 先判超时（退出码 4），调用方传更大 timeout 也无效。
+        budget = self._timeout if timeout is None else float(timeout)
         result = self._run(
-            ["evaluate", "--json", "--session", self._require_session(), expression],
+            [
+                "evaluate",
+                "--json",
+                "--session",
+                self._require_session(),
+                "--timeout",
+                f"{budget:.0f}s",
+                expression,
+            ],
             label="evaluate",
-            timeout=timeout,
+            timeout=budget,
+            help_watchdog=help_watchdog,
         )
         payload = _read_json_object(result.stdout, "evaluate")
         if not payload.get("ok"):
@@ -298,6 +380,42 @@ class BskBrowser:
             text = str(error.get("text") if isinstance(error, dict) else error or "")
             raise BskCommandError(f"evaluate 执行失败: {text[:200]}")
         return payload.get("value")
+
+    def wait_ms(self, duration_ms: Any, *, timeout: float | None = None) -> None:
+        # 浏览器侧等待（bsk wait-ms 在 daemon 侧 sleep），不用本地 time.sleep。
+        # wait-ms 无需 --session，也不接受 --timeout，只能用子进程预算兜住。
+        ms = _clamp_wait_ms(duration_ms)
+        if ms <= 0:
+            return
+        budget = max(self._timeout, ms / 1000.0 + WAIT_BUDGET_MARGIN_SECONDS)
+        self._run(
+            ["wait-ms", f"{ms}ms"],
+            label=f"wait-ms dur={ms}ms",
+            timeout=budget,
+            help_watchdog=False,
+        )
+
+    def wheel(self, delta_x: Any, delta_y: Any, *, selector: str | None = None, timeout: float | None = None) -> None:
+        # bsk wheel 要求至少一个非零 delta，双零直接当无操作返回（不产生空命令）。
+        dx = _to_int(delta_x)
+        dy = _to_int(delta_y)
+        if dx == 0 and dy == 0:
+            return
+        budget = self._timeout if timeout is None else float(timeout)
+        args = [
+            "wheel",
+            "--session",
+            self._require_session(),
+            "--delta-x",
+            str(dx),
+            "--delta-y",
+            str(dy),
+            "--timeout",
+            f"{budget:.0f}s",
+        ]
+        if selector:
+            args += ["--selector", selector]
+        self._run(args, label="wheel", timeout=budget, help_watchdog=False)
 
     def navigate(self, url: str, *, wait_until: str | None = None, timeout: float | None = None) -> None:
         # 导航是唯一真正慢的阶段（冷启动 SPA 首屏），显式给 bsk 一个远大于看门狗的 --timeout，
@@ -402,6 +520,23 @@ class BskLocator:
     def get_by_text(self, text: str, exact: bool = False) -> "BskLocator":
         return BskLocator(self._page, self._selector, text, exact, 0)
 
+    def evaluate_all(self, expression: str, arg: Any = None, *, timeout: float | None = DEFAULT_EVALUATE_TIMEOUT_SECONDS) -> Any:
+        # Playwright 语义：expression 收到「全部命中元素数组」作为第一入参、arg 作为第二入参，
+        # 返回其返回值（详见 playwright async_api 的 evaluate_all 文档）。故连接器里写成
+        # `els => {...for (const el of els)...}` 是按数组遍历，本层必须传数组而非单元素。
+        # 一次 evaluate 内用 querySelectorAll 取全量，无命中即传空数组（expression 通常返回 []）。
+        # 非 ASCII 由 json.dumps 默认转义，规避 Windows 命令行编码问题。
+        call = f"((els,arg)=>(({expression})(els,arg)))({_js_find(self._selector, self._text, self._exact)}, {json.dumps(arg)})"
+        return self._page.browser.evaluate(call, timeout=timeout, help_watchdog=False)
+
+    def wait_for(
+        self,
+        timeout: float | None = DEFAULT_WAIT_TIMEOUT_MS,
+        state: str = "visible",
+    ) -> None:
+        # 与 page.wait_for_selector 共用页内轮询实现；命中即返回，超时抛 BskCommandError。
+        self._page._wait_for(self._selector, self._text, self._exact, timeout, state)
+
     def click(self, timeout: float | None = None) -> None:
         # ponytail: 走 evaluate 在页内按选择器+文本定位后 e.click()，不用 observe 的 @eN 引用。
         # 理由：@eN 只在当前 DOM 快照内有效，DOM 一变即失效（实测点完一次后引用报 unknown），
@@ -421,6 +556,17 @@ class BskLocator:
             raise BskCommandError("click 目标未命中（DOM 已变化或选择器/文本不匹配）")
 
 
+class BskMouse:
+    """Playwright 风格 page.mouse facade：目前只覆盖滚轮。"""
+
+    def __init__(self, page: "BskPage") -> None:
+        self._page = page
+
+    def wheel(self, delta_x: float, delta_y: float, *, selector: str | None = None, timeout: float | None = None) -> None:
+        # dx 为 0 时只下发 --delta-y（bsk 只要求至少一个非零），dy 同理。
+        self._page.browser.wheel(delta_x, delta_y, selector=selector, timeout=timeout)
+
+
 class BskPage:
     """Playwright 风格 page facade，只覆盖蓝宝书 connector 实际用到的调用面。"""
 
@@ -432,9 +578,47 @@ class BskPage:
         return self._browser
 
     @property
+    def mouse(self) -> BskMouse:
+        return BskMouse(self)
+
+    @property
     def url(self) -> str:
         value = self._browser.evaluate("location.href")
         return str(value or "")
+
+    def evaluate(self, js: str, arg: Any = None, *, timeout: float | None = DEFAULT_EVALUATE_TIMEOUT_SECONDS) -> Any:
+        # 同形 page.evaluate(js[, arg])：js 为函数表达式时按 (js)(arg) 调用（见 _js_call）。
+        # 默认预算 60s 且关看门狗：await fetch(...) 这类慢表达式不应被 30s 看门狗误判成
+        # 「疑似登录阻塞」（BskHelpTimeout）。bsk evaluate 的 --await-promise 保持默认 true。
+        return self._browser.evaluate(_js_call(js, arg), timeout=timeout, help_watchdog=False)
+
+    def wait_for_timeout(self, ms: Any) -> None:
+        # 走浏览器侧 bsk wait-ms（不用本地 sleep）；负数/非数字被钳成 0 即不调用。
+        self._browser.wait_ms(ms)
+
+    def wait_for_selector(
+        self,
+        selector: str,
+        timeout: float | None = DEFAULT_WAIT_TIMEOUT_MS,
+        state: str = "visible",
+    ) -> None:
+        self._wait_for(selector, None, False, timeout, state)
+
+    def _wait_for(
+        self,
+        selector: str | None,
+        text: str | None,
+        exact: bool,
+        timeout: float | None,
+        state: str,
+    ) -> None:
+        # 页内轮询 Promise，超时 reject → bsk evaluate 返回 ok=false → 抛 BskCommandError
+        # （与 Playwright TimeoutError 语义对齐，文案说明是等待选择器超时）。
+        ms = DEFAULT_WAIT_TIMEOUT_MS if timeout is None else int(timeout)
+        normalized = _normalize_wait_state(state)
+        budget = ms / 1000.0 + WAIT_BUDGET_MARGIN_SECONDS
+        expr = _js_wait(selector, text, exact, normalized, ms, DEFAULT_WAIT_POLL_INTERVAL_MS)
+        self._browser.evaluate(expr, timeout=budget, help_watchdog=False)
 
     def goto(self, url: str, wait_until: str | None = None, timeout: float | None = None) -> None:
         # ponytail: timeout 是 Playwright 毫秒语义，此处忽略，统一由 BskBrowser 控制。
