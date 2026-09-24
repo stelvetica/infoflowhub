@@ -17,7 +17,7 @@ from connectors._shared.common import (
 )
 from connectors.alphapai import fetch_alphapai_social_with_page, fetch_alphapai_with_page
 from connectors.alphapai.browser import ALPHAPAI_TARGET_URL
-from connectors.bilibili import fetch_bilibili_dynamic_feed
+from connectors.bilibili import fetch_bilibili_dynamic_feed, fetch_bilibili_dynamic_feed_with_page
 from connectors.douyin import fetch_douyin_subscription_with_page
 from connectors.jiuyangongshe import fetch_jiuyangongshe_with_page
 from connectors.x import fetch_x_with_page
@@ -169,6 +169,41 @@ def _make_session_for(source: dict):
     return _make_copy_session_for(source)
 
 
+def _is_bilibili(source: dict) -> bool:
+    target = resolve_web_target(source)
+    return bool(target and target.site == "bilibili")
+
+
+def _fetch_bilibili_via_bsk_session(
+    session: BskRunnerSession, source: dict, *, limit: int = 12, timeout_ms: int = 60000
+) -> FeedFetchResult:
+    """在已启动的 bsk 会话上抓一个 B 站源：每次显式导航到该源的 space 页。
+
+    不依赖 acquire_page_by_url 的同域复用（12 个源同属 space.bilibili.com，
+    复用会跳过导航导致抓到上一个源的动态）。
+    """
+    page = session.acquire_page()
+    return fetch_bilibili_dynamic_feed_with_page(page, source, limit=limit, timeout_ms=timeout_ms)
+
+
+def _fetch_bilibili_one(source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
+    """B 站专用分派（唯一分支点）：bsk 配置走页内 fetch（复用用户浏览器真实 cookie）；
+    其余配置一律走 HTTP 路径（零浏览器、零 Google 风险）。
+
+    这里绝不经过 _make_copy_session_for：B 站不在 _SHARED_RUNNER_SITES 里，也不会被
+    copy_indices 选中，因此任何配置下都构造不出 copy 会话（copy 是设置页显式最后手段）。
+    """
+    if _uses_bsk(source):
+        return run_bsk_with_retry(
+            source=source,
+            bsk_session=_make_session_for(source),
+            run_once=lambda session: _fetch_bilibili_via_bsk_session(
+                session, source, limit=limit, timeout_ms=timeout_ms
+            ),
+        )
+    return fetch_bilibili_dynamic_feed(source, limit=limit, timeout_ms=timeout_ms)
+
+
 def _fetch_one_with_backend(source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
     """抓单个源，后端由配置决定；bsk 失败重试配置次数后返回可读失败结果，不自动回退 copy。"""
     if not _uses_bsk(source):
@@ -186,7 +221,12 @@ def fetch_source_via_copy(source: dict, *, limit: int = 12, timeout_ms: int = 60
 
     仅由设置页「用 copy 重试」按钮调用：bsk 反复失败后，经用户确认才用这个最后手段
     （copy 会带 Google 身份从第二个 profile 路径联网，可能吊销账号会话并强杀用户 Chrome）。
+
+    B 站例外：它没有需要登录态的浏览器页面（取数就一个公开 API），copy 对它毫无增益，
+    因此即便用户点了「用 copy 重试」也只走 HTTP 兜底——保证 B 站任何路径都不构造 copy 会话。
     """
+    if _is_bilibili(source):
+        return _fetch_bilibili_one(source, limit=limit, timeout_ms=timeout_ms)
     try:
         with _make_copy_session_for(source) as session:
             return _fetch_one_via_session(session, source, limit=limit, timeout_ms=timeout_ms)
@@ -208,7 +248,7 @@ def fetch_web_source(source: dict) -> FeedFetchResult:
                 if not target:
                     result = result_error(source, "暂不支持的网页直抓源")
                 elif target.site == "bilibili":
-                    result = fetch_bilibili_dynamic_feed(source)
+                    result = _fetch_bilibili_one(source)
                 elif target.site == "jiuyangongshe":
                     result = fetch_jiuyangongshe_with_page(None, source)
                 else:
@@ -235,7 +275,16 @@ def fetch_web_many(
     shared_indices = [i for i, s in enumerate(sources) if _needs_shared_runner(s)]
     bsk_indices = [i for i in shared_indices if _uses_bsk(sources[i])]
     copy_indices = [i for i in shared_indices if i not in set(bsk_indices)]
-    other_indices = [i for i in range(len(sources)) if i not in set(shared_indices)]
+    # B 站 bsk 源单独成组：12 个源共用一个 bsk 会话（一次 start/stop），每源各导航自己的 space 页。
+    # 它们不进 shared_indices（B 站不在 _SHARED_RUNNER_SITES），因此永远不会落到 copy 组。
+    bili_bsk_indices = [
+        i
+        for i in range(len(sources))
+        if i not in set(shared_indices) and _is_bilibili(sources[i]) and _uses_bsk(sources[i])
+    ]
+    other_indices = [
+        i for i in range(len(sources)) if i not in set(shared_indices) and i not in set(bili_bsk_indices)
+    ]
 
     # bsk 后端：每个源一个独立会话（失败只重试，不回退 copy），不与复制副本组共用
     for i in bsk_indices:
@@ -244,6 +293,35 @@ def fetch_web_many(
             results_by_index[i] = _fetch_one_with_backend(source, limit=limit, timeout_ms=timeout_ms)
         except Exception as exc:
             results_by_index[i] = result_error(source, f"网页直抓失败: {exc}")
+
+    # B 站 bsk 组：共用一个 bsk 会话，省掉每源一次 start/stop（12 次往返）。
+    # 会话起不来只作各源失败结果，不炸穿整批。
+    if bili_bsk_indices:
+        bili_session: BskRunnerSession | None = None
+        start_error = ""
+        try:
+            bili_session = _make_session_for(sources[bili_bsk_indices[0]])
+            bili_session.start()
+        except Exception as exc:
+            start_error = f"浏览器会话启动失败: {exc}"
+            bili_session = None
+        if bili_session is None:
+            for i in bili_bsk_indices:
+                results_by_index[i] = result_error(sources[i], start_error)
+        else:
+            try:
+                for i in bili_bsk_indices:
+                    source = sources[i]
+                    results_by_index[i] = run_bsk_with_retry(
+                        source=source,
+                        bsk_session=bili_session,
+                        run_once=lambda session, source=source: _fetch_bilibili_via_bsk_session(
+                            session, source, limit=limit, timeout_ms=timeout_ms
+                        ),
+                        manage_session=False,
+                    )
+            finally:
+                bili_session.shutdown()
 
     # 复制副本后端：所有站点共用一个 session（单一常用 Chrome 登录态来源）
     # start 需关闭用户 Chrome 复制 profile，可能失败——失败只作各源错误，
@@ -283,7 +361,7 @@ def fetch_web_many(
                 if not target:
                     result = result_error(source, "暂不支持的网页直抓源")
                 elif target.site == "bilibili":
-                    result = fetch_bilibili_dynamic_feed(source, limit=limit, timeout_ms=timeout_ms)
+                    result = _fetch_bilibili_one(source, limit=limit, timeout_ms=timeout_ms)
                 elif target.site == "jiuyangongshe":
                     result = fetch_jiuyangongshe_with_page(None, source, limit=limit, timeout_ms=timeout_ms)
                 else:
