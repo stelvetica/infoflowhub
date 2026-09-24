@@ -343,7 +343,9 @@ class ContentTagger:
             "thinking": {"type": "disabled"},
             "response_format": {"type": "json_object"},
             "temperature": 0.1,
-            "max_tokens": 220,
+            # glm-5.3-flash 等思考模型把思考 token 计入 max_tokens 且不受 thinking 参数约束，
+            # 上限过小会整条返回空 content（打标签直接失败）
+            "max_tokens": 1500,
         }
         response = requests.post(
             f"{config.base_url}/v1/chat/completions",
