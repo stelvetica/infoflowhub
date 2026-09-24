@@ -45,3 +45,6 @@ Thumbs.db
 runtime/*_auth.json
 runtime/auth/
 runtime/migration_baseline.json
+
+# 仓库根的临时杂物文件（非本仓产物）
+test_localsystem.txt

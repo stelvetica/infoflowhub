@@ -61,12 +61,13 @@ def save_sources(sources: List[Dict[str, Any]]) -> None:
 
 # 浏览器抓取后端：copy = 复制常用 Chrome Default profile 到副本（历史默认，行为不变）；
 # bsk = 用 bsk CLI 驱动用户自己已登录的 Chromium。可按 source id 覆盖，默认不动。
-DEFAULT_BROWSER_BACKEND = "copy"
+DEFAULT_BROWSER_BACKEND = "bsk"
 BROWSER_BACKENDS = ("copy", "bsk")
-# request_help_timeout：疑似登录/验证码等人的判定上限，用于逐命令的看门狗。
+# request_help_timeout：逐命令看门狗——命令超过这个时长无返回即判本次抓取失败。
+# 成因不预设（扩展的「允许请求人工协助」开/关都可能，也可能是页面卡住或网络慢）。
 DEFAULT_REQUEST_HELP_TIMEOUT_SECONDS = 30.0
 # command_timeout：导航这类真正慢的命令交给 bsk 自身的 --timeout，必须远大于前者，
-# 否则正常慢加载会被误判成「疑似登录阻塞」。
+# 否则正常慢加载会被看门狗提前判死。
 DEFAULT_COMMAND_TIMEOUT_SECONDS = 120.0
 BROWSER_TIMEOUT_BOUNDS = (5.0, 600.0)
 # bsk 后端失败后的总尝试次数（含首次）。bsk 失败不再自动回退 copy：copy 会带着 Google

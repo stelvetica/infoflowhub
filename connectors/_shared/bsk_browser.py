@@ -50,7 +50,11 @@ class BskTimeout(BskError):
 
 
 class BskHelpTimeout(BskTimeout):
-    """疑似 request_help 阻塞（登录/验证码等人）导致的超时，上层应判定本次抓取失败。"""
+    """命令被"等待看门狗"先判定超时（症状是长时间无返回），上层应判定本次抓取失败。
+
+    成因不止一种，别断言：扩展的「允许请求人工协助」开启时可能是登录/验证码在等人，
+    关闭时则更可能是页面卡住或网络慢。文案只说症状，不猜原因。
+    """
 
 
 class BskCommandError(BskError):
@@ -183,7 +187,9 @@ class BskBrowser:
     ) -> None:
         self._command = tuple(command) if command is not None else resolve_bsk_command()
         self._timeout = float(timeout)
-        # request_help 在扩展侧是 enabled：登录/验证码会一直阻塞等人，绝不能无限等。
+        # 看门狗（等待看门狗）：命令长时间无返回时先于硬超时判定失败，绝不能无限等。
+        # 成因不预设——扩展的「允许请求人工协助」开着时可能是登录/验证码在等人，关着时
+        # 更可能是页面卡住或网络慢，故只按症状判定，不据此断言原因。
         # 硬超时取 min(timeout, request_help_timeout)，先到者决定错误分类；None 表示关闭看门狗。
         self._request_help_timeout = None if request_help_timeout is None else float(request_help_timeout)
         # 慢命令（导航）单独放宽：bsk CLI 自身 --timeout 默认 30s，与看门狗同值会让
@@ -334,7 +340,7 @@ class BskBrowser:
             if stop_session_on_timeout:
                 self.stop()
             message = (
-                f"{label} 超时（>{deadline:.0f}s，疑似登录/验证码等人阻塞）"
+                f"{label} 超时（>{deadline:.0f}s 无返回，页面可能卡住或停在需人工处理的步骤）"
                 if killed_by_help_watchdog
                 else f"{label} 超时（>{deadline:.0f}s）"
             )

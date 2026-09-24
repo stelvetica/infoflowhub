@@ -111,8 +111,15 @@ def _ok_result(source: dict, entries: int = 1) -> FeedFetchResult:
 # ---- 后端选择 ----
 
 
-def test_default_backend_is_copy_and_never_touches_bsk(settings_file, fake_bsk, monkeypatch):
+def test_missing_backend_config_defaults_to_bsk(settings_file):
+    """缺省必须落 bsk：落 copy 会静默登出用户 Google 账号，bsk 失败至少是显式报错。"""
     settings_file(None)  # 完全没有 browser_backend 配置项
+    assert rss_config.browser_backend_for(SOURCE) == "bsk"
+
+
+def test_explicit_copy_override_uses_copy_and_never_touches_bsk(settings_file, fake_bsk, monkeypatch):
+    """copy 只允许显式按源启用；一旦启用就只走 copy，不起任何 bsk 子进程。"""
+    settings_file({"default": "bsk", "sources": {"alphapai": "copy"}})
     sessions: list = []
     monkeypatch.setattr(web_fetch, "_make_copy_session_for", FakeCopySession)
     monkeypatch.setattr(
@@ -152,9 +159,10 @@ def test_per_source_override_wins_over_default(settings_file):
     assert rss_config.browser_backend_for({"id": "x"}) == "bsk"
 
 
-def test_invalid_backend_value_falls_back_to_copy(settings_file):
+def test_invalid_backend_value_falls_back_to_bsk(settings_file):
+    """非法值也落 bsk：落 copy 会在用户不知情时复制 profile 并登出其 Google 账号。"""
     settings_file({"default": "selenium", "sources": {"alphapai": "wat"}})
-    assert rss_config.browser_backend_for(SOURCE) == "copy"
+    assert rss_config.browser_backend_for(SOURCE) == "bsk"
 
 
 def test_timeout_values_are_bounded(settings_file):
