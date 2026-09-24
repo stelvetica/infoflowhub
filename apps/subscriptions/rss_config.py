@@ -69,6 +69,13 @@ DEFAULT_REQUEST_HELP_TIMEOUT_SECONDS = 30.0
 # 否则正常慢加载会被误判成「疑似登录阻塞」。
 DEFAULT_COMMAND_TIMEOUT_SECONDS = 120.0
 BROWSER_TIMEOUT_BOUNDS = (5.0, 600.0)
+# bsk 后端失败后的总尝试次数（含首次）。bsk 失败不再自动回退 copy：copy 会带着 Google
+# 身份/会话从第二个 profile 路径联网，触发账号双活吊销并强杀用户 Chrome，只能由用户在
+# 设置页显式按源触发。
+DEFAULT_BSK_ATTEMPTS = 2
+BSK_ATTEMPTS_BOUNDS = (1, 10)
+# 源失败文案里标记 bsk 后端失败的前缀：设置页据此判断是否显示「用 copy 重试」按钮。
+BSK_FAILURE_MARKER = "bsk 后端失败"
 
 
 def load_settings() -> Dict[str, Any]:
@@ -89,6 +96,15 @@ def _bounded_seconds(raw: Any, default: float) -> float:
     except (TypeError, ValueError):
         return default
     low, high = BROWSER_TIMEOUT_BOUNDS
+    return min(max(value, low), high)
+
+
+def _bounded_int(raw: Any, default: int, bounds: tuple[int, int]) -> int:
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    low, high = bounds
     return min(max(value, low), high)
 
 
@@ -114,6 +130,7 @@ def browser_backend_settings(settings: Dict[str, Any] | None = None) -> Dict[str
             section.get("request_help_timeout"), DEFAULT_REQUEST_HELP_TIMEOUT_SECONDS
         ),
         "command_timeout": _bounded_seconds(section.get("command_timeout"), DEFAULT_COMMAND_TIMEOUT_SECONDS),
+        "bsk_attempts": _bounded_int(section.get("bsk_attempts"), DEFAULT_BSK_ATTEMPTS, BSK_ATTEMPTS_BOUNDS),
     }
 
 
@@ -130,3 +147,8 @@ def browser_request_help_timeout() -> float:
 
 def browser_command_timeout() -> float:
     return browser_backend_settings()["command_timeout"]
+
+
+def bsk_attempts() -> int:
+    """bsk 后端失败后的总尝试次数（含首次），非法值回落、越界夹取。"""
+    return browser_backend_settings()["bsk_attempts"]

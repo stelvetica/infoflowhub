@@ -71,6 +71,11 @@
           <td class="cell-actions">
             <div class="source-actions">
               <button class="btn ghost" type="button" hx-get="/fragments/source-form?source_id={{ item.id }}&source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort={{ settings.sort }}&dir={{ settings.dir }}" hx-target="#modal-root" hx-swap="innerHTML">编辑</button>
+              {% if item.copy_retry_available %}
+              <form hx-post="/actions/source/{{ item.id }}/copy-retry?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort={{ settings.sort }}&dir={{ settings.dir }}" hx-target="#sources-panel" hx-swap="innerHTML">
+                <button class="btn ghost" type="submit" data-loading-text="copy 重试中" title="最后手段：复制常用 Chrome 登录态联网抓取，可能让你退出 Google 账号并关闭当前 Chrome">用 copy 重试</button>
+              </form>
+              {% endif %}
               <form hx-post="/actions/source/{{ item.id }}/delete?source_q={{ settings.q }}&source_filter={{ settings.source_filter }}&sort={{ settings.sort }}&dir={{ settings.dir }}" hx-target="#sources-panel" hx-swap="innerHTML" hx-confirm="确定删除该订阅源？此操作不可撤销。">
                 <button class="btn ghost" type="submit">删除</button>
               </form>

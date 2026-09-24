@@ -176,6 +176,46 @@ def test_strip_google_identity_cleans_secure_preferences(tmp_path):
     assert ls_now["os_crypt"] == {"key": "k"}
 
 
+def test_copy_runner_restart_keeps_chrome_reopen_flag(monkeypatch, tmp_path):
+    """一次 restart 重建后，抓取前在跑的用户 Chrome 仍会被重新打开。
+
+    start() 每次都重算 _chrome_was_running，但 restart 内的 start 时用户 Chrome 已被
+    上一轮 start 关掉，重算必为 False；若直接采用就丢失了「抓取前在跑」的事实。
+    """
+    monkeypatch.setattr(chrome_runner, "ensure_debug_browser", lambda *a, **k: None)
+    monkeypatch.setattr(chrome_runner, "close_debug_browser", lambda *a, **k: None)
+    monkeypatch.setattr(chrome_runner, "_remove_runner_dir", lambda path: None)
+    running = iter([True, False])  # 首次 start: Chrome 在跑; restart 内 start: 已被关
+    monkeypatch.setattr(chrome_runner, "is_chrome_running", lambda: next(running))
+    reopened: list = []
+    monkeypatch.setattr(chrome_runner, "_reopen_user_chrome", lambda: reopened.append(True))
+
+    class FakeChromium:
+        def connect_over_cdp(self, url):
+            return object()
+
+    class FakePw:
+        chromium = FakeChromium()
+
+        def start(self):
+            return self
+
+        def stop(self):
+            pass
+
+    import sys, types
+    fake_mod = types.ModuleType("playwright.sync_api")
+    fake_mod.sync_playwright = lambda: FakePw()
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_mod)
+
+    session = chrome_runner.CopyRunnerSession(runner_dir=tmp_path / "runner", debug_port=9223)
+    session.start()
+    session.restart()
+    assert session._chrome_was_running is True
+    session.shutdown()
+    assert reopened == [True]
+
+
 def test_rebuild_clock_shared_across_runners(monkeypatch, tmp_path):
     """统一计时：任一副本重建刷新全局时钟，全体副本在间隔内不再重建。"""
     clock = tmp_path / ".rebuild_clock.json"

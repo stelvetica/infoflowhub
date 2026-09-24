@@ -932,8 +932,13 @@ class CopyRunnerSession:
         # 复制的源是同一常用 Chrome Default profile，删除副本不丢任何登录态。
         _remove_runner_dir(self.runner_dir)
         # restart 中途的 shutdown 不重开 Chrome（马上要再 start），否则会跟新 start 抢 profile 锁
+        was_running = self._chrome_was_running
         self.shutdown(_reopen_chrome=False)
         self.start()
+        # start() 会重算 _chrome_was_running，但此刻用户 Chrome 已被上一轮 start 关掉，
+        # 重算结果必为 False，覆盖掉「抓取前在跑」的事实 → 最终 shutdown 不再重开。
+        # 这里恢复真实状态，保证「抓取前 Chrome 在跑 → 抓取后重新打开」。
+        self._chrome_was_running = self._chrome_was_running or was_running
 
     def shutdown(self, *, _reopen_chrome: bool = True) -> None:
         if self._browser is not None:

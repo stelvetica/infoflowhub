@@ -399,3 +399,33 @@ async def delete_source_action(request: Request, source_id: str):
     delete_source(source_id)
     params = query_dict(request)
     return templates.TemplateResponse(request, "partials/source_table.html", {"settings": get_settings_view(params), "params": params})
+
+
+# copy 副本 profile 是进程内独占资源（同一 runner_dir 只能一份），串行化手动重试。
+_COPY_RETRY_LOCK = threading.Lock()
+
+
+def _run_copy_retry(source: dict) -> None:
+    """按源显式跑一次 copy 路径并落库/刷新健康。
+
+    copy 是最后手段（会带 Google 身份从第二 profile 联网，可能吊销账号会话并强杀用户 Chrome），
+    只由用户在设置页确认后触发；成功时落库一次，失败只更新源健康。
+    """
+    from apps.subscriptions.rss_db import save_entries
+    from apps.subscriptions.runtime_health import update_source_health
+    from connectors._shared.web_fetch import fetch_source_via_copy
+
+    with _COPY_RETRY_LOCK:
+        result = fetch_source_via_copy(source)
+        update_source_health(result)
+        if result.ok:
+            save_entries(result.entries)
+
+
+@router.post("/actions/source/{source_id}/copy-retry", response_class=HTMLResponse)
+async def source_copy_retry_action(request: Request, source_id: str):
+    source = next((item for item in normalize_sources() if item["id"] == source_id), None)
+    if source is not None:
+        await run_in_threadpool(_run_copy_retry, source)
+    params = query_dict(request)
+    return templates.TemplateResponse(request, "partials/source_table.html", {"settings": get_settings_view(params), "params": params})

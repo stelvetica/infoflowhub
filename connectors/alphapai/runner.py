@@ -5,7 +5,7 @@ from pathlib import Path
 from apps.subscriptions.models import FeedFetchResult
 from apps.subscriptions.rss_config import browser_backend_for
 from apps.subscriptions.rss_db import save_entries
-from connectors._shared.bsk_session import BskRunnerSession, run_bsk_with_copy_fallback
+from connectors._shared.bsk_session import BskRunnerSession, run_bsk_with_retry
 from connectors._shared.chrome_runner import CopyRunnerSession
 from connectors._shared.common import CHROME_USER_DATA, USER_AGENT, result_error
 from connectors.alphapai.browser import ALPHAPAI_TARGET_URL
@@ -89,11 +89,11 @@ def fetch_alphapai_source(
             except Exception as exc:
                 return result_error(source, f"蓝宝书 bsk 会话构造失败: {exc}")
             # bsk 失败（BskError 任一子类/超时/登录帮助阻塞，或被 feed.py 吞成非 ok 结果）
-            # 时结束 bsk 会话，回退到复制 profile 路径重试一次；只返回一个结果，故只落一次库。
-            return run_bsk_with_copy_fallback(
+            # 时只重试配置次数并返回可读失败结果；不再自动回退 copy（copy 会带 Google 身份
+            # 联网吊销账号会话），需要时由设置页按源显式触发。只返回一个结果，故只落一次库。
+            return run_bsk_with_retry(
                 source=source,
                 bsk_session=bsk_session,
-                copy_session_factory=_make_session,
                 run_once=lambda active: _run_fetch_once(active, source, limit=limit, timeout_ms=timeout_ms),
             )
     own_session = session is None

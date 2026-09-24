@@ -1,24 +1,31 @@
 """bsk 会话适配层：把 BskBrowser 包成与 CopyRunnerSession 同形的最小会话对象，
-并提供「bsk 失败 → 回退复制 profile 路径一次」的统一入口。
+并提供「bsk 失败 → 重试 N 次 → 返回可读失败结果」的统一入口（不再自动回退 copy）。
 
-放在独立小文件而非 bsk_browser.py：那边只管 bsk CLI 原语，这里只管会话形状与回退策略。
+放在独立小文件而非 bsk_browser.py：那边只管 bsk CLI 原语，这里只管会话形状与重试策略。
 """
 
 from __future__ import annotations
 
+import time
 from dataclasses import replace
 from typing import Any, Callable
 from urllib.parse import urlparse
 
 from apps.subscriptions.models import FeedFetchResult
-from apps.subscriptions.rss_config import browser_command_timeout, browser_request_help_timeout
+from apps.subscriptions.rss_config import (
+    BSK_FAILURE_MARKER,
+    browser_command_timeout,
+    browser_request_help_timeout,
+    bsk_attempts,
+)
 from connectors._shared.bsk_browser import BskBrowser
 from connectors._shared.common import result_error
 
 # 子进程硬超时必须比 bsk 自身 --timeout 更宽：让 bsk 先返回并给出错误码，
 # 被我们 kill 掉会丢掉 bsk 的错误分类（只剩一个「超时」）。
 SLOW_SUBPROCESS_SLACK_SECONDS = 30.0
-FALLBACK_MARKER = "已回退到复制 profile 路径"
+# 重试间隔：给 bsk daemon / 页面一个短暂恢复窗口，避免连续瞬间重试。
+BSK_RETRY_DELAY_SECONDS = 2.0
 
 
 class BskRunnerSession:
@@ -99,44 +106,43 @@ def _same_host(current_url: str, target_url: str) -> bool:
     return bool(current_host) and current_host == target_host
 
 
-def run_bsk_with_copy_fallback(
+def run_bsk_with_retry(
     *,
     source: dict,
     bsk_session: BskRunnerSession,
-    copy_session_factory: Callable[[], Any],
     run_once: Callable[[Any], FeedFetchResult],
+    attempts: int | None = None,
 ) -> FeedFetchResult:
-    """先在 bsk 会话上跑一次，失败则结束 bsk 会话、用复制 profile 路径重试一次。
+    """在 bsk 会话上重试抓取；仍失败则返回可读失败结果——绝不自动回退 copy。
 
-    回退只发生一次，且无论走哪条路都只返回一个 FeedFetchResult——调用方据此落库，
-    因此同一个源不会重复保存条目。
+    copy 会带着 Google 身份/会话从第二个 profile 路径联网，触发账号双活吊销，
+    并会 taskkill 强杀用户 Chrome，因此只作为用户在设置页显式触发的最后手段。
+    无论重试几次都只返回一个 FeedFetchResult——调用方据此落库，同一源不会重复保存条目。
     """
+    total = max(1, int(bsk_attempts() if attempts is None else attempts))
+    last_result: FeedFetchResult | None = None
     bsk_error = ""
-    try:
-        bsk_session.start()
-        result = run_once(bsk_session)
-        if result.ok:
-            return result
-        # feed.py 会把页面异常吞成非 ok 结果，所以「bsk 失败」不能只看异常。
-        bsk_error = str(result.error or f"status={result.status}")
-    except Exception as exc:
-        bsk_error = f"{type(exc).__name__}: {exc}"
-    finally:
-        bsk_session.shutdown()
-
-    try:
-        copy_session = copy_session_factory()
+    for attempt in range(1, total + 1):
+        if attempt > 1:
+            time.sleep(BSK_RETRY_DELAY_SECONDS)
         try:
-            copy_session.start()
-            fallback = run_once(copy_session)
+            bsk_session.start()
+            result = run_once(bsk_session)
+            if result.ok:
+                return result
+            # feed.py 会把页面异常吞成非 ok 结果，所以「bsk 失败」不能只看异常。
+            bsk_error = str(result.error or f"status={result.status}")
+            last_result = result
+        except Exception as exc:
+            bsk_error = f"{type(exc).__name__}: {exc}"
+            last_result = None
         finally:
-            copy_session.shutdown()
-    except Exception as exc:
-        return result_error(source, _fallback_error(bsk_error, f"{type(exc).__name__}: {exc}"))
-    if fallback.ok:
-        return fallback
-    return replace(fallback, error=_fallback_error(bsk_error, fallback.error))
+            bsk_session.shutdown()
+    error = _bsk_failure_error(total, bsk_error)
+    if last_result is not None:
+        return replace(last_result, error=error)
+    return result_error(source, error)
 
 
-def _fallback_error(bsk_error: str, fallback_error: str) -> str:
-    return f"bsk 后端失败({bsk_error})；{FALLBACK_MARKER}，仍失败: {fallback_error}"
+def _bsk_failure_error(attempts: int, bsk_error: str) -> str:
+    return f"{BSK_FAILURE_MARKER}（已尝试 {attempts} 次，未回退 copy）：{bsk_error}"

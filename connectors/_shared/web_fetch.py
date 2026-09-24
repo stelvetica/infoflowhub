@@ -5,7 +5,7 @@ from pathlib import Path
 
 from apps.subscriptions.models import FeedFetchResult
 from apps.subscriptions.rss_config import browser_backend_for
-from connectors._shared.bsk_session import BskRunnerSession, run_bsk_with_copy_fallback
+from connectors._shared.bsk_session import BskRunnerSession, run_bsk_with_retry
 from connectors._shared.chrome_runner import CopyRunnerSession, SharedRunnerSession
 from connectors._shared.common import (
     USER_AGENT,
@@ -170,16 +170,28 @@ def _make_session_for(source: dict):
 
 
 def _fetch_one_with_backend(source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
-    """抓单个源，后端由配置决定；bsk 失败自动回退复制 profile 路径一次。"""
+    """抓单个源，后端由配置决定；bsk 失败重试配置次数后返回可读失败结果，不自动回退 copy。"""
     if not _uses_bsk(source):
         with _make_session_for(source) as session:
             return _fetch_one_via_session(session, source, limit=limit, timeout_ms=timeout_ms)
-    return run_bsk_with_copy_fallback(
+    return run_bsk_with_retry(
         source=source,
         bsk_session=_make_session_for(source),
-        copy_session_factory=lambda: _make_copy_session_for(source),
         run_once=lambda session: _fetch_one_via_session(session, source, limit=limit, timeout_ms=timeout_ms),
     )
+
+
+def fetch_source_via_copy(source: dict, *, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
+    """显式按源跑一次 copy（复制 profile）路径。
+
+    仅由设置页「用 copy 重试」按钮调用：bsk 反复失败后，经用户确认才用这个最后手段
+    （copy 会带 Google 身份从第二个 profile 路径联网，可能吊销账号会话并强杀用户 Chrome）。
+    """
+    try:
+        with _make_copy_session_for(source) as session:
+            return _fetch_one_via_session(session, source, limit=limit, timeout_ms=timeout_ms)
+    except Exception as exc:
+        return result_error(source, f"copy 路径抓取失败: {exc}")
 
 
 def fetch_web_source(source: dict) -> FeedFetchResult:
@@ -225,7 +237,7 @@ def fetch_web_many(
     copy_indices = [i for i in shared_indices if i not in set(bsk_indices)]
     other_indices = [i for i in range(len(sources)) if i not in set(shared_indices)]
 
-    # bsk 后端：每个源一个独立会话（含失败回退），不与复制副本组共用
+    # bsk 后端：每个源一个独立会话（失败只重试，不回退 copy），不与复制副本组共用
     for i in bsk_indices:
         source = sources[i]
         try:

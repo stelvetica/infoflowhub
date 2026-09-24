@@ -11,6 +11,7 @@
       "alphapai-social-media": "bsk"
     },
     "request_help_timeout": 30,
-    "command_timeout": 120
+    "command_timeout": 120,
+    "bsk_attempts": 2
   }
 }

@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
 from apps.subscriptions.config import load_settings, load_sources, save_sources
+from apps.subscriptions.rss_config import BSK_FAILURE_MARKER
 from apps.subscriptions.rss_db import (
     delete_entries_by_source,
     delete_source_state,
@@ -300,6 +301,11 @@ def source_runtime_health(source_id: str) -> dict[str, str]:
         "last_failed_at": str(source_health.get("last_failed_at") or ""),
         "last_error": normalize_text_lines(source_health.get("last_error") or ""),
     }
+
+
+def copy_retry_available(last_error: str) -> bool:
+    """该源是否有 bsk 失败记录：只有这时才在设置页露出「用 copy 重试」按钮。"""
+    return BSK_FAILURE_MARKER in (last_error or "")
 
 
 def save_source(payload: dict[str, str]) -> None:
@@ -1048,6 +1054,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             "channel_label": source_channel_label(str(item.get("feed_url") or ""), str(item.get("site_url") or ""), str(item.get("provider") or "")),
             "entry_count": int(stat.get("entry_count") or 0),
             "last_error": last_error,
+            "copy_retry_available": copy_retry_available(last_error),
             "last_success_at": str(source_health.get("last_success_at") or ""),
             "invalid_days": invalid_days,
             "is_failed": bool(invalid_days),

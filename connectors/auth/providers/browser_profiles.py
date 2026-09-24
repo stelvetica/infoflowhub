@@ -220,7 +220,7 @@ def validate_alphapai_auth() -> dict[str, object]:
         "is_available": True,
         "status_level": "ok",
         "status_text": "可用",
-        "hint": "复用日常 Chrome 登录会话（bsk 后端），bsk 失败自动回退 CopyRunner。",
+        "hint": "复用日常 Chrome 登录会话（bsk 后端）；bsk 失败不回退 copy，需在设置页手动按源重试 copy。",
     }
 
 
