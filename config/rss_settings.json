@@ -9,7 +9,8 @@
     "sources": {
       "alphapai": "bsk",
       "alphapai-social-media": "bsk",
-      "laolihai_youtube": "bsk"
+      "laolihai_youtube": "bsk",
+      "MacroMargin": "bsk"
     },
     "request_help_timeout": 30,
     "command_timeout": 120,

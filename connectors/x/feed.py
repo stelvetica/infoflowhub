@@ -264,15 +264,32 @@ def _wait_for_tweets(page, timeout_ms: int = 30000) -> bool:
         return False
 
 
+def _apply_x_anti_detect(page) -> None:
+    """尽力注入反自动化脚本，写入面缺失时静默跳过（参考 youtube 的 cookie 范式）。
+
+    copy 后端（Playwright）有 page.add_init_script 可写；bsk 后端驱动的是用户自己
+    已登录的真实 Chromium（非 --enable-automation 实例），navigator.webdriver 等特征
+    本就正常，故 bsk 下该脚本非必需（实测 webdriver=false / plugins.length=5 /
+    languages 正常 / UA 不含 Headless|Automation）。
+    """
+    add_init_script = getattr(page, "add_init_script", None)
+    if not callable(add_init_script):
+        return
+    add_init_script(X_ANTI_DETECT_SCRIPT)
+
+
 def _save_debug_assets(page, source: dict, suffix: str = ""):
     ts = time.strftime("%Y%m%d_%H%M%S")
     safe_name = (source.get("id") or "x_debug").replace("/", "_")
     label = f"{safe_name}_{suffix}_{ts}" if suffix else f"{safe_name}_{ts}"
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        page.screenshot(path=str(DEBUG_DIR / f"{label}.png"), full_page=True)
-    except Exception:
-        pass
+    # bsk 后端 page facade 无 screenshot 写入面：探测式降级为跳过，不抛 AttributeError。
+    screenshot = getattr(page, "screenshot", None)
+    if callable(screenshot):
+        try:
+            screenshot(path=str(DEBUG_DIR / f"{label}.png"), full_page=True)
+        except Exception:
+            pass
     try:
         text = page.locator("body").inner_text(timeout=5000)
         (DEBUG_DIR / f"{label}.txt").write_text(text, encoding="utf-8")
@@ -291,8 +308,8 @@ def fetch_x_with_page(page, source: dict, timeout_ms: int = 60000, limit: int = 
     if not target:
         return result_error(source, "暂不支持的 X 页面目标")
 
-    # 反自动化检测
-    page.add_init_script(X_ANTI_DETECT_SCRIPT)
+    # 反自动化检测（bsk 下无写入面则跳过，见 _apply_x_anti_detect）
+    _apply_x_anti_detect(page)
 
     try:
         page.goto(target.page_url, wait_until="domcontentloaded", timeout=timeout_ms)
