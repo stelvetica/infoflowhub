@@ -18,3 +18,6 @@
 
 | `connectors/_shared/bsk_browser.py` 的 `get_html()` 走 `bsk get-html` | 输出在 **524289 字节（512KB）处被截断**：页面尾部内联的大 JSON（如 YouTube 的 `ytInitialData`）会被切掉，依赖整页 HTML 的提取器会失效（YouTube 已实测回退到 DOM 提取器） | 改用 `evaluate` 只取需要的那段（如正则定位后切片），或等 bsk 支持分片读取后拼接 |
 | YouTube 源 `laolihai_youtube` 的 `published_at` | 两条路径都从相对时间文案推算（`Nd ago` 为天级粒度），时分等于抓取时刻，实测与真实发布时间差约 10.5h（日期正确） | 改走原生 RSS `https://www.youtube.com/feeds/videos.xml?channel_id=...`（实测可用、15 条、含精确 ISO 时间戳；现因该源 `provider=web` 而根本没被读取） |
+
+| `connectors/douyin/feed.py` bsk 路径（纯 DOM） | 抖音列表 DOM 无任何时间元素，新条目的 `published_at` 只能写抓取时刻（历史条目因按标题去重跳过、时间不被覆盖）；同时失去原 payload 的非作者视频过滤（实测列表均为作者作品，暂无影响） | 视频详情页正文含精确时间（实测与基线逐字一致），但需每源 12 次额外导航（约 40s + 风控风险）；或借页面签名器调 `aweme/post` 拿 `create_time` |
+| `connectors/youtube/feed.py` bsk 路径 | `bsk get-html` 在 512KB 截断，页尾内联的 `ytInitialData` 被切掉，主力提取器失效并回退到 DOM 提取器（结果正确） | 用 `evaluate` 只取目标 JSON 片段；或等 bsk 支持分片读取 |

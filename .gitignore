@@ -40,3 +40,8 @@ web/__pycache__/
 *.log
 .DS_Store
 Thumbs.db
+
+# 认证/凭据文件与临时基线：绝不入库
+runtime/*_auth.json
+runtime/auth/
+runtime/migration_baseline.json

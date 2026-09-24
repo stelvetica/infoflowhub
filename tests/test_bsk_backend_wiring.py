@@ -478,3 +478,32 @@ def test_slow_command_timeout_is_much_larger_than_help_watchdog(settings_file):
     assert browser._slow_command_timeout == 120
     # 子进程硬超时留出余量，让 bsk 自身的 --timeout 先到期（否则会被我们 kill，丢掉错误分类）
     assert browser._timeout > browser._slow_command_timeout
+
+# ---- 默认路径零 copy 守卫 ----
+
+
+def test_no_enabled_source_falls_through_to_copy():
+    """copy 会带 Google 身份从第二个 profile 路径联网并吊销用户会话，只允许显式按源启用。
+
+    两道守卫：① 默认后端不得是 copy（否则将来新增的浏览器源会静默落回 copy）；
+    ② 当前所有走浏览器的启用源都不得解析成 copy。
+    """
+    from connectors._shared.common import resolve_web_target
+
+    settings = json.loads(rss_config.SETTINGS_PATH.read_text(encoding="utf-8"))
+    assert settings["browser_backend"]["default"] != "copy", "默认后端不得为 copy"
+
+    sources = json.loads(rss_config.SOURCES_PATH.read_text(encoding="utf-8"))["sources"]
+    browser_path = []
+    for source in sources:
+        if not source.get("enabled"):
+            continue
+        target = resolve_web_target(source)
+        site = target.site if target else None
+        # alphapai 按 id 特判走 bsk；其余浏览器源以站点识别为准
+        if source.get("id") == "alphapai" or site in web_fetch._SHARED_RUNNER_SITES:
+            browser_path.append((source, site))
+            assert rss_config.browser_backend_for(source) != "copy", f"{source['id']} 会走 copy"
+
+    # 守卫本身要有效：确实存在走浏览器的源
+    assert browser_path, "未识别到任何浏览器源，守卫失效"

@@ -5,7 +5,7 @@
     "prefer_self_hosted": true
   },
   "browser_backend": {
-    "default": "copy",
+    "default": "bsk",
     "sources": {
       "alphapai": "bsk",
       "alphapai-social-media": "bsk",
