@@ -15,3 +15,6 @@
 | `web/services/skill_runner.py`（skill 子进程调度） | 只判退出码：不解析 CLI `--json` 的 usage（无成本统计）、失败不重试（靠次日调度或人工重跑）；`_kill_process_tree` 在非 Windows 只杀父进程，node 派生的子进程会留孤儿（本仓部署在 Windows，未暴露） | 接入 usage 做成本统计；给 transient 失败加一次退避重试；跨平台改 `start_new_session=True` + `os.killpg` |
 | `web/templates/partials/news_flow_status.html`（流程状态条） | 终态页面不会自己发现「新流程开始」（那需常驻轮询，与「空闲零请求」冲突）；页面在流程开始前打开并停在终态时，要手动刷新才看得到运行态 | 把「流程开始」也做成事件源（SSE 或独立轮询端点），终态时才按需订阅 |
 | `web/services/auto_runner.py` `_open_panel()` | 用 `webbrowser.open` 唤起面板，无 GUI / 无默认浏览器时静默失败（不影响流程结果，但用户拿不到跳转） | 改成显式指定浏览器可执行文件的 subprocess 调用，失败时写入 flow.error 让状态条可见 |
+
+| `connectors/_shared/bsk_browser.py` 的 `get_html()` 走 `bsk get-html` | 输出在 **524289 字节（512KB）处被截断**：页面尾部内联的大 JSON（如 YouTube 的 `ytInitialData`）会被切掉，依赖整页 HTML 的提取器会失效（YouTube 已实测回退到 DOM 提取器） | 改用 `evaluate` 只取需要的那段（如正则定位后切片），或等 bsk 支持分片读取后拼接 |
+| YouTube 源 `laolihai_youtube` 的 `published_at` | 两条路径都从相对时间文案推算（`Nd ago` 为天级粒度），时分等于抓取时刻，实测与真实发布时间差约 10.5h（日期正确） | 改走原生 RSS `https://www.youtube.com/feeds/videos.xml?channel_id=...`（实测可用、15 条、含精确 ISO 时间戳；现因该源 `provider=web` 而根本没被读取） |
