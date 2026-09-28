@@ -1,0 +1,26 @@
+{
+  "_comment": "本文件含两段示例：pool 为脚本1产出，info_db 为 AI 阶段二产出。实际运行时两份分开存放。",
+  "pool": {
+    "as_of": "2026-07-07",
+    "product_order": ["臻享1期", "进取二期", "外贸博盈", "大朴均衡1号"],
+    "count": 5,
+    "stocks": [
+      {"code": "688249.SH", "name": "晶合集成", "holders": ["臻享1期", "进取二期", "大朴均衡1号"], "max_weight": 0.063},
+      {"code": "600030.SH", "name": "中信证券", "holders": ["臻享1期", "进取二期", "大朴均衡1号"], "max_weight": 0.091},
+      {"code": "601318.SH", "name": "中国平安", "holders": ["臻享1期", "进取二期", "外贸博盈", "大朴均衡1号"], "max_weight": 0.077},
+      {"code": "002475.SZ", "name": "立讯精密", "holders": ["臻享1期", "进取二期", "大朴均衡1号"], "max_weight": 0.056},
+      {"code": "300760.SZ", "name": "迈瑞医疗", "holders": ["外贸博盈"], "max_weight": 0.032}
+    ]
+  },
+  "info_db": {
+    "updated_at": "2026-07-07",
+    "stocks": [
+      {"code": "688249.SH", "name": "晶合集成", "main_business": "12英寸晶圆代工", "industry": "半导体-晶圆代工", "chains": ["芯片代工", "AI算力"], "in_pool": true},
+      {"code": "600030.SH", "name": "中信证券", "main_business": "证券经纪、投行、资管", "industry": "非银金融-证券", "chains": ["资本市场"], "in_pool": true},
+      {"code": "601318.SH", "name": "中国平安", "main_business": "保险、银行、资管综合金融", "industry": "非银金融-保险", "chains": ["保险", "综合金融"], "in_pool": true},
+      {"code": "002475.SZ", "name": "立讯精密", "main_business": "消费电子精密制造、连接器", "industry": "消费电子-精密制造", "chains": ["消费电子组装", "苹果产业链", "AI服务器"], "in_pool": true},
+      {"code": "300760.SZ", "name": "迈瑞医疗", "main_business": "医疗器械研发制造", "industry": "医药生物-医疗器械", "chains": ["医疗器械"], "in_pool": true},
+      {"code": "603268.SH", "name": "松发股份", "main_business": "船舶制造（原日用陶瓷，2024年中船借壳）", "industry": "国防军工-船舶制造", "chains": ["船舶制造", "军工"], "in_pool": false}
+    ]
+  }
+}

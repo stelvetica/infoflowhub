@@ -1,0 +1,4 @@
+interface:
+  display_name: "标的分类权重"
+  short_description: "从持仓 Excel 抽数并生成《标的分类权重》Markdown 文档"
+  default_prompt: "Use $portfolio-classify-weight to 从持仓 Excel 生成标的分类权重数据源与最终 Markdown 文档。"
