@@ -18,6 +18,8 @@ data/*.sqlite3.bak
 data/alphapai_markdown/
 data/reports/
 data/jiuyangongshe_markdown/
+# 指向外部业务目录（坚果云同步）的符号链接，本机专属，不入库
+data/标的观察
 runtime/browser_profiles/
 runtime/python-portable/
 runtime/wheels/

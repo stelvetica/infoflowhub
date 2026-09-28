@@ -26,7 +26,7 @@ from pathlib import Path
 
 # 产物根 = 主 checkout 的 infoflowhub（数据与运行实例都在主 checkout，不是 worktree）
 DEFAULT_SRC = Path(r"C:\Users\ETT\Playground\infoflowhub\data\reports")
-DEFAULT_TARGET = Path(r"C:\标的观察")
+DEFAULT_TARGET = Path(r"C:\Users\ETT\Playground\infoflowhub\data\标的观察")
 # 三类产物：glob 模式 → 人读名称
 KINDS = (
     ("新闻影响分析_*.md", "新闻影响分析 md"),
@@ -72,7 +72,7 @@ def selftest() -> None:
     """临时夹具：复制最新 + 删除旧同类 + 不误删无关文件 + dry-run 不落盘。"""
     assert DEFAULT_SRC == Path(r"C:\Users\ETT\Playground\infoflowhub\data\reports")
     assert "infoflowhub-reports" not in str(DEFAULT_SRC)  # 产物根是主 checkout，不是 worktree
-    assert DEFAULT_TARGET == Path(r"C:\标的观察")
+    assert DEFAULT_TARGET == Path(r"C:\Users\ETT\Playground\infoflowhub\data\标的观察")
 
     with tempfile.TemporaryDirectory() as tmp:
         src, target = Path(tmp) / "reports", Path(tmp) / "观察"

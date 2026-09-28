@@ -62,6 +62,8 @@ infoflowhub/
 └─ scripts/              # 启动、重启、登录辅助脚本
 ```
 
+**`data/标的观察/`** 是指向外部业务目录（坚果云同步）的**符号链接**，为 `portfolio-*` 三个 skill 与 `scripts/publish_reports.py` 共用的落盘口：读持仓 Excel、回写投研产物。该目录搬迁时只需重建这一个链接（`rmdir` 后 `mklink /D`），脚本零改动；链接本身已 gitignore、不入库。
+
 ## 子系统说明
 
 ### `laterhub/`
