@@ -22,6 +22,7 @@ from apps.laterhub.tagger import (
     TaggerServiceUnavailable,
     TaggerTemporaryError,
 )
+from connectors._shared.bsk_session import BskRunnerSession
 from connectors.bilibili import fetch_bilibili_watchlater
 from connectors.douyin import fetch_douyin_favorites
 from connectors.xiaoheihe import fetch_xiaoheihe_favorites
@@ -162,19 +163,13 @@ class LaterhubRunSummary:
     push_enabled: bool = ENABLE_FEISHU_PUSH
 
 
-# 各源抓取超时（秒）。浏览器源（抖音/小黑盒）CDP 假死时 playwright 内部超时可能失效，
-# 超过此上限直接杀该源 runner 浏览器解卡，避免卡死整轮并拖垮后续轮次。
+# 各源抓取超时（秒）。bsk 复用用户日常 Chrome，页面/CDP 假死时浏览器端超时可能失效，
+# 超过此上限不再等待该源：停会话并隔离它，后续源各自新建会话继续，避免卡死整轮。
 SOURCE_FETCH_TIMEOUT_SECONDS = 180
 
 
-def _source_debug_port(label: str) -> int | None:
-    if label == "抖音收藏":
-        from connectors.douyin.favorites import LATERHUB_RUNNER_DEBUG_PORT
-        return LATERHUB_RUNNER_DEBUG_PORT
-    if label == "小黑盒收藏":
-        from connectors.xiaoheihe.feed import LATERHUB_RUNNER_DEBUG_PORT
-        return LATERHUB_RUNNER_DEBUG_PORT
-    return None
+class _SourceFetchTimeout(RuntimeError):
+    """单源抓取超时：该源会话状态已不可信，调用方须置空会话并隔离该源。"""
 
 
 def _save_items(db: DBManager, items: list[dict[str, Any]]) -> None:
@@ -182,25 +177,13 @@ def _save_items(db: DBManager, items: list[dict[str, Any]]) -> None:
         db.upsert_link(LinkRecord(url=item["url"], title=item["title"], source=item["source"], tags=item.get("tags")))
 
 
-def _terminate_source_session(label: str) -> None:
-    """超时兜底：杀掉该源 runner 浏览器进程（按 user-data-dir 匹配，不碰用户 Chrome）。"""
-    port = _source_debug_port(label)
-    if not port:
-        return
-    from connectors._shared.chrome_runner import _reopen_user_chrome, close_debug_browser
-    from connectors.auth.providers.browser_profiles import LATERHUB_RUNNER_DIR
+def _run_fetcher_with_timeout(
+    label: str, fetcher, session=None, *, owns_session: bool = False
+) -> list[dict[str, Any]]:
+    """守护线程执行 fetcher，超时则停会话并抛 _SourceFetchTimeout。
 
-    close_debug_browser(LATERHUB_RUNNER_DIR, port)
-    # 复制 profile 流程会先关用户 Chrome，超时后其 worker 线程无法走正常 shutdown 重开，
-    # 这里直接恢复用户 Chrome（若用户本就开着，重开也只是多一个 InfoHub 标签页，无害）。
-    _reopen_user_chrome()
-
-
-def _run_fetcher_with_timeout(label: str, fetcher, session=None) -> list[dict[str, Any]]:
-    """守护线程执行 fetcher，超时则杀浏览器并抛错。
-
-    daemon 线程即使卡死也不阻塞进程退出；超时后主线程不再等待，
-    卡死的 worker 在浏览器进程被杀后自行抛错退出。
+    daemon 线程即使卡死也不阻塞进程退出。ponytail: 守护线程无法强杀卡死的 Python worker，
+    只能停 bsk 会话并把该源隔离；卡死的 worker 随进程退出终止，后续源各自新建会话继续。
     """
     from queue import Empty, Queue
 
@@ -218,26 +201,102 @@ def _run_fetcher_with_timeout(label: str, fetcher, session=None) -> list[dict[st
     try:
         kind, payload = result_queue.get(timeout=SOURCE_FETCH_TIMEOUT_SECONDS)
     except Empty as exc:
-        _terminate_source_session(label)
-        raise RuntimeError(
-            f"抓取超过 {SOURCE_FETCH_TIMEOUT_SECONDS}s 未完成，已强制关闭浏览器并跳过本轮"
+        # 外部传入的会话归调用方所有，不得 shutdown；自建会话则停掉，避免复用状态不明的会话。
+        if owns_session and session is not None:
+            try:
+                session.shutdown()
+            except Exception:  # noqa: BLE001
+                pass
+            stop_note = "已停止 bsk 会话并跳过该源"
+        elif session is not None:
+            # 会话归调用方所有：本层有句柄但无权停，交由调用方处理。
+            stop_note = "会话归调用方所有，本层不停止该会话，直接跳过该源"
+        else:
+            # 会话归属抓取器自建（或已在上游超时中被自动停止），本层没有句柄，停不了也不该谎称停了。
+            stop_note = "会话归属抓取器自建，将随其返回自行关闭；本层无句柄可停，直接跳过该源"
+        raise _SourceFetchTimeout(
+            f"{label}抓取超过 {SOURCE_FETCH_TIMEOUT_SECONDS}s 未完成，{stop_note}"
         ) from exc
     if kind == "err":
         raise payload  # type: ignore[misc]
     return payload  # type: ignore[return-value]
 
 
-def _fetch_source(*, enabled: bool, label: str, fetcher, db: DBManager, session=None) -> bool:
-    if not enabled:
-        return False
+def _fetch_source(*, label: str, fetcher, db: DBManager, session=None, owns_session: bool = False):
+    """抓取单个源并落库；返回会话（超时置空，调用方据此让后续源自建会话）。"""
     log_line(f"[3/6] 开始抓取{label}")
     try:
-        fetched = _run_fetcher_with_timeout(label, fetcher, session)
+        fetched = _run_fetcher_with_timeout(label, fetcher, session, owns_session=owns_session)
         _save_items(db, fetched)
-        log_line(f"[3/6] {label}抓取完成，新增/更新 {len(fetched)} 条")
+        if fetched:
+            log_line(f"[3/6] {label}抓取完成，新增/更新 {len(fetched)} 条")
+        else:
+            log_line(f"[3/6][WARN] {label}抓取完成但 0 条，可能是登录态失效或页面结构变更，请核对")
+    except _SourceFetchTimeout as exc:
+        log_line(f"[3/6] {label}抓取失败: {exc}")
+        return None
     except Exception as exc:  # noqa: BLE001
         log_line(f"[3/6] {label}抓取失败: {exc}")
-    return True
+    return session
+
+
+def _session_alive(session) -> bool:
+    """bsk 会话存活判定。
+
+    上游子进程超时在默认 stop_session_on_timeout=True 下会自动 stop() 并清空 session_id，
+    但会话句柄仍在；若不判定存活，后续源复用这个死会话会连锁秒失败。
+    """
+    browser = getattr(session, "browser", None)
+    return bool(getattr(browser, "session_id", None))
+
+
+def _fetch_enabled_sources(*, args: argparse.Namespace, db: DBManager, session=None) -> bool:
+    """按启用顺序抓取三源，返回是否调度了任一源。
+
+    会话生命周期（bsk 语义）：外部传入 session 时只复用、绝不 shutdown；否则自建一个共享
+    BskRunnerSession 供三源复用（一次 start/stop），构造或 start 失败则三源各自记为失败并继续
+    走完流程。任一源超时后把会话置空，后续源各自新建会话继续（fetcher 支持 session=None 自建）。
+    每源结束后还做一次存活判定：上游内部超时可能已自动 stop 该会话，此时也置空让后续源新建。
+    """
+    own_session = session is None
+    bsk_session = session
+    start_failed = False
+    if own_session:
+        try:
+            bsk_session = BskRunnerSession(start_url="about:blank")
+            bsk_session.start()
+        except Exception as exc:  # noqa: BLE001
+            log_line(f"[2/6] bsk 会话启动失败，本轮各源均记为失败: {exc}")
+            bsk_session = None
+            start_failed = True
+
+    scheduled = False
+    try:
+        for enabled, label, fetcher in (
+            (args.fetch_bilibili, "B 站稍后看", fetch_bilibili_watchlater),
+            (args.fetch_douyin, "抖音收藏", fetch_douyin_favorites),
+            (args.fetch_xiaoheihe, "小黑盒收藏", fetch_xiaoheihe_favorites),
+        ):
+            if not enabled:
+                continue
+            scheduled = True
+            if start_failed:
+                log_line(f"[3/6] {label}抓取失败: bsk 会话启动失败，跳过抓取")
+                continue
+            bsk_session = _fetch_source(
+                label=label,
+                fetcher=fetcher,
+                db=db,
+                session=bsk_session,
+                owns_session=own_session and bsk_session is not None,
+            )
+            if bsk_session is not None and not _session_alive(bsk_session):
+                log_line("[3/6] bsk 会话已失效（上游超时自动停止），后续源将新建会话")
+                bsk_session = None
+    finally:
+        if own_session and bsk_session is not None:
+            bsk_session.shutdown()
+    return scheduled
 
 
 def _tag_single_row(db: DBManager, row: Any, tagger: ContentTagger) -> str:
@@ -375,12 +434,8 @@ def run(args: argparse.Namespace, session=None) -> int:
         reset_count = db.reset_failed_to_pending()
         log_line(f"[补偿] 已将 failed 重置回 pending {reset_count} 条")
     log_line("[2/6] 开始抓取稍后读来源")
-    fetched_any = False
-    # B站稍后看走 API，不使用浏览器 session
-    fetched_any = _fetch_source(enabled=args.fetch_bilibili, label="B 站稍后看", fetcher=fetch_bilibili_watchlater, db=db) or fetched_any
-    fetched_any = _fetch_source(enabled=args.fetch_douyin, label="抖音收藏", fetcher=fetch_douyin_favorites, db=db, session=session) or fetched_any
-    fetched_any = _fetch_source(enabled=args.fetch_xiaoheihe, label="小黑盒收藏", fetcher=fetch_xiaoheihe_favorites, db=db, session=session) or fetched_any
-    if not fetched_any:
+    scheduled = _fetch_enabled_sources(args=args, db=db, session=session)
+    if not scheduled:
         log_line("[3/6] 本轮未启用任何抓取来源")
     _tag_pending_rows(db, tagger)
     return _push_pending_rows(db)

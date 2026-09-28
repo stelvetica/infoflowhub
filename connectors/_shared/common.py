@@ -15,8 +15,8 @@ from connectors.auth import get_auth_context_path, validate_auth
 
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
-X_LOGIN_HINT = "请运行 login_profiles.py x 扫码登录 X（登录态存入共享 auth profile）。"
-DOUYIN_LOGIN_HINT = "请运行 login_profiles.py douyin 扫码登录抖音（登录态存入共享 auth profile）。"
+X_LOGIN_HINT = "请在日常 Chrome 登录 X（抓取走 bsk，复用日常 Chrome 登录会话）。"
+DOUYIN_LOGIN_HINT = "请在日常 Chrome 登录抖音（抓取走 bsk，复用日常 Chrome 登录会话）。"
 
 
 TRANSIENT_FETCH_ERROR_KEYWORDS = (
@@ -66,8 +66,8 @@ def validate_douyin_login_prerequisite(source: dict) -> str:
     feed_url = str(source.get("feed_url") or "").strip().lower()
     if auth_key != "douyin_shared" and "douyin.com/user/" not in site_url and "douyin.com/user/" not in feed_url:
         return ""
-    # 抓取走 CopyRunnerSession 复制常用 Chrome Default profile，前置检查只认它（同源），
-    # 避免常用 Chrome 登了但共享 auth profile 没登时误判通过、实际抓取触发风控。
+    # 抓取走 bsk，复用日常 Chrome 实时登录会话（douyin_shared 上下文路径即常用 Chrome Default），
+    # 前置检查也只认常用 Chrome Default（同源），避免登录态缺失时误判通过、实际抓取触发风控。
     default_dir = get_auth_context_path("douyin_shared")
     if (default_dir / "Network" / "Cookies").exists() and (default_dir / "Preferences").exists():
         return ""

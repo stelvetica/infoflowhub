@@ -6,12 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from apps.laterhub.config import DEBUG_DIR
-from connectors._shared.chrome_runner import CopyRunnerSession
-from connectors._shared.common import USER_AGENT
+from connectors._shared.bsk_session import BskRunnerSession
 
 
 XIAOHEIHE_HOME_URL = "https://www.xiaoheihe.cn/"
-LATERHUB_RUNNER_DEBUG_PORT = 9225
 MESSAGE_PREFIX = "[小黑盒]"
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 DEBUG_JSON_PATH = DEBUG_DIR / "tmp_pw_xiaoheihe_favorites.json"
@@ -52,102 +50,146 @@ def normalize_xiaoheihe_item(item: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+# bsk 后端没有请求拦截能力（无法截获网络请求），改用页内取数：
+# 借前端 $hbRequest 拿合法签名（它会自动算 hkey/nonce/_time 等），同时包一层
+# fetch/XHR 捕获它实际发出的签名 URL，再手动补 offset/limit 自行翻页。
+# 与 connectors/xiaoheihe/profile.py 的 $hbRequest 直取路径同一套路。
+#
+# ponytail: 依赖前端 $hbRequest / #app.__vue_app__ 的内部结构，前端封装变更时会失败——
+# 失败会以「未能获取小黑盒收藏接口签名」文案抛出（可见、不静默），届时按新结构更新本 JS 即可。
+_FAVOUR_LIST_JS = r"""
+async (argsJson) => {
+    const args = JSON.parse(argsJson);
+    const withTimeout = (promise, ms) => Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("hbRequest timeout")), ms)),
+    ]);
+    // 捕获 $hbRequest 实际发出的签名 URL（它吞掉 query 参数，故不能自己拼签名）。
+    let captured = "";
+    const origFetch = window.fetch;
+    const origOpen = XMLHttpRequest.prototype.open;
+    window.fetch = function (...a) {
+        try {
+            const u = typeof a[0] === "string" ? a[0] : (a[0] && a[0].url);
+            if (!captured && u && u.indexOf(args.apiPath) >= 0) captured = u;
+        } catch (e) {}
+        return origFetch.apply(this, a);
+    };
+    XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+        try { if (!captured && url && url.indexOf(args.apiPath) >= 0) captured = url; } catch (e) {}
+        return origOpen.call(this, method, url, ...rest);
+    };
+    try {
+        const app = document.querySelector("#app");
+        const req = app && app.__vue_app__ && app.__vue_app__.config.globalProperties.$hbRequest;
+        if (!req) return {error: "页面未就绪（$hbRequest 不可用），可能未登录或未加载完成"};
+        try {
+            // 首请求只为拿签名，失败也继续（此处不带 offset，返回什么不重要）。
+            await withTimeout(req(args.apiPath, {}, {method: "GET"}), 15000);
+        } catch (e) {}
+    } finally {
+        window.fetch = origFetch;
+        XMLHttpRequest.prototype.open = origOpen;
+    }
+    if (!captured) return {error: "未能获取小黑盒收藏接口签名（可能未登录或前端封装已变更）"};
+    // captured 已含合法签名参数，在其基础上补 limit/offset 翻页。
+    // 带 base：前端若发相对路径，裸 new URL 会 TypeError 且报错不可读。
+    const base = new URL(captured, location.origin);
+    const all = [];
+    let totalPage = 1;
+    let totalPageKnown = false;
+    let pagesFetched = 0;
+    let complete = false;
+    for (let i = 0; i < args.maxPages; i++) {
+        const u = new URL(base.toString());
+        u.searchParams.set("limit", String(args.pageSize));
+        u.searchParams.set("offset", String(i * args.pageSize));
+        let resp;
+        try {
+            resp = await fetch(u.toString(), {credentials: "include", signal: AbortSignal.timeout(15000)});
+        } catch (e) {
+            return {error: "接口请求失败: " + String(e)};
+        }
+        let data;
+        try {
+            data = await resp.json();
+        } catch (e) {
+            return {error: "接口返回非 JSON（可能登录态失效）"};
+        }
+        if (i === 0) {
+            if (data.status !== "ok") {
+                return {error: "api status=" + data.status + " msg=" + (data.msg || "")};
+            }
+            totalPageKnown = data.total_page !== undefined && data.total_page !== null;
+            totalPage = data.total_page || 1;
+        } else if (data.status && data.status !== "ok") {
+            return {error: "api status=" + data.status + " msg=" + (data.msg || "")};
+        }
+        pagesFetched++;
+        const items = data.result || [];
+        if (items.length === 0) { complete = true; break; }
+        for (const it of items) {
+            all.push({linkid: it.linkid, title: it.title || "", is_favour: it.is_favor || it.is_favour});
+        }
+        if (totalPageKnown) {
+            if (i + 1 >= totalPage) { complete = true; break; }
+        } else if (items.length < args.pageSize) {
+            // total_page 缺失时以「本页未满」判断到底，否则继续翻页（上限 maxPages）。
+            complete = true; break;
+        }
+    }
+    // 未走完（撞 maxPages 上限，或 total_page 缺失且本页仍满）= 只拿到部分数据，回传标志供 Python 侧 WARN。
+    return {
+        total_page: totalPage,
+        total_page_known: totalPageKnown,
+        pages_fetched: pagesFetched,
+        truncated: !complete,
+        count: all.length,
+        items: all,
+    };
+}
+"""
+
+
 def _fetch_favour_via_api(page) -> list[dict[str, Any]]:
-    """用小黑盒前端 $hbRequest 拿到合法签名，再手动 fetch 翻页拉全量收藏。
+    """页内借 $hbRequest 拿签名 → 手动 fetch 翻页拉全量收藏。
 
     $hbRequest 自动算 hkey 签名但吞没 query 参数（page/offset 均不进 URL），
-    故先用它发首请求拿 hkey/nonce/_time/heybox_id，再手动 fetch 带 offset 翻页。
-    hkey 可在一次会话内复用（已抓包验证）。翻页靠 offset（page 无效）。
+    故先包一层 fetch/XHR 捕获它实际发出的签名 URL，再手动 fetch 带 offset 翻页。
+    翻页靠 offset（page 无效）。签名与翻页全在页内一次 evaluate 内完成，不再依赖网络拦截。
     """
-    # Step 1: $hbRequest 发首请求，拦截实际 URL 提取签名参数
-    sign_params: dict[str, str] = {}
-
-    def _capture(request):
-        if "favour/list" in request.url and not sign_params:
-            from urllib.parse import urlparse, parse_qs
-            qs = parse_qs(urlparse(request.url).query)
-            sign_params.update({k: v[0] for k, v in qs.items()})
-
-    page.on("request", _capture)
-    page.evaluate(r"""
-        async (apiPath) => {
-            const withTimeout = (promise, ms) => Promise.race([
-                promise,
-                new Promise((_, reject) => setTimeout(() => reject(new Error("hbRequest timeout")), ms)),
-            ]);
-            const app = document.querySelector('#app');
-            const req = app.__vue_app__.config.globalProperties.$hbRequest;
-            const resp = await withTimeout(req(apiPath, {}, {method: "GET"}), 15000);
-            return (resp.data || resp).status;
-        }
-    """, FAVOUR_API_PATH)
-    page.wait_for_timeout(1500)
-    if not sign_params:
-        raise RuntimeError("未能从 $hbRequest 拦截到签名参数，前端封装可能已变更")
-    page.remove_listener("request", _capture)
-
-    # Step 2: 手动 fetch 带 offset 翻页
-    js = r"""
-        async (argsJson) => {
-            const args = JSON.parse(argsJson);
-            const base = "https://api.xiaoheihe.cn" + args.apiPath;
-            const all = [];
-            let totalPage = 1;
-            for (let i = 0; i < args.maxPages; i++) {
-                const u = new URL(base);
-                for (const [k, v] of Object.entries(args.sign)) u.searchParams.set(k, v);
-                u.searchParams.set("limit", String(args.pageSize));
-                u.searchParams.set("offset", String(i * args.pageSize));
-                const resp = await fetch(u.toString(), {
-                    credentials: "include",
-                    signal: AbortSignal.timeout(15000),
-                });
-                const data = await resp.json();
-                if (i === 0) {
-                    if (data.status !== "ok") {
-                        return {error: "api status=" + data.status + " msg=" + (data.msg || "")};
-                    }
-                    totalPage = data.total_page || 1;
-                }
-                const items = data.result || [];
-                if (items.length === 0) break;
-                for (const it of items) {
-                    all.push({linkid: it.linkid, title: it.title || "", is_favour: it.is_favor || it.is_favour});
-                }
-                if (i + 1 >= totalPage) break;
+    payload = page.evaluate(
+        _FAVOUR_LIST_JS,
+        json.dumps(
+            {
+                "apiPath": FAVOUR_API_PATH,
+                "pageSize": FAVOUR_PAGE_SIZE,
+                "maxPages": FAVOUR_MAX_PAGES,
             }
-            return {total_page: totalPage, count: all.length, items: all};
-        }
-    """
-    import json as _json
-    result = page.evaluate(js, _json.dumps({
-        "apiPath": FAVOUR_API_PATH,
-        "sign": sign_params,
-        "pageSize": FAVOUR_PAGE_SIZE,
-        "maxPages": FAVOUR_MAX_PAGES,
-    }))
-    if isinstance(result, dict) and result.get("error"):
-        raise RuntimeError(f"收藏 API 调用失败: {result['error']}")
-    items = result.get("items", []) if isinstance(result, dict) else []
-    _log(f"API 翻页完成，total_page={result.get('total_page')} 获取 {len(items)} 条")
+        ),
+    )
+    if not isinstance(payload, dict):
+        raise RuntimeError("小黑盒收藏接口返回异常（非对象）")
+    if payload.get("error"):
+        raise RuntimeError(f"收藏 API 调用失败: {payload['error']}")
+    items = payload.get("items") or []
+    _log(f"API 翻页完成，total_page={payload.get('total_page')} 获取 {len(items)} 条")
+    if payload.get("truncated"):
+        _log(
+            f"[WARN] 收藏未取全：已抓 {payload.get('pages_fetched')} 页"
+            f"（total_page={payload.get('total_page')}，上限 {FAVOUR_MAX_PAGES}），仅返回部分数据"
+        )
     return items
 
 
 def fetch_xiaoheihe_favorites(
     env_path: str | Path | None = None,
-    session: CopyRunnerSession | None = None,
+    *,
+    session: BskRunnerSession | None = None,
 ) -> list[dict[str, Any]]:
     own_session = session is None
     if own_session:
-        from connectors.auth.providers.browser_profiles import LATERHUB_RUNNER_DIR, _default_chrome_profile_dir
-        session = CopyRunnerSession(
-            runner_dir=LATERHUB_RUNNER_DIR,
-            debug_port=LATERHUB_RUNNER_DEBUG_PORT,
-            source_profile_dir=_default_chrome_profile_dir(),
-            start_url="about:blank",
-            headless=True,
-            extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh;q=0.9,en;q=0.8"],
-        )
+        session = BskRunnerSession(start_url="about:blank")
         session.start()
 
     items: list[dict[str, Any]] = []
@@ -178,7 +220,7 @@ def fetch_xiaoheihe_favorites(
         }
         """)
         if not login_ok:
-            raise RuntimeError("小黑盒登录态失效（restore_login 未返回 ok），请运行 login_profiles.py xiaoheihe 重新登录")
+            raise RuntimeError("小黑盒登录态失效（restore_login 未返回 ok），请在日常 Chrome 中重新登录小黑盒")
 
         items = _fetch_favour_via_api(page)
 

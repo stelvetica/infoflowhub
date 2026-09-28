@@ -115,11 +115,14 @@ def _js_pick(selector: str | None, text: str | None, exact: bool, index: int) ->
 
 def _js_call(js: str, arg: Any) -> str:
     # page.evaluate(js, arg) 的传参约定（对齐 Playwright）：js 是「函数表达式」时，
-    # 构造成 `(js)(<json arg>)` 由 bsk 调用；arg 为 None 时按普通表达式求值（js 原样下发）。
+    # 构造成 `(js)(<json arg>)` 由 bsk 调用；arg 为 None 时用 typeof 包一层——求值为函数
+    # 就调用（Playwright 对无参函数表达式同样自动调用），普通表达式则原样返回。
+    # 这一层不可省：bsk evaluate 走 CDP Runtime.evaluate，不自动调用函数表达式，裸下发
+    # `() => {...}` 只会拿到函数按值序列化的 {}（实测；抖音收藏稳定 0 条的真因）。
     # arg 用 json.dumps 默认 ensure_ascii=True，非 ASCII 转义成 \uXXXX，规避 Windows
     # 命令行编码问题（与 _js_find 里 json.dumps 的处理一致）。
     if arg is None:
-        return js
+        return f"((f)=>typeof f==='function'?f():f)(({js}))"
     return f"({js})({json.dumps(arg)})"
 
 

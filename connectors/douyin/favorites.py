@@ -5,11 +5,8 @@ import re
 from typing import Any
 
 from apps.laterhub.config import DEBUG_DIR
-from connectors._shared.chrome_runner import CopyRunnerSession
-from connectors._shared.common import USER_AGENT
-
-
-LATERHUB_RUNNER_DEBUG_PORT = 9224
+from connectors._shared.bsk_session import BskRunnerSession
+from connectors.douyin.feed import DOUYIN_LOGIN_WALL_MARKERS
 
 
 DOUYIN_WEAK_TITLE_PATTERNS = [
@@ -77,41 +74,71 @@ def _extract_visible_items(page) -> list[dict[str, Any]]:
       return results;
     }
     """
-    return page.evaluate(js)
+    value = page.evaluate(js)
+    if not isinstance(value, list):
+        # 信任边界校验：页内函数没被真正执行时 bsk 会回 {}（实测，函数按值序列化），
+        # 静默当 0 条会把「提取失败」伪装成「没有收藏」。
+        raise RuntimeError(f"抖音收藏页内提取返回异常类型: {type(value).__name__}")
+    return value
 
 
-def fetch_douyin_favorites(*args, session: CopyRunnerSession | None = None, **kwargs) -> list[dict[str, Any]]:
+def _body_text(page) -> str:
+    # 用一次 evaluate 取 body 文本（BskPage 无 locator.inner_text 之外更轻的取法）。
+    value = page.evaluate("document.body ? document.body.innerText : ''")
+    return str(value or "")
+
+
+def fetch_douyin_favorites(
+    env_path: str | None = None,
+    *,
+    session: BskRunnerSession | None = None,
+) -> list[dict[str, Any]]:
+    # ponytail: env_path 仅为与 pipeline 的 fetcher(ENV_PATH, session=...) 调用姿势同形，
+    # bsk 走用户已登录的浏览器，不需要 env 配置；若将来 bsk 需要 env 参数再接线。
     own_session = session is None
     if own_session:
-        from connectors.auth.providers.browser_profiles import LATERHUB_RUNNER_DIR, _default_chrome_profile_dir
-        session = CopyRunnerSession(
-            runner_dir=LATERHUB_RUNNER_DIR,
-            debug_port=LATERHUB_RUNNER_DEBUG_PORT,
-            source_profile_dir=_default_chrome_profile_dir(),
-            start_url="about:blank",
-            headless=True,
-            extra_args=[f"--user-agent={USER_AGENT}", "--lang=zh-CN,zh;q=0.9,en;q=0.8"],
-        )
+        session = BskRunnerSession(start_url="about:blank")
         session.start()
 
     items: list[dict[str, Any]] = []
+    body_text = ""
     try:
         page = session.acquire_page()
         page.goto(DOUYIN_FAVORITE_URL, wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(5000)
+        # 收藏列表懒加载：首屏只渲染一部分，滚一屏让后续条目进入 DOM 再提取
+        # （探针实测视频锚点 29 → 36；去重后的真实条数以 DEBUG_JSON_PATH 产物为准）。
+        page.evaluate("window.scrollTo(0, 3000)")
+        page.wait_for_timeout(4000)
         items = _extract_visible_items(page)
+        body_text = _body_text(page)
         try:
             page.close()
         except Exception:
             pass
-        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-        DEBUG_JSON_PATH.write_text(
-            json.dumps({"ok": True, "count": len(items), "items": items}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
     finally:
         if own_session:
             session.shutdown()
+
+    login_wall = not items and any(marker in body_text for marker in DOUYIN_LOGIN_WALL_MARKERS)
+    # 调试产物的 ok 必须反映真实结论：登录墙时写 ok=false 并带失败原因，不能先写成功产物再抛错。
+    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+    DEBUG_JSON_PATH.write_text(
+        json.dumps(
+            {
+                "ok": not login_wall,
+                "count": len(items),
+                "items": items,
+                **({"error": "命中登录墙标记，未能加载收藏列表"} if login_wall else {}),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    if login_wall:
+        # 失败必须可见：0 条 + 登录墙标记时不静默返回空列表，抛错让 pipeline 记成可见失败。
+        raise RuntimeError("抖音收藏页面疑似未登录/登录态失效：命中登录墙标记，未能加载收藏列表")
 
     result: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -125,6 +152,3 @@ def fetch_douyin_favorites(*args, session: CopyRunnerSession | None = None, **kw
         seen.add(url)
         result.append(normalized)
     return result
-
-
-

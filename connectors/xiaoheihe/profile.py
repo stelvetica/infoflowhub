@@ -18,7 +18,7 @@ from connectors._shared.common import (
 # 用户主页动态（帖子）列表 API：GET /bbs/app/profile/events?list_type=moment&userid=<id>
 PROFILE_EVENTS_PATH = "/bbs/app/profile/events"
 # 小黑盒用户主页帖子必须登录态才可加载（未登录 API 返回空 moments / 跳登录）。
-XIAOHEIHE_LOGIN_HINT = "请运行 login_profiles.py xiaoheihe 扫码登录小黑盒（登录态存入共享 auth profile）。"
+XIAOHEIHE_LOGIN_HINT = "请在日常 Chrome 登录小黑盒（抓取走 bsk，复用日常 Chrome 登录会话）。"
 
 
 def _normalize_xiaoheihe_link(linkid: str) -> str:
@@ -100,7 +100,7 @@ async (argsJson) => {
         XMLHttpRequest.prototype.open = origOpen;
     }
     if (!captured) return {error: "未能获取小黑盒接口签名，前端封装可能已变更"};
-    const url = new URL(captured);
+    const url = new URL(captured, location.origin);
     url.searchParams.set("list_type", args.listType);
     url.searchParams.set("userid", String(args.userid));
     if (args.offset !== undefined) url.searchParams.set("offset", String(args.offset));

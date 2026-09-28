@@ -85,17 +85,18 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         login_method="日常 Chrome 登录会话",
         renew_label="请在日常 Chrome 登录 Alpha派",
     ),
-    # 方式3：B站混合——订阅动态走 bsk 页内调 API（复用日常 Chrome 登录态，不走 HTTP）；
-    # 稍后看仍走 HTTP，读本地认证文件 bilibili_main.json 里的 SESSDATA/bili_jct/DedeUserID。
-    # 该文件由「同步登录态」从常用 Chrome 导入，故保留同步按钮。
+    # 方式3：B站——订阅动态与稍后看均走 bsk 页内调 API（复用日常 Chrome 登录态，不走 HTTP）。
+    # 本地认证文件 bilibili_main.json（SESSDATA/bili_jct/DedeUserID）仍服务订阅动态的 copy
+    # 兜底 HTTP 路径（bsk 失败、源表显式用 copy 重试时）；该文件由「同步登录态」从常用 Chrome
+    # 导入，故保留同步按钮。
     "bilibili_main": AuthRegistration(
         auth_key="bilibili_main",
         platform="bilibili",
         auth_mode="browser_profile",
-        storage_ref="本地认证文件 bilibili_main.json（稍后看）",
+        storage_ref="本地认证文件 bilibili_main.json（订阅动态 copy 兜底 HTTP 路径）",
         renew_strategy="scan_qr_sync",
         display_name="B站",
-        description="订阅 B站动态已改走 bsk（页内调 API，复用日常 Chrome 登录态）；稍后看仍用本地认证文件。",
+        description="订阅 B站动态与稍后看均走 bsk（页内调 API，复用日常 Chrome 登录态）；本地认证文件仅供 copy 兜底 HTTP 路径。",
         login_method="日常 Chrome 登录会话",
         renew_label="在常用 Chrome 登录 B站后点「同步登录态」",
     ),

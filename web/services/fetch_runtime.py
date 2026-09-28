@@ -6,14 +6,6 @@ from apps.subscriptions.runtime_health import (
     run_source_fetch,
 )
 
-DEFAULT_PROFILE_DIR = None
-
-
-def _default_source_profile_dir():
-    from pathlib import Path
-    return Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data" / "Default"
-
-
 def is_successful_run(success_sources: int, failure_count: int) -> bool:
     return success_sources > 0 and failure_count == 0
 
