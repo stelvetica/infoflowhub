@@ -42,8 +42,20 @@ def _isolate_debug(tmp_path, monkeypatch):
     monkeypatch.setattr(favorites, "DEBUG_JSON_PATH", tmp_path / "dbg_douyin.json")
 
 
+class FakeMouse:
+    """记录滚轮事件：懒加载必须靠真实 wheel（window.scrollTo 对内层滚动容器无效）。"""
+
+    def __init__(self, ops: list) -> None:
+        self._ops = ops
+        self.wheel_calls: list = []
+
+    def wheel(self, delta_x, delta_y) -> None:
+        self.wheel_calls.append((delta_x, delta_y))
+        self._ops.append(("wheel", delta_y))
+
+
 class FakePage:
-    """记录 goto / wait_for_timeout / evaluate 调用并返回构造好的 items。"""
+    """记录 goto / wait_for_timeout / evaluate / wheel 调用并返回构造好的 items。"""
 
     def __init__(self, items=None, body_text="", raise_on_goto=False) -> None:
         self.items = ITEMS if items is None else items
@@ -53,6 +65,7 @@ class FakePage:
         self.wait_calls: list = []
         self.evaluate_calls: list = []
         self.ops: list = []
+        self.mouse = FakeMouse(self.ops)
         self.closed = 0
 
     def goto(self, url, wait_until=None, timeout=None) -> None:
@@ -70,8 +83,6 @@ class FakePage:
         self.ops.append(("evaluate", js))
         if "innerText" in js:
             return self.body_text
-        if "scrollTo" in js:
-            return None  # 滚动表达式无返回值
         return self.items
 
     def close(self) -> None:
@@ -107,20 +118,52 @@ def test_external_session_is_used_but_never_started_or_shutdown():
     assert result[0]["source"] == "douyin_favorite"
     # 页面操作确实发生
     assert page.goto_calls and page.goto_calls[0][0] == favorites.DOUYIN_FAVORITE_URL
-    # 等待 → 滚一屏 → 再等待 → 提取：懒加载列表要先滚再抽，顺序不能颠倒
-    assert page.wait_calls == [5000, 4000]
-    assert page.ops[:4] == [
-        ("goto", favorites.DOUYIN_FAVORITE_URL),
-        ("wait", 5000),
-        ("evaluate", "window.scrollTo(0, 3000)"),
-        ("wait", 4000),
-    ]
-    # 提取发生在滚动之后（ops[4] 是提取 JS，不是滚动表达式）
-    assert "querySelectorAll" in page.ops[4][1]
+    # 首屏等待 → 提取 → 滚一轮（假 page 每轮条数不增长，故滚一轮即停）→ 取 body 文本
+    assert page.wait_calls == [5000, favorites.DOUYIN_SCROLL_WAIT_MS]
+    assert [op[0] for op in page.ops[:6]] == ["goto", "wait", "evaluate", "wheel", "wait", "evaluate"]
+    assert page.ops[0][1] == favorites.DOUYIN_FAVORITE_URL
+    assert page.ops[1][1] == 5000
+    # 第 4 个操作必须是真实滚轮事件（提取→滚动→等待→再提取，顺序不能颠倒）
+    assert page.ops[3] == ("wheel", favorites.DOUYIN_SCROLL_STEP_PX)
+    # 滚动前后的两次 evaluate 都是抽取 JS，不是滚动表达式
+    assert "querySelectorAll" in page.ops[2][1]
+    assert "querySelectorAll" in page.ops[5][1]
     assert page.evaluate_calls
+    # 懒加载必须用 wheel：window.scrollTo 对抖音内层滚动容器几乎无效（实测 36 vs 134 锚点）
+    assert page.mouse.wheel_calls == [(0, favorites.DOUYIN_SCROLL_STEP_PX)]
+    assert all("scrollTo" not in call[0] for call in page.evaluate_calls)
     # 外部会话所有权：只使用，绝不 start/shutdown
     assert session.start_calls == 0
     assert session.shutdown_calls == 0
+
+
+def test_scroll_loop_stops_early_and_keeps_growing_until_rounds_exhausted():
+    """每轮条数增长就继续滚，直到上限；条数不再增长则提前停。"""
+
+    class GrowingPage(FakePage):
+        def __init__(self) -> None:
+            super().__init__()
+            self.extract_rounds = 0
+
+        def evaluate(self, js, arg=None, **kwargs):
+            if "innerText" in js:
+                return super().evaluate(js, arg, **kwargs)
+            self.evaluate_calls.append((js, arg, kwargs))
+            self.ops.append(("evaluate", js))
+            self.extract_rounds += 1
+            # 每轮多一条，永远增长 → 必须恰好滚满上限轮数
+            return self.items + [
+                {"url": f"https://www.douyin.com/video/{i}", "title": f"t{i}"}
+                for i in range(self.extract_rounds)
+            ]
+
+    page = GrowingPage()
+    favorites.fetch_douyin_favorites(session=FakeSession(page))
+
+    # 首屏 1 次 + 每轮 1 次 = 1 + DOUYIN_SCROLL_ROUNDS
+    assert page.extract_rounds == 1 + favorites.DOUYIN_SCROLL_ROUNDS
+    wheel_ops = [op for op in page.ops if op[0] == "wheel"]
+    assert len(wheel_ops) == favorites.DOUYIN_SCROLL_ROUNDS
 
 
 def test_own_session_started_and_shutdown_once(monkeypatch):

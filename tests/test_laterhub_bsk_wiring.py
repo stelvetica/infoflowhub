@@ -1,4 +1,4 @@
-"""laterhub 三源迁 bsk 的**全仓口径**结构守卫。
+"""laterhub 抓取链路的**全仓口径**结构守卫（两个收藏源走 bsk，B站稍后看走官方 API）。
 
 现有 tests/test_bsk_backend_wiring.py::test_no_enabled_source_falls_through_to_copy 只遍历
 「源表」，看不见 laterhub 这条平行抓取路径——抖音收藏曾静默 15 天没被拦住。本文件按源码
@@ -46,6 +46,12 @@ LATERHUB_FETCHERS = {
     "小黑盒收藏": fetch_xiaoheihe_favorites,
 }
 
+# 走 bsk（需要浏览器会话）的源；B 站稍后看走官方 API 直连，不需要也不接受 session。
+BROWSER_FETCHERS = {
+    "抖音收藏": fetch_douyin_favorites,
+    "小黑盒收藏": fetch_xiaoheihe_favorites,
+}
+
 
 def find_forbidden_tokens(source: str, tokens: tuple[str, ...] = FORBIDDEN_TOKENS) -> list[str]:
     """纯函数：返回 source 中命中的违规 token。抽出来是为了守卫自检。"""
@@ -81,10 +87,10 @@ def test_pipeline_drops_removed_copy_helpers():
     assert "_terminate_source_session" not in source
 
 
-@pytest.mark.parametrize("label", sorted(LATERHUB_FETCHERS))
-def test_laterhub_fetcher_accepts_session_keyword(label):
-    """三个抓取器都必须接受 session 关键字参数，才能三源共用同一 bsk 会话。"""
-    fetcher = LATERHUB_FETCHERS[label]
+@pytest.mark.parametrize("label", sorted(BROWSER_FETCHERS))
+def test_laterhub_browser_fetcher_accepts_session_keyword(label):
+    """走 bsk 的抓取器必须接受 session 关键字参数（共用同一浏览器会话）。"""
+    fetcher = BROWSER_FETCHERS[label]
     signature = inspect.signature(fetcher)
     assert "session" in signature.parameters, f"{label} 抓取器缺少 session 参数"
     assert signature.parameters["session"].kind is inspect.Parameter.KEYWORD_ONLY, (
@@ -92,17 +98,39 @@ def test_laterhub_fetcher_accepts_session_keyword(label):
     )
 
 
-@pytest.mark.parametrize("label", sorted(LATERHUB_FETCHERS))
-def test_laterhub_fetcher_session_is_bsk_runner(label):
-    """抓取器源码必须从 bsk_session 模块导入会话类型。"""
-    module_path = Path(inspect.getsourcefile(LATERHUB_FETCHERS[label]))
+@pytest.mark.parametrize("label", sorted(BROWSER_FETCHERS))
+def test_laterhub_browser_fetcher_session_is_bsk_runner(label):
+    """走 bsk 的抓取器源码必须从 bsk_session 模块导入会话类型。"""
+    module_path = Path(inspect.getsourcefile(BROWSER_FETCHERS[label]))
     source = module_path.read_text(encoding="utf-8")
     assert "from connectors._shared.bsk_session import" in source, f"{label} 未从 bsk_session 导入"
     assert "BskRunnerSession" in source, f"{label} 未使用 BskRunnerSession"
 
 
+def test_bilibili_watchlater_stays_on_http_api():
+    """B 站稍后看走官方 API 直连：不接 session、不拉浏览器（比 bsk 更快更稳）。"""
+    signature = inspect.signature(fetch_bilibili_watchlater)
+    assert "session" not in signature.parameters, "B 站稍后看不该要 session——它走 HTTP 直连"
+    module_path = Path(inspect.getsourcefile(fetch_bilibili_watchlater))
+    source = module_path.read_text(encoding="utf-8")
+    assert "BilibiliWatchLaterFetcher" in source
+    assert "BILIBILI_API_CANDIDATES" in source
+    # 该文件仍服务订阅流 B站动态的 bsk 页内取数，故只断言「稍后看函数体内」不含浏览器取数痕迹。
+    watchlater_body = source.split("class BilibiliWatchLaterFetcher")[1].split("class BilibiliApiSession")[0]
+    for token in ("BskRunnerSession", "acquire_page", "evaluate("):
+        assert token not in watchlater_body, f"稍后看 HTTP 路径不该出现 {token}"
+
+
+def test_pipeline_treats_bilibili_as_non_browser_source():
+    """B 站稍后看必须在 pipeline 里标为非浏览器源：bsk 会话起不来时它仍要被抓。"""
+    source = GUARDED_FILES["apps/laterhub/pipeline.py"].read_text(encoding="utf-8")
+    assert '"B 站稍后看", fetch_bilibili_watchlater, False' in source
+    assert '"抖音收藏", fetch_douyin_favorites, True' in source
+    assert '"小黑盒收藏", fetch_xiaoheihe_favorites, True' in source
+
+
 def test_pipeline_uses_shared_bsk_session():
-    """三源共用会话的事实：pipeline 必须构造 BskRunnerSession 且不再出现 copy 符号。"""
+    """两个浏览器源共用会话的事实：pipeline 必须构造 BskRunnerSession 且不再出现 copy 符号。"""
     source = GUARDED_FILES["apps/laterhub/pipeline.py"].read_text(encoding="utf-8")
     assert "BskRunnerSession" in source
     assert find_forbidden_tokens(source) == []

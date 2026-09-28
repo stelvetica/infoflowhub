@@ -14,6 +14,12 @@ DOUYIN_WEAK_TITLE_PATTERNS = [
     re.compile(r"^.{0,40}?发布的作品$"),
 ]
 DOUYIN_FAVORITE_URL = "https://www.douyin.com/user/self?from_tab_name=main&showTab=favorite_collection"
+# 收藏列表懒加载：首屏只渲染一部分，要靠**真实滚轮事件**往下带（收藏页是内层滚动容器，
+# window.scrollTo 几乎无效——实测锚点 scrollTo 后 36 个，wheel×3 到 134 个）。轮数上限有意
+# 留着：不做全量，滚越多越慢、也越容易触发风控；滚到「本轮条数不再增长」即提前停。
+DOUYIN_SCROLL_ROUNDS = 3
+DOUYIN_SCROLL_STEP_PX = 3000
+DOUYIN_SCROLL_WAIT_MS = 2500
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 DEBUG_JSON_PATH = DEBUG_DIR / "tmp_pw_douyin_favorites.json"
 
@@ -106,11 +112,15 @@ def fetch_douyin_favorites(
         page = session.acquire_page()
         page.goto(DOUYIN_FAVORITE_URL, wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(5000)
-        # 收藏列表懒加载：首屏只渲染一部分，滚一屏让后续条目进入 DOM 再提取
-        # （探针实测视频锚点 29 → 36；去重后的真实条数以 DEBUG_JSON_PATH 产物为准）。
-        page.evaluate("window.scrollTo(0, 3000)")
-        page.wait_for_timeout(4000)
         items = _extract_visible_items(page)
+        # 逐轮下滚让懒加载条目进入 DOM；某轮条数不再增长就停。
+        for _ in range(DOUYIN_SCROLL_ROUNDS):
+            page.mouse.wheel(0, DOUYIN_SCROLL_STEP_PX)
+            page.wait_for_timeout(DOUYIN_SCROLL_WAIT_MS)
+            grown = _extract_visible_items(page)
+            if len(grown) <= len(items):
+                break
+            items = grown
         body_text = _body_text(page)
         try:
             page.close()

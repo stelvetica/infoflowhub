@@ -212,8 +212,9 @@ def _run_fetcher_with_timeout(
             # 会话归调用方所有：本层有句柄但无权停，交由调用方处理。
             stop_note = "会话归调用方所有，本层不停止该会话，直接跳过该源"
         else:
-            # 会话归属抓取器自建（或已在上游超时中被自动停止），本层没有句柄，停不了也不该谎称停了。
-            stop_note = "会话归属抓取器自建，将随其返回自行关闭；本层无句柄可停，直接跳过该源"
+            # 本层没有会话句柄可停：HTTP 直连源（如 B站稍后看）压根没有会话；或会话归抓取器
+            # 自建、已在上游超时中被自动停止。两种情况都停不了，也不该谎称停了。
+            stop_note = "本层无会话句柄可停（HTTP 直连源，或会话归抓取器自建），直接跳过该源"
         raise _SourceFetchTimeout(
             f"{label}抓取超过 {SOURCE_FETCH_TIMEOUT_SECONDS}s 未完成，{stop_note}"
         ) from exc
@@ -272,14 +273,18 @@ def _fetch_enabled_sources(*, args: argparse.Namespace, db: DBManager, session=N
 
     scheduled = False
     try:
-        for enabled, label, fetcher in (
-            (args.fetch_bilibili, "B 站稍后看", fetch_bilibili_watchlater),
-            (args.fetch_douyin, "抖音收藏", fetch_douyin_favorites),
-            (args.fetch_xiaoheihe, "小黑盒收藏", fetch_xiaoheihe_favorites),
+        for enabled, label, fetcher, needs_browser in (
+            (args.fetch_bilibili, "B 站稍后看", fetch_bilibili_watchlater, False),
+            (args.fetch_douyin, "抖音收藏", fetch_douyin_favorites, True),
+            (args.fetch_xiaoheihe, "小黑盒收藏", fetch_xiaoheihe_favorites, True),
         ):
             if not enabled:
                 continue
             scheduled = True
+            if not needs_browser:
+                # HTTP 直连源（B站稍后看走官方 API）：不碰浏览器，bsk 会话起不起得来都照抓。
+                _fetch_source(label=label, fetcher=fetcher, db=db)
+                continue
             if start_failed:
                 log_line(f"[3/6] {label}抓取失败: bsk 会话启动失败，跳过抓取")
                 continue

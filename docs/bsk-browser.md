@@ -1,6 +1,6 @@
 # bsk（BrowserSkill）浏览器抓取
 
-> 2026-09-24：**源表驱动的订阅流**已全部迁到 bsk。2026-09-28：**稍后处理（laterhub）的三个收藏源**（抖音收藏、小黑盒收藏、B站稍后看）也已迁到 bsk。两者均复用日常 Chrome 登录态；旧「复制 profile」路径降为设置页按源显式触发的最后手段（见文末）。
+> 2026-09-24：**源表驱动的订阅流**已全部迁到 bsk。2026-09-28：**稍后处理（laterhub）的两个收藏源**（抖音收藏、小黑盒收藏）也已迁到 bsk，复用日常 Chrome 登录态；B 站稍后看不进 bsk——它走官方 API 直连（HTTP + `.env` cookie）更快更稳，且不依赖浏览器在场。旧「复制 profile」路径降为设置页按源显式触发的最后手段（见文末）。
 
 ## 一句话定位
 
@@ -8,10 +8,10 @@ bsk 是一个通过浏览器扩展驱动**本机日常 Chrome** 的抓取工具�
 
 ## 稍后处理（laterhub）三源
 
-- 抖音收藏、小黑盒收藏、B站稍后看均已从「复制 Chrome profile / `.env` cookie」迁到 bsk，复用日常 Chrome 实时登录会话。
-- 三源共用一个 bsk 会话；某源超时只停该 bsk 会话，**不会关闭或重开你的日常 Chrome**。
+- 抖音收藏、小黑盒收藏已从「复制 Chrome profile」迁到 bsk，复用日常 Chrome 实时登录会话；B 站稍后看不走 bsk。
+- 两个 bsk 源共用一个 bsk 会话；某源超时只停该 bsk 会话，**不会关闭或重开你的日常 Chrome**。
 - 小黑盒收藏：bsk 无请求/响应拦截能力，改为在页内借前端 `$hbRequest` 拿签名后直接取数（不再用 `page.on("request")`）。
-- B 站稍后看：先导航 `https://www.bilibili.com/watchlater/list`，再在该页同域页内 fetch `x/v2/history/toview/web`，不再读 `.env` 的 `BILIBILI_COOKIE`。
+- B 站稍后看：官方 API 直连（`x/v2/history/toview/web`，HTTP + `.env` 的 `BILIBILI_COOKIE`/`BILIBILI_SESSDATA`，`Referer` 为 watchlater 页）。不启浏览器、不用 session——bsk 会话起不来时它照样能抓。
 
 ## 版本与更新
 
