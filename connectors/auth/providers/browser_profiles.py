@@ -13,11 +13,10 @@ BROWSER_PROFILES_DIR = RUNTIME_DIR / "browser_profiles"
 AUTH_PROFILE_DIR = BROWSER_PROFILES_DIR / "auth"
 
 # 方式2：copy profile。复制本机 Chrome Default profile 登录态到副本，不在副本登录，
-# 避免单设备登录限制与你常用浏览器互踢。蓝宝书 + 订阅(X/YouTube/抖音/小黑盒)共用同一
-# 常用 Chrome 来源，各自独立副本目录避免 debug 端口冲突。
+# 避免单设备登录限制与你常用浏览器互踢。仅剩网页源的显式 copy 兜底走此路径；
+# 蓝宝书/抖音/小黑盒/YouTube 的抓取已迁 bsk，复用日常 Chrome 实时会话，不再复制副本。
 ALPHAPAI_RUNNER_DIR = BROWSER_PROFILES_DIR / "alphapai-runner"
 WEB_RUNNER_DIR = BROWSER_PROFILES_DIR / "web-runner"
-LATERHUB_RUNNER_DIR = BROWSER_PROFILES_DIR / "laterhub-runner"
 
 
 def _default_chrome_profile_dir() -> Path:

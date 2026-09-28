@@ -10,6 +10,7 @@ from typing import Any
 
 import requests
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
+from connectors._shared.bsk_session import BskRunnerSession
 from connectors.auth.providers.bilibili import get_bilibili_cookie
 
 try:
@@ -20,10 +21,11 @@ except ImportError:  # pragma: no cover
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_PATH = PROJECT_ROOT / ".env"
-BILIBILI_API_CANDIDATES = [
-    "https://api.bilibili.com/x/v2/history/toview/web",
-    "https://api.bilibili.com/x/v2/history/toview",
-]
+# B 站稍后看：bsk 无法手设 Origin/Referer（forbidden header），故先导航到同域页面建立上下文，
+# 再在页内用浏览器自带真实 cookie（credentials:include）直接 fetch 官方接口。
+BILIBILI_WATCHLATER_PAGE_URL = "https://www.bilibili.com/watchlater/list"
+# 与迁移前的 HTTP 路径保持一致：只取第一页，本轮不做翻页扩展。
+BILIBILI_WATCHLATER_PS = 20
 BILIBILI_DYNAMIC_API = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space"
 # 页内 fetch 一次跑 2 页请求：预算必须明显大于 30s「疑似登录阻塞」看门狗，否则会被误判成 BskHelpTimeout。
 BILIBILI_BSK_EVALUATE_TIMEOUT_SECONDS = 120.0
@@ -58,80 +60,113 @@ class BilibiliConfig:
         return cls(cookie=cookie)
 
 
-class BilibiliWatchLaterFetcher:
-    def __init__(self, config: BilibiliConfig, timeout: int = 20) -> None:
-        self.config = config
-        self.timeout = timeout
-        self.session = requests.Session()
-        # B站是国内站点，绕过系统代理（避免 127.0.0.1:7892 等本地代理未开时 ProxyError）
-        self.session.trust_env = False
-        self.session.headers.update(
-            {
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
-                ),
-                "Referer": "https://www.bilibili.com/watchlater/list",
-                "Cookie": self.config.cookie,
-            }
+def _extract_watchlater_items(data: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """从稍后看接口载荷里取出条目并归一化；结构无法识别返回 None。
+
+    稍后看已改为 bsk 页内 fetch 一条取数路径，此处是该路径唯一的解析入口（SSOT）。
+    """
+    container = data.get("data")
+    if isinstance(container, dict):
+        for key in ("list", "items"):
+            if isinstance(container.get(key), list):
+                return [_normalize_watchlater_item(x) for x in container[key]]
+        if isinstance(container.get("list"), dict) and isinstance(container["list"].get("list"), list):
+            return [_normalize_watchlater_item(x) for x in container["list"]["list"]]
+    if isinstance(container, list):
+        return [_normalize_watchlater_item(x) for x in container]
+    return None
+
+
+def _normalize_watchlater_item(item: dict[str, Any]) -> dict[str, Any]:
+    bvid = item.get("bvid") or item.get("bv_id") or ""
+    aid = item.get("aid") or item.get("id")
+    title = item.get("title") or item.get("page_title") or "未命名视频"
+    if bvid:
+        url = f"https://www.bilibili.com/video/{bvid}"
+    elif aid:
+        url = f"https://www.bilibili.com/video/av{aid}"
+    else:
+        url = item.get("short_link_v2") or item.get("uri") or ""
+    owner = item.get("owner") or {}
+    owner_name = owner.get("name") or item.get("author") or ""
+    return {
+        "url": url,
+        "title": title,
+        "source": "bilibili_watchlater",
+        "owner": owner_name,
+        "tags": None,
+        "raw": item,
+    }
+
+
+# 稍后看接口返回的是 data.list 数组，量级小（ps=20），直接原样回传 data 交给 Python 侧
+# 共用归一化逻辑即可，无需像动态流那样做字段投影。
+_BILIBILI_WATCHLATER_PAGE_JS = r"""
+async (argsJson) => {
+  const args = JSON.parse(argsJson);
+  const url = new URL("https://api.bilibili.com/x/v2/history/toview/web");
+  url.searchParams.set("ps", String(args.ps));
+  let resp;
+  try {
+    resp = await fetch(url.toString(), {
+      credentials: "include",
+      signal: AbortSignal.timeout(args.requestTimeoutMs),
+    });
+  } catch (e) {
+    return {error: "接口请求失败: " + String(e)};
+  }
+  let data;
+  try {
+    data = await resp.json();
+  } catch (e) {
+    return {error: "接口返回非 JSON（可能登录态失效）"};
+  }
+  return {code: data.code, message: data.message, data: data.data};
+}
+"""
+
+
+def fetch_bilibili_watchlater(
+    env_path: str | Path | None = None, *, session: BskRunnerSession | None = None
+) -> list[dict[str, Any]]:
+    """抓取 B 站「稍后看」列表：bsk 页内 fetch，复用用户浏览器真实登录态。
+
+    env_path 仅为签名兼容保留（pipeline 以 fetcher(ENV_PATH) 调用），内部已不再读取
+    .env 的 B 站 cookie。session 为 None 时自建 BskRunnerSession 并负责其生命周期；
+    外部传入则只使用、绝不 shutdown（会话归调用方所有）。
+    """
+    page_url = BILIBILI_WATCHLATER_PAGE_URL
+    own_session = session is None
+    if session is None:
+        session = BskRunnerSession(start_url="about:blank")
+        session.start()
+    try:
+        page = session.acquire_page()
+        page.goto(page_url, wait_until="domcontentloaded")
+        payload = page.evaluate(
+            _BILIBILI_WATCHLATER_PAGE_JS,
+            json.dumps({"ps": BILIBILI_WATCHLATER_PS, "requestTimeoutMs": BILIBILI_PAGE_REQUEST_TIMEOUT_MS}),
+            timeout=BILIBILI_BSK_EVALUATE_TIMEOUT_SECONDS,
         )
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"B 站稍后看页内取数失败: {exc}") from exc
+    finally:
+        if own_session:
+            session.shutdown()
 
-    def fetch(self) -> list[dict[str, Any]]:
-        last_error: Exception | None = None
-        for url in BILIBILI_API_CANDIDATES:
-            try:
-                response = self.session.get(url, params={"ps": self.config.ps}, timeout=self.timeout)
-                response.raise_for_status()
-                data = response.json()
-                if data.get("code") != 0:
-                    raise RuntimeError(f"B 站接口返回异常: {data}")
-                items = self._extract_items(data)
-                if items is None:
-                    raise RuntimeError(f"无法识别 B 站稍后看返回结构: {data}")
-                return items
-            except Exception as exc:  # noqa: BLE001
-                last_error = exc
-        raise RuntimeError(f"获取 B 站稍后看失败: {last_error}")
-
-    @staticmethod
-    def _extract_items(data: dict[str, Any]) -> list[dict[str, Any]] | None:
-        container = data.get("data")
-        if isinstance(container, dict):
-            for key in ("list", "items"):
-                if isinstance(container.get(key), list):
-                    return [BilibiliWatchLaterFetcher._normalize_item(x) for x in container[key]]
-            if isinstance(container.get("list"), dict) and isinstance(container["list"].get("list"), list):
-                return [BilibiliWatchLaterFetcher._normalize_item(x) for x in container["list"]["list"]]
-        if isinstance(container, list):
-            return [BilibiliWatchLaterFetcher._normalize_item(x) for x in container]
-        return None
-
-    @staticmethod
-    def _normalize_item(item: dict[str, Any]) -> dict[str, Any]:
-        bvid = item.get("bvid") or item.get("bv_id") or ""
-        aid = item.get("aid") or item.get("id")
-        title = item.get("title") or item.get("page_title") or "未命名视频"
-        if bvid:
-            url = f"https://www.bilibili.com/video/{bvid}"
-        elif aid:
-            url = f"https://www.bilibili.com/video/av{aid}"
-        else:
-            url = item.get("short_link_v2") or item.get("uri") or ""
-        owner = item.get("owner") or {}
-        owner_name = owner.get("name") or item.get("author") or ""
-        return {
-            "url": url,
-            "title": title,
-            "source": "bilibili_watchlater",
-            "owner": owner_name,
-            "tags": None,
-            "raw": item,
-        }
-
-
-def fetch_bilibili_watchlater(env_path: str | Path | None = None) -> list[dict[str, Any]]:
-    config = BilibiliConfig.from_env(env_path)
-    return BilibiliWatchLaterFetcher(config).fetch()
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"B 站稍后看页内 fetch 返回异常（非对象）: {payload!r}")
+    if payload.get("error"):
+        raise RuntimeError(f"B 站稍后看页内 fetch 失败: {payload['error']}")
+    code = payload.get("code")
+    if str(code) != "0":
+        raise RuntimeError(f"B 站稍后看接口返回异常: code={code} message={payload.get('message')}")
+    items = _extract_watchlater_items({"data": payload.get("data")})
+    if items is None:
+        raise RuntimeError(f"无法识别 B 站稍后看返回结构: {payload.get('data')!r}")
+    # 空列表是合法结果（用户把稍后看清空）：返回 []，由 pipeline 的「0 条」WARN 承担可见性，
+    # 不能抛错——否则会把真实清空的用户每轮记成一条抓取失败。
+    return items
 
 
 class BilibiliApiSession:
@@ -139,7 +174,7 @@ class BilibiliApiSession:
         self.config = config
         self.timeout = timeout
         self.session = requests.Session()
-        self.session.trust_env = False  # 同 BilibiliWatchLaterFetcher，绕过系统代理
+        self.session.trust_env = False  # B 站是国内站点，绕过系统代理（本地代理未开时避免 ProxyError）
         self.session.headers.update(
             {
                 "User-Agent": (

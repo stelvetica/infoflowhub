@@ -310,7 +310,7 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "系统Chrome Default Profile登录态，CopyRunnerSession复制副本抓取。随每日例行任务8:10跑",
+      "note": "复用日常 Chrome 登录会话（bsk 后端，不复制 profile）。随每日例行任务8:10跑",
       "channel": "web",
       "auth_key": "alphapai_main",
       "fallback_mode": "none"

@@ -1,6 +1,5 @@
 from connectors.bilibili.api import (
     BilibiliConfig,
-    BilibiliWatchLaterFetcher,
     fetch_bilibili_dynamic_feed,
     fetch_bilibili_dynamic_feed_with_page,
     fetch_bilibili_watchlater,
@@ -8,7 +7,6 @@ from connectors.bilibili.api import (
 
 __all__ = [
     "BilibiliConfig",
-    "BilibiliWatchLaterFetcher",
     "fetch_bilibili_dynamic_feed",
     "fetch_bilibili_dynamic_feed_with_page",
     "fetch_bilibili_watchlater",

@@ -19,3 +19,8 @@
 | YouTube 源 `laolihai_youtube` 的 `published_at` | 两条路径都从相对时间文案推算（`Nd ago` 为天级粒度），时分等于抓取时刻，实测与真实发布时间差约 10.5h（日期正确） | 改走原生 RSS `https://www.youtube.com/feeds/videos.xml?channel_id=...`（实测可用、15 条、含精确 ISO 时间戳；现因该源 `provider=web` 而根本没被读取） |
 | `connectors/douyin/feed.py` bsk 路径（纯 DOM） | 抖音列表 DOM 无任何时间元素，新条目的 `published_at` 只能写抓取时刻（历史条目因按标题去重跳过、时间不被覆盖）；同时失去原 payload 的非作者视频过滤（实测列表均为作者作品，暂无影响）。**2026-09-24 用户已确认接受现状** | 视频详情页正文含精确时间（实测与基线逐字一致），但需每源 12 次额外导航（约 40s + 风控风险）；或借页面签名器调 `aweme/post` 拿 `create_time` |
 | `connectors/youtube/feed.py` bsk 路径 | `bsk get-html` 在 512KB 截断，页尾内联的 `ytInitialData` 被切掉，主力提取器失效并回退到 DOM 提取器（结果正确） | 用 `evaluate` 只取目标 JSON 片段；或等 bsk 支持分片读取 |
+| `connectors/xiaoheihe/feed.py` 页内 `$hbRequest` 取数 | 依赖小黑盒前端内部结构（`#app.__vue_app__`、`$hbRequest`、签名 query 语义）；前端封装变更时会以可见失败文案报错（不静默），需人工更新页内 JS | 等 bsk 支持响应体读取后改回接口直取 |
+| `apps/laterhub/pipeline.py` 源级看门狗 | 守护线程无法强杀卡死的 Python worker，超时只能停 bsk 会话并把后续源隔离到新会话 | 源级进程隔离，或改为可取消任务 |
+| B 站 12 源（订阅流）健康校验对象与实际取数不一致 | 面板 `bilibili_main` 校验 `runtime/auth/bilibili_main.json`，而 12 个动态源默认走 bsk 实时会话；该文件仍有消费方——订阅动态的 copy 兜底 HTTP 路径（`connectors/_shared/web_fetch.py` → `fetch_bilibili_dynamic_feed` → `get_bilibili_cookie`）会读它。问题只是「面板校验对象与 12 源默认取数对象不一致」，并非无消费方 | 把 12 源纳入 bsk 会话级校验，或改为按源最近错误判定 |
+| 认证资产表在 Chrome 运行中时对 X/抖音/小黑盒/Alpha派 直接降级为「可用」（`connectors/auth/providers/browser_profiles.py`） | 等于不校验 | 改为在抓取失败时回写「最近错误」并以此驱动状态 |
+| `web/services/fetch_runtime.py` / `apps/laterhub/pipeline.py` 的 `LaterhubRunSummary.fetched_sources` | 恒等于启用源数，不反映实际成功源数；状态文件里也没有 laterhub 错误字段 | 改为成功/失败分列并写入 `runtime/health/automation_runtime.json` |

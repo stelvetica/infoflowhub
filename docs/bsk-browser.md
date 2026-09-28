@@ -1,10 +1,17 @@
 # bsk（BrowserSkill）浏览器抓取
 
-> 2026-09-24：浏览器抓取已全部迁到 bsk，复用日常 Chrome 登录态。旧「复制 profile」路径降为设置页按源显式触发的最后手段（见文末）。
+> 2026-09-24：**源表驱动的订阅流**已全部迁到 bsk。2026-09-28：**稍后处理（laterhub）的三个收藏源**（抖音收藏、小黑盒收藏、B站稍后看）也已迁到 bsk。两者均复用日常 Chrome 登录态；旧「复制 profile」路径降为设置页按源显式触发的最后手段（见文末）。
 
 ## 一句话定位
 
 bsk 是一个通过浏览器扩展驱动**本机日常 Chrome** 的抓取工具：管线默认后端即 bsk，抓取时直接复用你日常 Chrome 里已登录的会话，不复制 profile、不导出 token。少数源若需回退，只能在设置页源表**按源显式**用「copy 重试」——它是最后手段，会复制 profile 并可能让你退出 Google 账号。
+
+## 稍后处理（laterhub）三源
+
+- 抖音收藏、小黑盒收藏、B站稍后看均已从「复制 Chrome profile / `.env` cookie」迁到 bsk，复用日常 Chrome 实时登录会话。
+- 三源共用一个 bsk 会话；某源超时只停该 bsk 会话，**不会关闭或重开你的日常 Chrome**。
+- 小黑盒收藏：bsk 无请求/响应拦截能力，改为在页内借前端 `$hbRequest` 拿签名后直接取数（不再用 `page.on("request")`）。
+- B 站稍后看：先导航 `https://www.bilibili.com/watchlater/list`，再在该页同域页内 fetch `x/v2/history/toview/web`，不再读 `.env` 的 `BILIBILI_COOKIE`。
 
 ## 版本与更新
 

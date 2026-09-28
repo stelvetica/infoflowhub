@@ -471,13 +471,24 @@ def test_new_method_timeout_defaults_exceed_watchdog():
     assert bsk_browser.DEFAULT_WAIT_TIMEOUT_MS / 1000.0 > bsk_browser.DEFAULT_REQUEST_HELP_TIMEOUT_SECONDS
 
 
-def test_page_evaluate_without_arg_passes_expression_as_is(fake_bsk):
+def test_page_evaluate_without_arg_wraps_expression_but_keeps_value(fake_bsk):
+    """bsk evaluate 走 CDP Runtime.evaluate，不会自动调用函数表达式，故无参路径必须包装。"""
     browser, _ = fake_bsk.build(evaluate={"document.title": {"ok": True, "value": "标题"}})
     browser.start()
     assert browser.page().evaluate("document.title") == "标题"
-    assert fake_bsk.evaluate_exprs()[-1] == "document.title"
+    expr = fake_bsk.evaluate_exprs()[-1]
+    assert "document.title" in expr  # 表达式原样嵌入
+    assert "typeof f==='function'?f():f" in expr  # 是函数才调用，普通表达式原样返回
     # --await-promise 保持默认 true（不显式关掉），供 await fetch(...) 使用
     assert "--await-promise" not in _subcommand_calls(fake_bsk, "evaluate")[-1]["argv"]
+
+
+def test_page_evaluate_invokes_bare_function_expression(fake_bsk):
+    """回归钉：裸 `() => {...}` 在 bsk 下会序列化成 {}（真机 0 条根因），必须被调用。"""
+    browser, _ = fake_bsk.build(evaluate={"() =>": {"ok": True, "value": [{"id": "1"}]}})
+    browser.start()
+    assert browser.page().evaluate("() => [{id: '1'}]") == [{"id": "1"}]
+    assert fake_bsk.evaluate_exprs()[-1] == "((f)=>typeof f==='function'?f():f)((() => [{id: '1'}]))"
 
 
 def test_page_evaluate_with_arg_serializes_non_ascii_safely(fake_bsk):

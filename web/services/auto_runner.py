@@ -154,7 +154,7 @@ class AutoRunner:
             self._save_state(state)
 
             try:
-                # 各 fetcher 内部按站点自起独立 session（每站点一个 auth profile）
+                # laterhub 三源共用一个 bsk 会话，复用用户日常 Chrome 的实时登录态，不复制 profile
                 subscriptions = await asyncio.to_thread(fetch_now)
                 laterhub = await asyncio.to_thread(fetch_laterhub_now)
                 result = {"subscriptions": subscriptions, "laterhub": laterhub}

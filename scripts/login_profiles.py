@@ -3,6 +3,9 @@
 所有浏览器站点共用一份 profile（runtime/browser_profiles/auth/），
 cookie 按域名隔离互不干扰。一次打开浏览器，在多个 tab 里登录各站点。
 
+注意：该共享 auth profile 现仅供 B 站同步登录态消费（connectors/auth/providers/bilibili.py）。
+抖音/X/小黑盒/YouTube 的抓取已走 bsk，复用日常 Chrome 会话，不再读此 profile。
+
 用法:
     python scripts/login_profiles.py            # 打开浏览器，多 tab 登录全部站点
     python scripts/login_profiles.py douyin      # 只登录指定站点（可选: douyin xiaoheihe x youtube alphapai）
