@@ -98,7 +98,7 @@ def test_douyin_full_chain_succeeds_and_cleans_workdir(tmp_path, monkeypatch):
     assert row["digest_status"] == "succeeded"
     assert row["digest_attempts"] == 1
     assert row["digest_error"] is None
-    assert row["digest_path"].startswith("video_digest_douyin_")
+    assert row["digest_path"].startswith("video_digest/")  # 子目录/标题.md
     assert (reports_dir / row["digest_path"]).is_file()
 
     call = llm.subtitle_calls[0]

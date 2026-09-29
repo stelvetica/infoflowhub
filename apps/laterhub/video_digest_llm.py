@@ -207,17 +207,24 @@ _DOUYIN_VIDEO_RE = re.compile(r"douyin\.com/video/(\d+)")
 _SAFE_ID_RE = re.compile(r"[^0-9A-Za-z_-]")
 
 
-def build_digest_filename(url: str) -> str:
-    """报告文件名：B站取 BV 号、抖音取视频 id、其余用 url 哈希，保证只含 ASCII 安全字符。"""
-    bv = _BV_RE.search(url)
-    if bv:
-        return f"video_digest_bilibili_{bv.group(1)}.md"
-    douyin = _DOUYIN_VIDEO_RE.search(url)
-    if douyin:
-        return f"video_digest_douyin_{douyin.group(1)}.md"
-    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
-    safe = _SAFE_ID_RE.sub("", digest)
-    return f"video_digest_url_{safe}.md"
+_FILENAME_ILLEGAL_RE = re.compile(r'[\\/:*?"<>|\r\n\t]')
+_FILENAME_MAX_STEM = 60
+
+
+def build_digest_filename(title: str, url: str) -> str:
+    """报告文件名：优先用视频标题（清洗 Windows 非法字符、限长），无标题时退回平台+id。"""
+    stem = _FILENAME_ILLEGAL_RE.sub(" ", str(title or ""))
+    stem = re.sub(r"\s+", " ", stem).strip().strip(".")
+    if not stem:
+        bv = _BV_RE.search(url)
+        if bv:
+            return f"video_digest_bilibili_{bv.group(1)}.md"
+        douyin = _DOUYIN_VIDEO_RE.search(url)
+        if douyin:
+            return f"video_digest_douyin_{douyin.group(1)}.md"
+        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+        return f"video_digest_url_{digest[:16]}.md"
+    return f"{stem[:_FILENAME_MAX_STEM].strip().strip('.')}.md"
 
 
 _SOURCE_LABELS = {

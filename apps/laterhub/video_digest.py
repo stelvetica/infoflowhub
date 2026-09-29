@@ -9,6 +9,7 @@ LLM 基于材料产出简报 md 落 data/reports/，links 表记 digest_status�
 from __future__ import annotations
 
 import argparse
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,8 @@ from connectors.bilibili import video as bili_video
 from connectors.douyin.video import download_douyin_video
 
 REPORTS_DIR = DATA_DIR / "reports"
+# 简报产物独立子目录：不与其它产物混放，也不进面板「新闻公告」白名单
+DIGEST_SUBDIR = "video_digest"
 TMP_DIR = DATA_DIR / "tmp" / "video_digest"
 # 字幕喂给 LLM 的字符上限： glm-5.3-flash 上下文足够，但一小时视频的逐字稿可超 5 万字，
 # 截断到 2 万字保预算，报告里标注"仅基于前部分内容"
@@ -131,11 +134,17 @@ def _finalize(
     owner: str | None,
     duration_seconds: int | None,
 ) -> Path:
-    filename = build_digest_filename(str(row["url"]))
+    url = str(row["url"])
+    filename = build_digest_filename(str(row["title"]), url)
+    digest_dir = reports_dir / DIGEST_SUBDIR
+    # 不同视频同标题会互相覆盖（原子写是替换语义）：目标已存在且不属于本条目时，追加 url 短哈希
+    if (digest_dir / filename).exists() and str(row["digest_path"] or "") != f"{DIGEST_SUBDIR}/{filename}":
+        stem = filename[:-3]
+        filename = f"{stem}-{hashlib.sha256(url.encode('utf-8')).hexdigest()[:8]}.md"
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     markdown = render_digest_markdown(
         title=str(row["title"]),
-        url=str(row["url"]),
+        url=url,
         source=str(row["source"]),
         owner=owner,
         duration_seconds=duration_seconds,
@@ -144,8 +153,9 @@ def _finalize(
         digest=digest,
         truncated=truncated,
     )
-    path = write_digest_report(reports_dir, filename, markdown)
-    db.mark_digest_succeeded(link_id, digest_path=filename, completed_at=datetime.now().isoformat(timespec="seconds"))
+    # digest_path 存相对 reports 根的路径（含子目录），面板/幂等检查按此定位
+    path = write_digest_report(digest_dir, filename, markdown)
+    db.mark_digest_succeeded(link_id, digest_path=f"{DIGEST_SUBDIR}/{filename}", completed_at=datetime.now().isoformat(timespec="seconds"))
     return path
 
 

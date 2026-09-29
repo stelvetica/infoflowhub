@@ -170,16 +170,19 @@ def test_video_url_uses_multimodal_content_array(monkeypatch):
 
 
 def test_build_digest_filename_variants():
-    assert build_digest_filename("https://www.bilibili.com/video/BV1xx411c7mD/?spm=1") == (
+    # 优先视频标题：清洗 Windows 非法字符，限长
+    assert build_digest_filename("国家队偷偷加仓ETF，我写了个程序", "https://x") == "国家队偷偷加仓ETF，我写了个程序.md"
+    assert build_digest_filename('a/b*c?d:e"f<g>h|i', "https://x") == "a b c d e f g h i.md"
+    assert len(build_digest_filename("长" * 100, "https://x")) <= 60 + 3
+    # 无标题兜底：平台 + id
+    assert build_digest_filename("", "https://www.bilibili.com/video/BV1xx411c7mD/?spm=1") == (
         "video_digest_bilibili_BV1xx411c7mD.md"
     )
-    assert build_digest_filename("https://www.douyin.com/video/7412345678901234567") == (
+    assert build_digest_filename("  ", "https://www.douyin.com/video/7412345678901234567") == (
         "video_digest_douyin_7412345678901234567.md"
     )
-    hashed = build_digest_filename("https://example.com/whatever?q=中文")
+    hashed = build_digest_filename("", "https://example.com/whatever?q=中文")
     assert hashed.startswith("video_digest_url_") and hashed.endswith(".md")
-    assert hashed.isascii()
-    assert hashed == build_digest_filename("https://example.com/whatever?q=中文")
 
 
 # ---------- render_digest_markdown ----------
