@@ -139,19 +139,7 @@ class AutoRunner:
                 return
 
             # flow.started_at 必须在抓取之前落盘，产物判定以它为时间基线
-            started_at = self._format_dt(refreshed)
-            state["last_started_at"] = started_at
-            state["last_status"] = "running"
-            state["flow"] = {
-                "flow_id": refreshed.strftime("%Y%m%d-%H%M%S"),
-                "started_at": started_at,
-                "status": "running",
-                "finished_at": "",
-                "skills": [],
-                "products": [],
-                "error": "",
-            }
-            self._save_state(state)
+            started_at = self._begin_flow(refreshed)
 
             try:
                 # laterhub 三源共用一个 bsk 会话，复用用户日常 Chrome 的实时登录态，不复制 profile
@@ -169,25 +157,71 @@ class AutoRunner:
                 await asyncio.to_thread(_open_panel)
                 return
 
-            # 抓取成功后才跑 skill；第一个 skill 失败/超时也继续跑第二个（公告产物不能缺）
-            skills: list[dict[str, Any]] = []
-            if self._skill_stage_enabled():
-                for name in SKILLS:
-                    skills.append(await asyncio.to_thread(run_skill, name, cwd=BASE_DIR))
-                    # 每跑完一个就落盘：运行期状态条从 state 读 skills，否则整个
-                    # 15~40 分钟运行期都误显示「阶段：抓取订阅与稍后处理」。仍在 self._lock 内。
-                    self._persist_skills(skills)
-            flow_status = "success" if all(item["status"] == "success" for item in skills) else "partial"
+            skills = await asyncio.to_thread(self._run_skill_stage)
+            await self._finish_flow(started_at, skills=skills, today=today, result=result)
 
-            state = self._load_state()
+    def _begin_flow(self, now: datetime) -> str:
+        """落盘 flow=running 并返回 started_at（产物判定以该时间为基线）。"""
+        state = self._load_state()
+        started_at = self._format_dt(now)
+        state["last_started_at"] = started_at
+        state["last_status"] = "running"
+        state["flow"] = {
+            "flow_id": now.strftime("%Y%m%d-%H%M%S"),
+            "started_at": started_at,
+            "status": "running",
+            "finished_at": "",
+            "skills": [],
+            "products": [],
+            "error": "",
+        }
+        self._save_state(state)
+        return started_at
+
+    def _run_skill_stage(self) -> list[dict[str, Any]]:
+        """抓取成功后按 SKILLS 顺序跑 skill；第一个失败/超时也继续跑第二个（公告产物不能缺）。"""
+        if not self._skill_stage_enabled():
+            return []
+        skills: list[dict[str, Any]] = []
+        for name in SKILLS:
+            skills.append(run_skill(name, cwd=BASE_DIR))
+            # 每跑完一个就落盘：运行期状态条从 state 读 skills，否则整个
+            # 15~40 分钟运行期都误显示「阶段：抓取订阅与稍后处理」。
+            self._persist_skills(skills)
+        return skills
+
+    async def _finish_flow(
+        self,
+        started_at: str,
+        *,
+        skills: list[dict[str, Any]],
+        today: str | None = None,
+        result: dict[str, Any] | None = None,
+    ) -> None:
+        """收尾一次流程：写状态/结束时间、重算产物，并打开面板。
+
+        today/result 仅在自动流程传入；手动补跑不覆盖 last_run_date/last_result。
+        """
+        flow_status = "success" if all(item["status"] == "success" for item in skills) else "partial"
+        state = self._load_state()
+        if today is not None:
             state["last_run_date"] = today
-            state["last_status"] = "success"
-            state["last_finished_at"] = self._format_dt(datetime.now())
-            state["last_error"] = ""
+        state["last_status"] = "success"
+        state["last_finished_at"] = self._format_dt(datetime.now())
+        state["last_error"] = ""
+        if result is not None:
             state["last_result"] = result
-            self._finalize_flow(state, started_at, status=flow_status, skills=skills)
-            self._save_state(state)
-            await asyncio.to_thread(_open_panel)
+        self._finalize_flow(state, started_at, status=flow_status, skills=skills)
+        self._save_state(state)
+        await asyncio.to_thread(_open_panel)
+
+    async def run_skills_now(self) -> list[dict[str, Any]]:
+        """手动补跑 skill 阶段：按一次完整流程登记状态，面板头部与「本次流程」据此显示。"""
+        now = datetime.now()
+        started_at = self._begin_flow(now)
+        skills = await asyncio.to_thread(self._run_skill_stage)
+        await self._finish_flow(started_at, skills=skills, today=now.date().isoformat())
+        return skills
 
     def _persist_skills(self, skills: list[dict[str, Any]]) -> None:
         """把已完成/进行中的技能列表落盘到 flow.skills（运行期状态条据此显示阶段）。"""

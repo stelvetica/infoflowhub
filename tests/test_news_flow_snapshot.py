@@ -178,6 +178,23 @@ def test_morning_flow_opens_panel_even_when_fetch_fails(env: dict[str, Path], te
     assert opened == [auto_runner.INFOFLOW_WEB_URL]
 
 
+def test_morning_flow_records_run_date_and_result(env: dict[str, Path], temp_db: Path, opened: list[str], monkeypatch: pytest.MonkeyPatch):
+    """守自动路径的 last_run_date / last_result 写入。
+
+    last_run_date 是当日去重依据（漏写则 _do_run_morning 每天重复跑），
+    last_result 是面板头部数据源。二者在重构后改为 _finish_flow 的条件写入，
+    此处确保自动路径调用方确实传了 today/result。给一个未来 mtime 的白名单产物，
+    让本次流程被判 success 而非「零产物降级」。
+    """
+    _write_report(env["reports"], ANNOUNCE_MD, datetime.now().timestamp() + 3600)
+    _run_morning_once(env, monkeypatch)
+
+    state = views.read_json(env["runtime"], {})
+    assert state["last_run_date"] == datetime.now().date().isoformat()
+    assert state["last_result"] == {"subscriptions": {"success_sources": 1}, "laterhub": {"fetched_sources": 1}}
+    assert state["flow"]["status"] == "success"
+
+
 # ── 调度循环韧性（H1）───────────────────────────────────────────
 
 
@@ -272,3 +289,56 @@ def test_skill_stage_disabled_variants(monkeypatch: pytest.MonkeyPatch):
         assert auto_runner.AutoRunner._skill_stage_enabled() is False
     monkeypatch.setenv("INFOFLOW_SKILL_RUNNER", "1")
     assert auto_runner.AutoRunner._skill_stage_enabled() is True
+
+
+# ── 手动补跑 run_skills_now 登记一次流程 ────────────────────────
+
+
+def _skill_ok(env: dict[str, Path]):
+    """返回一个 skill 假实现：成功并写一个白名单产物，供产物扫描命中。"""
+
+    def fake_run_skill(name, *, cwd, timeout=None):
+        _write_report(env["reports"], ANNOUNCE_MD, datetime.now().timestamp())
+        return {"name": name, "status": "success", "started_at": "", "finished_at": "", "error": ""}
+
+    return fake_run_skill
+
+
+def test_run_skills_now_records_flow(env: dict[str, Path], temp_db: Path, opened: list[str], monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(auto_runner, "run_skill", _skill_ok(env))
+    runner = auto_runner.AutoRunner()
+    asyncio.run(runner.run_skills_now())
+
+    state = views.read_json(env["runtime"], {})
+    flow = state["flow"]
+    assert flow["status"] == "success"
+    assert [item["name"] for item in flow["products"]] == [ANNOUNCE_MD]
+    assert flow["finished_at"]
+    assert state["last_run_date"] == datetime.now().date().isoformat()
+
+
+def test_run_skills_now_marks_partial_when_skill_fails(env: dict[str, Path], temp_db: Path, opened: list[str], monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        auto_runner,
+        "run_skill",
+        lambda name, *, cwd, timeout=None: {"name": name, "status": "failed", "started_at": "", "finished_at": "", "error": "boom"},
+    )
+    runner = auto_runner.AutoRunner()
+    asyncio.run(runner.run_skills_now())
+
+    state = views.read_json(env["runtime"], {})
+    assert state["flow"]["status"] == "partial"
+    # 与自动路径一致：flow 记 partial，但 last_status 仍代表流程本身跑完
+    assert state["last_status"] == "success"
+
+
+def test_run_skills_now_keeps_existing_last_result(env: dict[str, Path], temp_db: Path, opened: list[str], monkeypatch: pytest.MonkeyPatch):
+    existing = {"subscriptions": {"success_sources": 1}}
+    env["runtime"].parent.mkdir(parents=True, exist_ok=True)
+    env["runtime"].write_text(json.dumps({"last_result": existing}), encoding="utf-8")
+    monkeypatch.setattr(auto_runner, "run_skill", _skill_ok(env))
+
+    runner = auto_runner.AutoRunner()
+    asyncio.run(runner.run_skills_now())
+
+    assert views.read_json(env["runtime"], {})["last_result"] == existing
