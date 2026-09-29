@@ -305,6 +305,12 @@ class ContentTagger:
         self.timeout = timeout
 
     def tag(self, *, title: str, source: str) -> str:
+        """依次尝试主/备 provider，任一家成功即返回。
+
+        备用是兜底而非"只对服务故障才用"：主家 4xx 拒绝、响应畸形、content 为空都可能只是
+        这一家/这一次的问题，换一家常常就成（实测同一标题 primary 报 HTTP 400 的同一刻，
+        backup 直接返回合法标签）。故这里只把"这家自身坏了、换家也没用"的错判为永久。
+        """
         attempts: list[tuple[str, LLMConfig]] = [("primary", self.config)]
         if self.backup_config:
             attempts.append(("backup", self.backup_config))
@@ -313,18 +319,16 @@ class ContentTagger:
         for label, config in attempts:
             try:
                 return self._tag_with_config(config, title=title, source=source)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 formatted = self._format_provider_error(label, exc)
-                if self._is_service_failure(exc):
+                if self._is_permanent_failure(exc):
+                    permanent_errors.append(formatted)
+                else:
                     transient_errors.append(formatted)
-                    continue
-                permanent_errors.append(formatted)
-                break
-        if permanent_errors:
-            raise TaggerPermanentError("; ".join(permanent_errors))
+        # 两家都失败：只要有一家是"可重试"的错就留待下轮统一补标签，不判死
         if transient_errors:
             raise TaggerTemporaryError("; ".join(transient_errors))
-        raise TaggerServiceUnavailable("LLM 标签服务未返回可用结果")
+        raise TaggerPermanentError("; ".join(permanent_errors))
 
     def _tag_with_config(self, config: LLMConfig, *, title: str, source: str) -> str:
         payload = {
@@ -358,7 +362,12 @@ class ContentTagger:
         )
         response.raise_for_status()
         data = response.json()
-        content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "").strip()
+        message = ((data.get("choices") or [{}])[0].get("message") or {})
+        # content 可能是 null（思考模型把 max_tokens 全用在思考上时实测如此）：必须给出可读
+        # 错误，不能让它退化成 'NoneType' object has no attribute 'strip' 这种假象。
+        content = str(message.get("content") or "").strip()
+        if not content:
+            raise RuntimeError("模型返回空 content（思考模型可能耗尽 max_tokens）")
         if content.startswith("{"):
             maybe_object = json.loads(content)
             if isinstance(maybe_object, dict):
@@ -383,12 +392,18 @@ class ContentTagger:
         return ",".join(cleaned[:2])
 
     @staticmethod
-    def _is_service_failure(exc: Exception) -> bool:
+    def _is_permanent_failure(exc: Exception) -> bool:
+        """这家 provider 自身坏了、换家也没用的错 → 本轮不再重试（下轮仍会统一补标签）。
+
+        只认 401/403（鉴权）与 404（端点或模型不存在）：配置类错误，重试无意义。
+        其余一律归"可重试"——包括 400 与响应畸形：实测同一时刻换家就能出标签，正是备用该
+        兜的场景；把它们判死会让备用永远不上场（本次事故：400 与 content 为空都直接 break）。
+        ponytail: 无法可靠区分"400 里说模型不存在"与其它 400，故只按状态码判；模型名配错会
+        在每轮以可见文案重复暴露，不会静默。
+        """
         if isinstance(exc, requests.RequestException):
             response = getattr(exc, "response", None)
-            if isinstance(response, Response) and response.status_code in {429, 502, 503, 504}:
-                return True
-            if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+            if isinstance(response, Response) and response.status_code in {401, 403, 404}:
                 return True
         return False
 
