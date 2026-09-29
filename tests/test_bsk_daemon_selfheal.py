@@ -1,15 +1,19 @@
-"""bsk daemon 自愈：开工前探活、不在就拉起、并把原因写成可读日志。
+"""bsk daemon / 浏览器自愈：开工前探活、daemon 不在就拉起、没连浏览器就拉起用户 Chrome。
 
 背景：daemon 闲置 10 分钟会自退（daemon 日志实测 `daemon exceeded idle threshold; exiting,
 idle_secs=600`），而本模块所有命令都带 BSK_AUTO_START=0，所以它不在时 `session start` 只会
-exit=2 让整源跳过——2026-09-29 08:12 的抖音/小黑盒就是这样被双双跳过的。
+exit=2 让整源跳过——2026-09-29 08:12 的抖音/小黑盒就是这样被双双跳过的。daemon 起来而
+用户没开 Chrome 时同样全灭，故再补一层「拉起用户 Chrome」自愈。
 
-不触真实 daemon/Chrome：`_run` 被打桩成按 argv 分派的假实现。
+不触真实 daemon/Chrome：`_run` 被打桩成按 argv 分派的假实现，`_launch_user_chrome` 一律
+monkeypatch 掉（测试里绝不允许真启动 Chrome）。
 """
 
 from __future__ import annotations
 
 import json
+import time
+from unittest.mock import Mock
 
 import pytest
 
@@ -115,21 +119,111 @@ def test_daemon_status_message_is_surfaced(monkeypatch):
     assert any("仍未就绪" in line for line in logs)
 
 
-def test_no_browser_connected_logs_actionable_hint(monkeypatch):
-    """daemon 在但没连浏览器：给出可操作的提示（这才是需要人去开 Chrome 的场景）。"""
+def test_no_browser_connected_triggers_launch(monkeypatch):
+    """daemon 在但没连浏览器：不再只提示，而是尝试拉起用户 Chrome（扩展连上后自愈）。"""
     monkeypatch.setattr(bsk_browser, "DAEMON_POLL_INTERVAL_SECONDS", 0.01)
-    fake = FakeRun([(0, NO_BROWSER)])
+    monkeypatch.setattr(bsk_browser, "_last_browser_launch_at", 0.0)
+    launched: list[str] = []
+    monkeypatch.setattr(
+        bsk_browser, "_launch_user_chrome", lambda: launched.append("chrome") or "C:/chrome.exe"
+    )
+    fake = FakeRun([(0, NO_BROWSER), (0, READY)])
     logs: list[str] = []
     browser = _browser(fake, logs)
 
     browser.start()
 
-    assert any("未连接浏览器" in line and "Chrome" in line for line in logs)
+    assert launched == ["chrome"]
+    assert any("尝试拉起用户 Chrome" in line for line in logs)
+    assert any("Chrome 已连接" in line for line in logs)
+
+
+def test_launch_happens_before_session_start(monkeypatch):
+    """0 浏览器 → 拉起一次 → 浏览器连上 → start() 拿到 session_id；拉起须早于 session start。"""
+    monkeypatch.setattr(bsk_browser, "DAEMON_POLL_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(bsk_browser, "_last_browser_launch_at", 0.0)
+    order: list[str] = []
+
+    def fake_launch() -> str:
+        order.append("launch")
+        return "C:/chrome.exe"
+
+    monkeypatch.setattr(bsk_browser, "_launch_user_chrome", fake_launch)
+    fake = FakeRun([(0, NO_BROWSER), (0, READY)])
+    logs: list[str] = []
+    browser = _browser(fake, logs)
+    real_run = fake
+
+    def recording_run(args, **kwargs):
+        if list(args)[0] == "session":
+            order.append("session")
+        return real_run(args, **kwargs)
+
+    browser._run = recording_run  # type: ignore[method-assign]
+
+    assert browser.start() == "s-1"
+    assert order == ["launch", "session"]
+
+
+def test_launch_exception_does_not_block_session_start(monkeypatch):
+    """拉起 Chrome 抛错也不能炸：记下原因后继续走 session start。"""
+    monkeypatch.setattr(bsk_browser, "DAEMON_POLL_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(bsk_browser, "_last_browser_launch_at", 0.0)
+
+    def boom() -> str:
+        raise RuntimeError("找不到 Chrome")
+
+    monkeypatch.setattr(bsk_browser, "_launch_user_chrome", boom)
+    fake = FakeRun([(0, NO_BROWSER)])
+    logs: list[str] = []
+    browser = _browser(fake, logs)
+
+    assert browser.start() == "s-1"
+    assert any("找不到 Chrome" in line for line in logs)
+    assert fake.calls[-1][0:3] == ["session", "start", "--json"]
+
+
+def test_launch_not_called_when_browser_connected(monkeypatch):
+    """已连浏览器时绝不打扰正常路径：_launch_user_chrome 一次都不能被调用。"""
+    monkeypatch.setattr(bsk_browser, "DAEMON_POLL_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(bsk_browser, "_last_browser_launch_at", 0.0)
+    launch = Mock(side_effect=AssertionError("有浏览器连接时不应拉起 Chrome"))
+    monkeypatch.setattr(bsk_browser, "_launch_user_chrome", launch)
+    fake = FakeRun([(0, READY)])
+    logs: list[str] = []
+    browser = _browser(fake, logs)
+
+    assert browser.start() == "s-1"
+
+    launch.assert_not_called()
+    assert _kinds(fake.calls) == ["status", "session"]
+
+
+def test_cooldown_suppresses_second_launch(monkeypatch):
+    """冷却窗口内第二个源不再拉起 Chrome（19 个源不该各拉一次）。"""
+    monkeypatch.setattr(bsk_browser, "DAEMON_POLL_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(bsk_browser, "_last_browser_launch_at", 0.0)
+    launch = Mock(return_value="C:/chrome.exe")
+    monkeypatch.setattr(bsk_browser, "_launch_user_chrome", launch)
+
+    first = _browser(FakeRun([(0, NO_BROWSER), (0, READY)]), [])
+    assert first.start() == "s-1"
+    assert launch.call_count == 1
+
+    second_logs: list[str] = []
+    second = _browser(FakeRun([(0, NO_BROWSER)]), second_logs)
+    assert second.start() == "s-1"
+
+    assert launch.call_count == 1
+    assert any("冷却窗口" in line for line in second_logs)
 
 
 def test_session_failure_includes_no_browser_hint(monkeypatch):
     """session start 失败时把「没连浏览器」写进错误里，排障不用去翻 daemon 日志。"""
     monkeypatch.setattr(bsk_browser, "DAEMON_POLL_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(bsk_browser, "BROWSER_CONNECT_WAIT_SECONDS", 0.05)
+    monkeypatch.setattr(bsk_browser, "_last_browser_launch_at", 0.0)
+    monkeypatch.setattr(bsk_browser, "_launch_user_chrome", lambda: "C:/chrome.exe")
     fake = FakeRun([(0, NO_BROWSER)], session_result=(2, {}))
     browser = _browser(fake, [])
 

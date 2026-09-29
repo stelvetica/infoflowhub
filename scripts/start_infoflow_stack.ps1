@@ -25,6 +25,18 @@ function Test-WebServiceUp {
     } catch { return $false }
 }
 
+# bsk daemon 探活：daemon 可能已被抓取侧的 BskBrowser.ensure_daemon() 拉起。看护触发器每 5 分钟
+# 跑一次本脚本，若无脑 `bsk daemon start --foreground` 会撞上已存在的 daemon 并失败退出，进而触发
+# 任务 RestartOnFailure 每分钟重试 3 次的无谓抖动。故先探活，已在跑就跳过、绝不触碰。
+#
+# 必须带 BSK_AUTO_START=0：不带这个变量时 `bsk status` 会顺手把 daemon 拉起来（自动启动副作用），
+# 那就失去了"只探活"的意义。finally 里清理，避免污染同脚本内后续的 bsk 调用。
+function Test-BskDaemonUp {
+    $env:BSK_AUTO_START = '0'
+    try { & $bsk status --json *> $null; return ($LASTEXITCODE -eq 0) }
+    finally { Remove-Item Env:BSK_AUTO_START -ErrorAction SilentlyContinue }
+}
+
 # 1) Web 服务：已在跑就绝不触碰。
 #    start_infoflow_web.ps1 的 Phase 1 会强杀 18421 端口进程与 cloudflared，
 #    无脑调用会打断健康实例和隧道；只在探活失败时才拉起。
@@ -36,10 +48,14 @@ if (Test-WebServiceUp) {
     Write-Log "[ok] Web 服务已就绪"
 }
 
-# 2) bsk daemon：前台运行，让计划任务持有该进程（崩溃由任务重启策略兜住）。
+# 2) bsk daemon：已在跑就绝不触碰；未跑才前台运行，让计划任务持有该进程（崩溃由任务重启策略兜住）。
 $bsk = Join-Path $env:USERPROFILE ".local\bin\bsk.exe"
 if (-not (Test-Path $bsk)) { throw "找不到 bsk.exe: $bsk" }
 
-Write-Log "[start] bsk daemon（前台，由本任务持有）"
-& $bsk daemon start --foreground
-Write-Log "[exit] bsk daemon 已退出（任务将按重启策略处理）"
+if (Test-BskDaemonUp) {
+    Write-Log "[skip] bsk daemon 已在运行"
+} else {
+    Write-Log "[start] bsk daemon（前台，由本任务持有）"
+    & $bsk daemon start --foreground
+    Write-Log "[exit] bsk daemon 已退出（任务将按重启策略处理）"
+}
