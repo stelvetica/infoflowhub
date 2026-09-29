@@ -380,6 +380,23 @@ class DBManager:
                 (error_message, link_id),
             )
 
+    def reset_unsupported_to_pending(self) -> int:
+        """把视频条目里 unsupported 的行重置为 pending，供抖音链路解锁后重跑。"""
+        now = self._now_iso()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"""
+                UPDATE links
+                SET digest_status = 'pending',
+                    digest_error = NULL,
+                    updated_at = ?
+                WHERE {VIDEO_URL_CONDITION}
+                  AND digest_status = 'unsupported'
+                """,
+                (now,),
+            )
+            return int(cursor.rowcount)
+
     def recover_stale_digest_runs(self, *, stale_seconds: int = 7200) -> int:
         now = datetime.now(UTC)
         threshold = (now - timedelta(seconds=stale_seconds)).isoformat(timespec="seconds")
