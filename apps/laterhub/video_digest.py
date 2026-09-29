@@ -231,6 +231,11 @@ def run_video_digest(
         if row is None:
             summary.outcomes.append(DigestOutcome(link_id, "", "", "failed", "条目不存在"))
             return summary
+        # succeeded 但报告文件已丢（目录被清理/迁移）：降回 failed 让本次重试能领取，否则按钮永久死锁
+        digest_file = str(row["digest_path"] or "").strip()
+        if str(row["digest_status"]) == "succeeded" and (not digest_file or not (REPORTS_DIR / digest_file).is_file()):
+            db.mark_digest_failed(link_id, error_message="报告文件缺失，已重新排队")
+            row = db.get_digest_row(link_id)
         if not db.claim_digest(link_id, retry_failed=True):
             status = str(row["digest_status"])
             summary.outcomes.append(DigestOutcome(link_id, str(row["url"]), str(row["title"]), "skipped", f"状态 {status} 不可领取"))
