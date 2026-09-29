@@ -1,8 +1,9 @@
 """手动跑一次完整 skill 流程（portfolio-news → portfolio-announcements）。
 
 定时流程（auto_runner）只在早上跑一次；当日失败或想立即重跑时用本脚本。
-直接调用 web/services/skill_runner.run_skill——与 auto_runner 同一条代码路径，
-所以这里的结果就是定时流程的结果，不会出现「手动能跑、定时不能」的分叉。
+走 AutoRunner.run_skills_now——与 auto_runner 同一套收尾逻辑，会按一次完整流程
+登记状态（flow + last_run_date），所以面板头部与「本次流程」都能反映手动补跑结果，
+不会出现「手动能跑、面板仍显示失败/空产物」的分叉。
 
 用法（务必用 PowerShell 或 cmd，不要在 Git Bash 里跑）：
   uv run python scripts/run_skills_once.py
@@ -16,6 +17,7 @@ ZCODE_BUILTIN_PROVIDER_CONFIG_FILE，与 skill 无关（详见 TECH_DEBT）。
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -23,7 +25,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE))
 
-from web.services.skill_runner import SKILLS, run_skill  # noqa: E402
+from web.services.auto_runner import AutoRunner  # noqa: E402
 
-for name in SKILLS:
-    print(json.dumps(run_skill(name, cwd=BASE), ensure_ascii=False), flush=True)
+for item in asyncio.run(AutoRunner().run_skills_now()):
+    print(json.dumps(item, ensure_ascii=False), flush=True)
