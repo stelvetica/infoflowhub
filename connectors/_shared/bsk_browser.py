@@ -39,6 +39,12 @@ BSK_BIN_NAME = "bsk"
 # daemon 会拒绝 stop 一个正在执行命令的 session（退出码 4）；超时路径下 session 仍 busy，
 # 因此 stop 失败后等一小会儿再试一次，避免 daemon 侧 session 泄漏。
 STOP_RETRY_DELAY_SECONDS = 1.5
+# daemon 闲置 10 分钟自退（daemon 日志实测 `daemon exceeded idle threshold; exiting,
+# idle_secs=600`）。本模块所有命令都带 BSK_AUTO_START=0（不让命令顺手拉起），所以定时抓取撞上
+# 它不在时 session start 只会 exit=2 让整源跳过（2026-09-29 08:12 抖音/小黑盒双双被跳过）。
+# 开工前显式拉起一次即可：`bsk daemon start` 本地模式立即返回（实测 0.07s），约 1s 后就绪。
+DAEMON_START_WAIT_SECONDS = 5.0
+DAEMON_POLL_INTERVAL_SECONDS = 0.5
 
 
 class BskError(Exception):
@@ -200,6 +206,8 @@ class BskBrowser:
         self._slow_command_timeout = None if slow_command_timeout is None else float(slow_command_timeout)
         self._log_fn = logger or _default_log
         self._session_id: str | None = None
+        # 最近一次 daemon 探活看到的浏览器连接数（None=未知）；仅用于 session start 失败时的提示。
+        self._daemon_browsers: int | None = None
 
     # ---- 生命周期 ----
 
@@ -207,9 +215,73 @@ class BskBrowser:
     def session_id(self) -> str | None:
         return self._session_id
 
+    def ensure_daemon(self) -> None:
+        """开工前确保 bsk daemon 在跑，并把「不在」写成可读日志。
+
+        daemon 闲置 10 分钟自退，而本模块全程带 BSK_AUTO_START=0（不让命令顺手拉起），
+        因此它不在时 session start 只会 exit=2 让整源跳过。这里显式拉起一次；拉起失败不抛，
+        留给随后的 session start 报它自己的错（并附上浏览器连接状态，见 start）。
+        """
+        payload, reason = self._daemon_status()
+        if payload is None:
+            self._log(f"bsk daemon 不在（{reason}），尝试拉起")
+            try:
+                self._run(
+                    ["daemon", "start"],
+                    label="daemon start",
+                    check=False,
+                    stop_session_on_timeout=False,
+                    help_watchdog=False,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._log(f"cmd=daemon start err={exc}（继续尝试 session start）")
+                return
+            deadline = time.time() + DAEMON_START_WAIT_SECONDS
+            while time.time() < deadline:
+                payload, reason = self._daemon_status()
+                if payload is not None:
+                    self._log("bsk daemon 已拉起并就绪")
+                    break
+                time.sleep(DAEMON_POLL_INTERVAL_SECONDS)
+            else:
+                self._log(f"bsk daemon 拉起后仍未就绪（{reason}），继续尝试 session start")
+                return
+        browsers = payload.get("browsers")
+        self._daemon_browsers = len(browsers) if isinstance(browsers, list) else None
+        if self._daemon_browsers == 0:
+            self._log("bsk daemon 已就绪但未连接浏览器：请确认 Chrome 已启动且 bsk 扩展在线")
+
+    def _daemon_status(self) -> tuple[dict | None, str]:
+        """探 daemon 可用性；不可用返回 (None, 原因)。绝不抛。"""
+        try:
+            result = self._run(
+                ["status", "--json"],
+                label="status",
+                check=False,
+                stop_session_on_timeout=False,
+                help_watchdog=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return None, f"status 命令异常: {exc}"
+        if result.returncode != 0:
+            # 失败时 bsk 也会回一段 JSON（含它自己的 message，如权限不足、未连接浏览器）；
+            # 只取该字段，不回显 stdout（可能含页面内容/凭据）。
+            detail = ""
+            try:
+                detail = str(_read_json_object(result.stdout, "status").get("message") or "").strip()
+            except Exception:  # noqa: BLE001
+                detail = ""
+            hint = f": {detail[:160]}" if detail else ""
+            return None, f"status exit={result.returncode}{hint}"
+        try:
+            return _read_json_object(result.stdout, "status"), ""
+        except Exception as exc:  # noqa: BLE001
+            return None, f"status 输出无法解析: {exc}"
+
     def start(self) -> str:
         if self._session_id:
             return self._session_id
+        self.ensure_daemon()
         started_at_ms = int(time.time() * 1000)
         try:
             # start 阶段尚未打开任何页面，不存在「登录/验证码等人」阻塞，故不挂看门狗：
@@ -232,7 +304,10 @@ class BskBrowser:
             if session_id:
                 self._session_id = session_id
                 self.stop()
-            raise BskSessionError(f"bsk session start 失败 (exit={result.returncode})")
+            hint = ""
+            if self._daemon_browsers == 0:
+                hint = "；bsk daemon 未连接任何浏览器，请确认 Chrome 已启动且 bsk 扩展在线"
+            raise BskSessionError(f"bsk session start 失败 (exit={result.returncode}){hint}")
         self._session_id = session_id
         return session_id
 
@@ -319,7 +394,8 @@ class BskBrowser:
         help_watchdog: bool = True,
     ) -> BskResult:
         argv = [*self._command, *args]
-        # 所有命令都需 BSK_AUTO_START=0：防止命令顺手拉起 daemon（daemon 由外部统一管理）。
+        # 所有命令都需 BSK_AUTO_START=0：不让命令顺手拉起 daemon（拉起只走 ensure_daemon 一处，
+        # 便于日志留痕与失败归类；status 命令不带这个变量时也会自动拉起，实测如此）。
         env = {**os.environ, "BSK_AUTO_START": "0"}
         budget = self._timeout if timeout is None else float(timeout)
         watchdog = self._request_help_timeout if help_watchdog else None
