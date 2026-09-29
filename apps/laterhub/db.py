@@ -3,12 +3,15 @@ from __future__ import annotations
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
 
 UTC = timezone.utc
+
+# 视频简报候选：只看视频条目（B站/抖音）。
+VIDEO_URL_CONDITION = "(url LIKE '%bilibili.com/video/%' OR url LIKE '%douyin.com/video/%')"
 
 
 @dataclass(slots=True)
@@ -77,6 +80,16 @@ class DBManager:
                 conn.execute("ALTER TABLE links ADD COLUMN opened_at TEXT")
             if "feishu_last_synced_at" not in columns:
                 conn.execute("ALTER TABLE links ADD COLUMN feishu_last_synced_at TEXT")
+            if "digest_status" not in columns:
+                conn.execute("ALTER TABLE links ADD COLUMN digest_status TEXT NOT NULL DEFAULT 'pending'")
+            if "digest_path" not in columns:
+                conn.execute("ALTER TABLE links ADD COLUMN digest_path TEXT")
+            if "digest_at" not in columns:
+                conn.execute("ALTER TABLE links ADD COLUMN digest_at TEXT")
+            if "digest_error" not in columns:
+                conn.execute("ALTER TABLE links ADD COLUMN digest_error TEXT")
+            if "digest_attempts" not in columns:
+                conn.execute("ALTER TABLE links ADD COLUMN digest_attempts INTEGER NOT NULL DEFAULT 0")
             conn.execute(
                 """
                 UPDATE links
@@ -89,6 +102,7 @@ class DBManager:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_links_status ON links(status)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_links_tag_status ON links(tag_status)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_links_source ON links(source)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_links_digest_status ON links(digest_status)")
 
     def upsert_link(self, record: LinkRecord) -> int:
         now = self._now_iso()
@@ -290,3 +304,115 @@ class DBManager:
     @staticmethod
     def _now_iso() -> str:
         return DBManager.now_iso()
+
+    # ---- 视频简报（digest）状态机 ----
+
+    def list_digest_candidates(
+        self, *, limit: int, source: str | None = None, retry_failed: bool = False
+    ) -> list[sqlite3.Row]:
+        statuses = ("pending", "failed") if retry_failed else ("pending",)
+        placeholders = ", ".join("?" for _ in statuses)
+        sql = f"SELECT * FROM links WHERE {VIDEO_URL_CONDITION} AND digest_status IN ({placeholders})"
+        params: list = list(statuses)
+        if source:
+            sql += " AND source = ?"
+            params.append(source)
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return list(rows)
+
+    def claim_digest(self, link_id: int, *, retry_failed: bool = False) -> bool:
+        allowed = ("pending", "failed") if retry_failed else ("pending",)
+        placeholders = ", ".join("?" for _ in allowed)
+        now = self._now_iso()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"""
+                UPDATE links
+                SET digest_status = 'running',
+                    digest_attempts = digest_attempts + 1,
+                    digest_error = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                  AND digest_status IN ({placeholders})
+                """,
+                (now, link_id, *allowed),
+            )
+            return cursor.rowcount == 1
+
+    def mark_digest_succeeded(self, link_id: int, *, digest_path: str, completed_at: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE links
+                SET digest_status = 'succeeded',
+                    digest_path = ?,
+                    digest_at = ?,
+                    digest_error = NULL
+                WHERE id = ?
+                """,
+                (digest_path, completed_at, link_id),
+            )
+
+    def mark_digest_failed(self, link_id: int, *, error_message: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE links
+                SET digest_status = 'failed',
+                    digest_error = ?
+                WHERE id = ?
+                """,
+                (error_message[:500], link_id),
+            )
+
+    def mark_digest_unsupported(self, link_id: int, *, error_message: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE links
+                SET digest_status = 'unsupported',
+                    digest_error = ?
+                WHERE id = ?
+                """,
+                (error_message, link_id),
+            )
+
+    def recover_stale_digest_runs(self, *, stale_seconds: int = 7200) -> int:
+        now = datetime.now(UTC)
+        threshold = (now - timedelta(seconds=stale_seconds)).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE links
+                SET digest_status = 'pending',
+                    digest_error = '上次任务中断，已重新排队',
+                    updated_at = ?
+                WHERE digest_status = 'running'
+                  AND updated_at < ?
+                """,
+                (now.isoformat(timespec="seconds"), threshold),
+            )
+            return int(cursor.rowcount)
+
+    def get_digest_row(self, link_id: int) -> sqlite3.Row | None:
+        with self._connect() as conn:
+            return conn.execute("SELECT * FROM links WHERE id = ?", (link_id,)).fetchone()
+
+    def get_digest_stats(self) -> dict[str, int]:
+        stats = {"pending": 0, "running": 0, "succeeded": 0, "failed": 0, "unsupported": 0}
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT digest_status, COUNT(*) AS n
+                FROM links
+                WHERE {VIDEO_URL_CONDITION}
+                GROUP BY digest_status
+                """
+            ).fetchall()
+        for row in rows:
+            if row["digest_status"] in stats:
+                stats[row["digest_status"]] = int(row["n"])
+        return stats

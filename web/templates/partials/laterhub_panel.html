@@ -77,6 +77,19 @@
                   <input type="hidden" name="finished" value="{{ 0 if item.is_finished else 1 }}">
                   <button class="btn {% if item.is_finished %}secondary{% endif %}" type="submit">{{ '未完成' if item.is_finished else '完成' }}</button>
                 </form>
+                {% if item.is_video_link and item.digest_status != 'unsupported' %}
+                  {% if item.digest_available %}
+                    <a class="btn secondary laterhub-digest-link" href="{{ item.digest_url }}" target="_blank" rel="noreferrer">简报</a>
+                  {% elif item.digest_status == 'running' %}
+                    <button class="btn secondary" type="button" disabled>生成中</button>
+                  {% else %}
+                    <form data-digest-url="/actions/laterhub/{{ item.id }}/digest?{{ params|urlencode }}&{{ laterhub.state_query }}">
+                      <button class="btn secondary" type="submit" {% if item.digest_status == 'failed' %}title="{{ item.digest_error }}"{% endif %}>{{ '重试简报' if item.digest_status == 'failed' else '简报' }}</button>
+                    </form>
+                  {% endif %}
+                {% elif item.digest_status == 'unsupported' %}
+                  <span class="subtle" title="{{ item.digest_error }}">暂不支持</span>
+                {% endif %}
               </td>
             </tr>
             {% endfor %}

@@ -66,6 +66,7 @@ REPORT_PATTERNS: tuple[tuple[str, str], ...] = (
     ("公告清单_*.md", "公告清单"),
     ("公告清单_*.png", "公告图片"),
     ("今日新闻.md", "今日热点"),
+    ("video_digest_*.md", "视频简报"),
 )
 # 订阅源 → 本地正文目录标识（路由 /markdown/{kind}/{name} 的 kind）
 MARKDOWN_KINDS: dict[str, str] = {
@@ -416,7 +417,8 @@ def _load_laterhub_items(limit: int | None = None) -> list[dict[str, Any]]:
         if limit is None:
             rows = conn.execute(
                 """
-                SELECT id, url, title, tags, created_at, updated_at, is_finished, is_opened, opened_at, source
+                SELECT id, url, title, tags, created_at, updated_at, is_finished, is_opened, opened_at, source,
+                       digest_status, digest_path, digest_at, digest_error
                 FROM links
                 ORDER BY id DESC
                 """
@@ -424,7 +426,8 @@ def _load_laterhub_items(limit: int | None = None) -> list[dict[str, Any]]:
         else:
             rows = conn.execute(
                 """
-                SELECT id, url, title, tags, created_at, updated_at, is_finished, is_opened, opened_at, source
+                SELECT id, url, title, tags, created_at, updated_at, is_finished, is_opened, opened_at, source,
+                       digest_status, digest_path, digest_at, digest_error
                 FROM links
                 ORDER BY id DESC
                 LIMIT ?
@@ -591,6 +594,31 @@ def mark_laterhub_finished_bulk(link_ids: list[int], finished: bool) -> int:
         conn.close()
 
 
+def _laterhub_digest_fields(item: dict[str, Any]) -> dict[str, Any]:
+    """视频简报的展示字段：digest_status 外加入口可见性（succeeded 且报告文件在盘上才算可用）。
+
+    digest_url 只由库内 basename 拼 /reports/view/，路由侧已有目录穿越防护。
+    """
+    url = str(item.get("url") or "")
+    status = str(item.get("digest_status") or "pending")
+    digest_path = str(item.get("digest_path") or "").strip()
+    digest_available = False
+    digest_url = ""
+    if status == "succeeded" and digest_path:
+        candidate = REPORTS_DIR / digest_path
+        if candidate.is_file():
+            digest_available = True
+            digest_url = f"/reports/view/{quote(digest_path, safe='')}"
+    return {
+        "digest_status": status,
+        "digest_error": normalize_utf8_text(item.get("digest_error")) or "",
+        "digest_at": str(item.get("digest_at") or ""),
+        "digest_available": digest_available,
+        "digest_url": digest_url,
+        "is_video_link": "bilibili.com/video/" in url or "douyin.com/video/" in url,
+    }
+
+
 def _build_laterhub_rows() -> tuple[list[dict[str, Any]], str, dict[str, int]]:
     all_rows: list[dict[str, Any]] = []
     latest_batch_key = ""
@@ -618,6 +646,7 @@ def _build_laterhub_rows() -> tuple[list[dict[str, Any]], str, dict[str, int]]:
             "batch_key": batch_key,
             "is_today": bool(local_created_date == today),
             "is_opened": bool(item.get("is_opened")),
+            **_laterhub_digest_fields(item),
         }
         all_rows.append(row)
         scope_counts["all"] += 1
