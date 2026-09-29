@@ -332,38 +332,6 @@
     });
   }
 
-  // 「简报」就地生效:与「完成」同款——只换那一行,不重绘面板。生成耗时(下载/ASR/模型)
-  // 可达数分钟,期间按钮 disabled 防重复提交;完成后行被响应里的新行替换(状态变简报链接)。
-  function setupLaterhubDigestForms() {
-    document.querySelectorAll(".laterhub-action-cell form[data-digest-url]").forEach((form) => {
-      if (form.dataset.digestReady === "1") return;
-      form.dataset.digestReady = "1";
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const button = form.querySelector("button");
-        const originalText = button ? button.textContent : "";
-        if (button) {
-          button.disabled = true;
-          button.textContent = "生成中…";
-        }
-        try {
-          const response = await fetch(form.dataset.digestUrl, {
-            method: "POST",
-            body: new FormData(form),
-            credentials: "same-origin",
-          });
-          if (!response.ok) throw new Error(String(response.status));
-          applyLaterhubToggle(await response.text(), form.dataset.linkId || form.closest("tr")?.dataset.linkId);
-        } catch {
-          if (button) {
-            button.disabled = false; // 失败保持原样,可再点
-            button.textContent = originalText;
-          }
-        }
-      });
-    });
-  }
-
   function applyLaterhubToggle(html, linkId) {
     const row = document.querySelector(`.pane-right-stack tr[data-link-id="${linkId}"]`);
     if (!row) return;
@@ -383,7 +351,6 @@
     const tbody = document.querySelector(".pane-right-stack tbody");
     if (count && tbody && total) count.textContent = countText(loadedRowCount(tbody), total);
     setupLaterhubFinishForms();
-    setupLaterhubDigestForms();
     setupLaterhubOpenedTracking();
     applyReadState();
     const descriptor = autoLoadPanels.find((item) => item.key === "laterhub");
@@ -438,7 +405,6 @@
       applyReadState();
       setupLaterhubOpenedTracking();
       setupLaterhubFinishForms();
-      setupLaterhubDigestForms();
       return true;
     } catch {
       // 失败不打断浏览:计数行提示,继续滚动会再试
@@ -876,7 +842,6 @@
     setupLaterhubTagsToggle();
     setupSplitResizer();
     setupLaterhubFinishForms();
-    setupLaterhubDigestForms();
     setupScrollbarReveal();
     autoLoadPanels.forEach((descriptor) => {
       bindAutoLoadScroll(descriptor);

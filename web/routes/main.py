@@ -11,7 +11,6 @@ from fastapi.templating import Jinja2Templates
 
 from web.services import md_render
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
-from apps.laterhub.video_digest import run_video_digest
 from web.services.views import (
     build_entries_state_params,
     build_laterhub_state_params,
@@ -27,7 +26,6 @@ from web.services.views import (
     get_news_view,
     get_settings_view,
     load_status,
-    LATERHUB_DB_PATH,
     mark_entry_read_state,
     mark_laterhub_opened,
     mark_laterhub_finished,
@@ -350,20 +348,6 @@ async def fetch_now_action(request: Request):
 @router.post("/actions/laterhub/fetch-now", response_class=HTMLResponse)
 async def laterhub_fetch_now_action(request: Request):
     await run_in_threadpool(fetch_laterhub_now)
-    params = query_dict(request)
-    return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params, "laterhub_params": build_laterhub_state_params(params)})
-
-
-@router.post("/actions/laterhub/{link_id}/digest", response_class=HTMLResponse)
-async def laterhub_digest_action(request: Request, link_id: int):
-    # 单条视频简报：同步跑完再刷新行（与 toggle 同款就地换行契约）。下载/ASR 耗时期间
-    # 前端按钮 disabled；不做后台任务队列（与 fetch-now 同级复杂度，KISS）。
-    await run_in_threadpool(
-        run_video_digest,
-        db_path=LATERHUB_DB_PATH,
-        link_id=link_id,
-        retry_failed=True,
-    )
     params = query_dict(request)
     return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params, "laterhub_params": build_laterhub_state_params(params)})
 
