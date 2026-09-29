@@ -36,6 +36,18 @@ if secret:
 
 cmd = argv[0] if argv else ""
 
+if cmd == "status":
+    # 默认模拟「daemon 就绪且已连浏览器」；场景可用 status_exit/status_stdout 覆盖
+    # （如 status_exit=2 + status_stdout={"message": "..."} 模拟 daemon 不在）。
+    sys.stdout.write(
+        scenario.get("status_stdout", json.dumps(scenario.get("status", {"browsers": [{"instance_id": "b1"}]})))
+    )
+    sys.exit(scenario.get("status_exit", 0))
+
+if cmd == "daemon" and len(argv) > 1 and argv[1] == "start":
+    sys.stdout.write(scenario.get("daemon_stdout", "daemon started"))
+    sys.exit(scenario.get("daemon_exit", 0))
+
 if cmd == "session" and len(argv) > 1 and argv[1] == "start":
     time.sleep(scenario.get("start_sleep", 0))
     sys.stdout.write(scenario.get("start_stdout", '{"session_id": "fake-session"}'))
@@ -143,7 +155,10 @@ def test_start_parses_session_id(fake_bsk):
     browser, _ = fake_bsk.build(start_stdout='{"session_id": "s-123", "browser_instance_id": "b1"}')
     assert browser.start() == "s-123"
     assert browser.session_id == "s-123"
-    assert fake_bsk.calls()[0]["argv"][0:3] == ["session", "start", "--json"]
+    # 起会话前先探一次 daemon（自愈入口），再发 session start
+    assert fake_bsk.calls()[0]["argv"][0:2] == ["status", "--json"]
+    session_calls = [c for c in fake_bsk.calls() if c["argv"][0:3] == ["session", "start", "--json"]]
+    assert session_calls, "未发出 session start"
 
 
 def test_every_command_disables_auto_start(fake_bsk):
