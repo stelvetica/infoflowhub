@@ -21,7 +21,7 @@ description: 拉取持仓池标的的 P0 上市公司公告，生成每日《公
 **运行命令**（无参数全默认；改脚本后必须先 `--selftest` 再实跑）：
 
 ```powershell
-python "C:\Users\ETT\Playground\infoflowhub\.zcode\skills\portfolio-announcements\scripts\collect_announcements.py"
+python "C:\Users\ETT\Playground\infoflowhub\skills\portfolio-announcements\scripts\collect_announcements.py"
 ```
 
 默认读 `<产物根>\标的池.json`，输出与留痕写 `<产物根>`；**产物根 = `C:\Users\ETT\Playground\infoflowhub\data\reports\`**（主 checkout 的 infoflowhub，不是 worktree）。路径可被用户指令覆盖。

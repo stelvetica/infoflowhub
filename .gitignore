@@ -34,6 +34,8 @@ web/__pycache__/
 # 调试 / 会话产物，不入库
 .playwright-mcp/
 .zcode/plans/
+# skill 发现位：全是指向 ../../skills/ 的符号链接，源文件才入库
+.zcode/skills/
 
 .pytest_cache/
 .mypy_cache/
