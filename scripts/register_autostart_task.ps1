@@ -27,16 +27,24 @@ $action = New-ScheduledTaskAction -Execute $ps `
     -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wrapper`""
 
 $user = "$env:USERDOMAIN\$env:USERNAME"
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
+
 # 常驻看护：bsk daemon 闲置 10 分钟会自退（daemon 日志实测 `daemon exceeded idle threshold;
 # exiting, idle_secs=600`），只在登录时启动一次会让定时抓取撞上它不在——2026-09-29 08:12 的
 # 抖音/小黑盒就是这样被整源跳过的。故加重复触发：每 5 分钟一次；任务实例还在跑（daemon 活着）
 # 时由 MultipleInstances=IgnoreNew 跳过，daemon 一退，下一个 tick 就把栈重新拉起。
 # 注：抓取侧另有 BskBrowser.ensure_daemon() 兜底（开工前探活并按需拉起），这里是第二道保险。
-$watchdog = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+#
+# 两个触发器分工：logon 负责"登录即拉起"，watchdog 负责"每 5 分钟重复看护"。
+#
+# 为什么不能把重复挂在 logon 触发器上（$logonTrigger.Repetition = ...）：logon 触发器没有
+# StartBoundary 时间锚点，注册后到下次真正登录之前不会起算重复周期——2026-09-29 09:12:55
+# 重注册后 LastRun 一直是"从未运行"（LastTaskResult 267011），runtime/autostart.log 当天零记录，
+# 导出的任务 XML 里 <Repetition><Interval>PT5M</Interval> 虽在，任务却从不触发。改用独立的
+# `-Once -At (Get-Date)` 触发器：注册那一刻即成为锚点，重复周期立刻起算，不必等下次登录。
+$logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $user
+$watchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
     -RepetitionInterval (New-TimeSpan -Minutes 5) `
     -RepetitionDuration (New-TimeSpan -Days 3650)
-$trigger.Repetition = $watchdog.Repetition
 
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
@@ -50,9 +58,9 @@ $settings = New-ScheduledTaskSettingsSet `
 # 客户端权限级别不一致，检查任务误报"daemon 未运行"。
 $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
 
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger @($logonTrigger, $watchdogTrigger) `
     -Settings $settings -Principal $principal `
-    -Description '登录时拉起并在其后每 5 分钟检查一次：自动拉起 InfoFlowHub Web 服务（先探活，已在跑则跳过，避免误杀健康实例与 cloudflared 隧道）与 bsk daemon（前台持有，崩溃自动重启）。重复触发是常驻看护——bsk daemon 闲置 10 分钟自退，靠它把栈反复拉起来；抓取侧另有 BskBrowser.ensure_daemon() 兜底。本机账户无密码，开机后约 12 秒自动登录，故等同开机自启；浏览器抓取依赖该桌面会话，不能在登录前运行。' | Out-Null
+    -Description '双触发器：登录时拉起，另有一个以注册时刻为锚点的每 5 分钟重复触发器做常驻看护。自动拉起 InfoFlowHub Web 服务（先探活，已在跑则跳过，避免误杀健康实例与 cloudflared 隧道）与 bsk daemon（先探活，已在跑则跳过；未跑才前台持有，崩溃自动重启）。重复看护用于兜住闲置 10 分钟自退的 bsk daemon；抓取侧另有 BskBrowser.ensure_daemon() 兜底。本机账户无密码，开机后约 12 秒自动登录，故等同开机自启；浏览器抓取依赖该桌面会话，不能在登录前运行。' | Out-Null
 
 Write-Output "任务已注册：$taskName"
 $t = Get-ScheduledTask -TaskName $taskName

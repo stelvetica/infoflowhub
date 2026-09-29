@@ -45,6 +45,14 @@ STOP_RETRY_DELAY_SECONDS = 1.5
 # 开工前显式拉起一次即可：`bsk daemon start` 本地模式立即返回（实测 0.07s），约 1s 后就绪。
 DAEMON_START_WAIT_SECONDS = 5.0
 DAEMON_POLL_INTERVAL_SECONDS = 0.5
+# daemon 起来但没连浏览器（用户没开 Chrome）时，session start 必失败、整批浏览器源全灭。
+# 自愈只能拉起用户真实 Chrome：bsk 扩展装在用户日常浏览器里，隔离副本/无扩展 Chrome 连不上。
+# 拉起后等扩展自动连上 daemon 的预算；冷却窗口防止一轮抓取里 N 个源 × 重试各拉一次 Chrome。
+BROWSER_CONNECT_WAIT_SECONDS = 15.0
+BROWSER_LAUNCH_COOLDOWN_SECONDS = 3600.0
+# 上次拉起用户 Chrome 的时刻（time.monotonic）；0 表示从未拉起。模块级：一轮抓取里每个源
+# 各建一个 BskBrowser，冷却必须跨实例共享，否则同一轮抓取会反复拉起 Chrome。
+_last_browser_launch_at: float = 0.0
 
 
 class BskError(Exception):
@@ -91,6 +99,26 @@ def resolve_bsk_command() -> tuple[str, ...]:
 
 def _default_log(message: str) -> None:
     print(f"[bsk] {message}", file=sys.stderr)
+
+
+def _launch_user_chrome() -> str:
+    """拉起用户日常 Chrome，返回可执行文件路径。
+
+    必须用用户真实浏览器：bsk 扩展只装在用户日常 Chrome 里，隔离副本或带
+    --disable-extensions 的实例都连不上 daemon。惰性导入 chrome_runner：该模块顶层
+    import winreg，惰性化可让 bsk_browser 顶层保持平台无关，也避免不必要耦合。
+    启动失败照常抛，由调用方兜。
+    """
+    from connectors._shared.chrome_runner import _resolve_default_browser_executable
+
+    _, exe = _resolve_default_browser_executable()
+    subprocess.Popen(
+        [exe],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+    )
+    return exe
 
 
 def _js_find(selector: str | None, text: str | None, exact: bool) -> str:
@@ -248,8 +276,42 @@ class BskBrowser:
                 return
         browsers = payload.get("browsers")
         self._daemon_browsers = len(browsers) if isinstance(browsers, list) else None
-        if self._daemon_browsers == 0:
-            self._log("bsk daemon 已就绪但未连接浏览器：请确认 Chrome 已启动且 bsk 扩展在线")
+
+    def ensure_browser(self) -> None:
+        """daemon 在跑但没连浏览器（用户没开 Chrome）时，拉起用户 Chrome 并等扩展连上。
+
+        只在「明确知道没连浏览器」（browsers==0）时动作：None（未知）或已连上都直接返回，
+        绝不打扰正常路径。全程不抛——真正的失败留给随后的 session start 报它自己的错。
+        """
+        global _last_browser_launch_at
+
+        if self._daemon_browsers != 0:
+            return
+        now = time.monotonic()
+        # 冷却窗口内不重复拉起：一轮抓取里每个源各建一个 BskBrowser，若各自都拉一次
+        # Chrome，会在用户机器上反复弹窗。0 是「从未拉起」哨兵，不能当已触发冷却。
+        if _last_browser_launch_at > 0.0 and now - _last_browser_launch_at < BROWSER_LAUNCH_COOLDOWN_SECONDS:
+            self._log("bsk daemon 未连接浏览器，但距上次拉起 Chrome 不足冷却窗口，跳过本次拉起")
+            return
+        _last_browser_launch_at = now
+        self._log("bsk daemon 未连接浏览器，尝试拉起用户 Chrome")
+        try:
+            exe = _launch_user_chrome()
+        except Exception as exc:  # noqa: BLE001
+            self._log(f"拉起用户 Chrome 失败：{exc}（继续尝试 session start）")
+            return
+        self._log(f"已拉起用户 Chrome（{exe}），等待 bsk 扩展连接")
+        deadline = time.monotonic() + BROWSER_CONNECT_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            payload, _reason = self._daemon_status()
+            browsers = payload.get("browsers") if payload else None
+            count = len(browsers) if isinstance(browsers, list) else None
+            if count:
+                self._daemon_browsers = count
+                self._log("Chrome 已连接，bsk daemon 可用")
+                return
+            time.sleep(DAEMON_POLL_INTERVAL_SECONDS)
+        self._log("拉起 Chrome 后仍未连接浏览器：请确认 Chrome 已启动且 bsk 扩展在线")
 
     def _daemon_status(self) -> tuple[dict | None, str]:
         """探 daemon 可用性；不可用返回 (None, 原因)。绝不抛。"""
@@ -282,6 +344,7 @@ class BskBrowser:
         if self._session_id:
             return self._session_id
         self.ensure_daemon()
+        self.ensure_browser()
         started_at_ms = int(time.time() * 1000)
         try:
             # start 阶段尚未打开任何页面，不存在「登录/验证码等人」阻塞，故不挂看门狗：

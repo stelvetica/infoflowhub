@@ -27,13 +27,15 @@ DETAIL_SKIP_LINES = {
 
 
 def _wait_ready(page, timeout_ms: int = 20000) -> bool:
+    # 就绪只以「页面已渲染 + 列表容器已有条目文本」为准，不依赖品牌文案。
+    # 品牌文案（Alpha派/蓝宝书）只存在于 <title> 与开场弹窗中，弹窗一隐藏就再也读不到：
+    # 实测 body.innerText 在 3.5s 含品牌文案、4.8s 起消失，而报告列表 60 条全程可解析。
+    # 若把品牌文案作为前置条件，等于把成功押在轮询恰好命中那一秒，2026-09-29 11:11
+    # 全量抓取即因此在列表早已渲染的情况下误报「蓝宝书页面未完成加载」。
     deadline = _time.time() + timeout_ms / 1000
     while _time.time() < deadline:
         try:
             body_text = page.locator("body").inner_text(timeout=2000)
-            if "Alpha派" not in body_text and "蓝宝书" not in body_text:
-                _time.sleep(0.5)
-                continue
             list_text = _pick_list_text(page)
             if len(body_text) > 200 and len(list_text) > 50:
                 return True
