@@ -10,10 +10,6 @@
 
 Git Bash 会做 POSIX 路径转换，把提示词里的 `/skill xxx` 改写成
 `C:/Program Files/Git/skill xxx`，slash 命令因此失效（实测踩过）。
-
-注意：本脚本不解决 CLI 自身定位不到 provider 配置的问题——
-若报「无法定位 CLI ZCode Built-in Provider Config」，是运行环境缺少
-ZCODE_BUILTIN_PROVIDER_CONFIG_FILE，与 skill 无关（详见 TECH_DEBT）。
 """
 from __future__ import annotations
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -150,3 +151,69 @@ def test_run_skill_returns_error_when_popen_fails(cli_ready: None, monkeypatch: 
     assert result["status"] == "error"
     assert "句柄耗尽" in result["error"]
     assert result["finished_at"]
+
+
+def _write_provider_config(root: Path, version: str, endpoint: str) -> Path:
+    """按 App 运行时缓存布局造一份 built-in provider 配置。"""
+    path = root / "windows-x86_64" / version / f"endpoint-{endpoint}" / "zcode-builtin.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("{}", encoding="utf-8")
+    return path
+
+
+@pytest.fixture()
+def runtime_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """造一个受控的 App 运行时缓存根，并把 personal 配置指到临时文件（两条路径都确定）。"""
+    monkeypatch.delenv(skill_runner.BUILTIN_PROVIDER_CONFIG_ENV, raising=False)
+    runtime_root = tmp_path / "runtime"
+    monkeypatch.setattr(skill_runner, "PROVIDER_RUNTIME_ROOT", runtime_root)
+    personal = tmp_path / "provider_config.json"
+    personal.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(skill_runner, "PERSONAL_PROVIDER_CONFIG", personal)
+    return runtime_root
+
+
+def test_provider_config_env_prefers_newest_runtime_copy(runtime_cache: Path):
+    """通配定位最新一份：路径含 App 版本与 endpoint 哈希，不能硬编码。"""
+    old = _write_provider_config(runtime_cache, "3.14.3", "aaa")
+    new = _write_provider_config(runtime_cache, "3.14.4", "bbb")
+    os.utime(old, (1_600_000_000, 1_600_000_000))
+    os.utime(new, (1_700_000_000, 1_700_000_000))
+    env = skill_runner._provider_config_env()
+    assert env[skill_runner.BUILTIN_PROVIDER_CONFIG_ENV] == str(new)
+    assert env[skill_runner.PERSONAL_PROVIDER_CONFIG_ENV] == str(skill_runner.PERSONAL_PROVIDER_CONFIG)
+
+
+def test_provider_config_env_skips_missing_personal(runtime_cache: Path):
+    """personal 配置不存在时只补 builtin，不塞一个指向空文件的环境变量。"""
+    _write_provider_config(runtime_cache, "3.14.4", "bbb")
+    skill_runner.PERSONAL_PROVIDER_CONFIG.unlink()
+    assert list(skill_runner._provider_config_env()) == [skill_runner.BUILTIN_PROVIDER_CONFIG_ENV]
+
+
+def test_provider_config_env_keeps_app_injected_value(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """App 拉起的进程已带该变量：不覆盖，避免把 App 选定的那份换掉。"""
+    monkeypatch.setenv(skill_runner.BUILTIN_PROVIDER_CONFIG_ENV, "C:/app/injected.json")
+    monkeypatch.setattr(skill_runner, "PROVIDER_RUNTIME_ROOT", tmp_path)
+    _write_provider_config(tmp_path, "3.14.4", "bbb")
+    assert skill_runner._provider_config_env() == {}
+
+
+def test_provider_config_env_empty_without_runtime_cache(runtime_cache: Path):
+    """缓存不存在（如未装 App）：不补变量，让 CLI 按自己的逻辑报错，不掩盖问题。"""
+    assert skill_runner._provider_config_env() == {}
+
+
+def test_run_skill_injects_provider_config_env(cli_ready: None, runtime_cache: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """注入必须落到子进程 env（本次回归的根因：定时流程缺这个变量 → skill 秒退）。"""
+    config = _write_provider_config(runtime_cache, "3.14.4", "bbb")
+
+    captured: dict[str, dict] = {}
+
+    def fake_popen(command, **kwargs):
+        captured["kwargs"] = kwargs
+        return _FakePopen(returncode=0)
+
+    monkeypatch.setattr(skill_runner.subprocess, "Popen", fake_popen)
+    skill_runner.run_skill("portfolio-news", cwd=tmp_path)
+    assert captured["kwargs"]["env"][skill_runner.BUILTIN_PROVIDER_CONFIG_ENV] == str(config)
