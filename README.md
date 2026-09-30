@@ -117,6 +117,19 @@ infoflowhub/
 
 默认地址：[http://127.0.0.1:18421](http://127.0.0.1:18421)
 
+### 开机自启：由机器配置的统一入口拉起，本仓不注册计划任务
+
+本项目的开机自启**不在本仓注册计划任务**，而是交给机器配置仓（坚果云 `computer_config`）的单一入口：
+
+计划任务「**开机启动-统一入口**」（登录时触发 · ETT 身份 · Highest 提权）→ 跑该仓的 `manage_startup_items.ps1 -Run` → 拉起清单里 `Launch=$true` 的条目，其中一条就是本仓的 `scripts\start_infoflow_stack.ps1`（Web 服务 + bsk daemon，脚本内部先探活，重复跑安全）。
+
+因此本仓的两个注册脚本都**不要再注册到系统**，否则会和统一入口双开：
+
+- `scripts\register_autostart_task.ps1`（注册「InfoFlowHub 开机自启」）——已被统一入口取代。老机上若还留着那条任务，去机器配置仓跑 `manage_startup_items.ps1 -Remove "InfoFlowHub 开机自启"` 删掉。
+- `scripts\register_bsk_update_task.ps1`（注册「bsk 更新检查」）——该检查已下沉进 `web/services/auto_runner.py`（见 `docs/bsk-browser.md`），文件仅留作手动排查用。
+
+**分层规则**（机器配置仓定，改启动项前先读它）：涉及「**开机启动**」的放进机器配置清单；涉及「**持续监控 / 定时 / 看护**」的放进各自项目、由项目启动后自己调用，别放系统层——bsk daemon 保活与更新检查就是这样落在 `auto_runner` 里的。
+
 ### 可选：浏览器抓取器
 
 若使用抖音 / X / YouTube / 小黑盒等浏览器抓取器，需额外安装 playwright 并下载浏览器：
