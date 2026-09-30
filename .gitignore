@@ -52,3 +52,6 @@ runtime/migration_baseline.json
 
 # 仓库根的临时杂物文件（非本仓产物）
 test_localsystem.txt
+
+# bsk 更新检查时间戳（运行时状态，每次检查都变）
+runtime/bsk_update_last_check.txt

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import subprocess
 import webbrowser
 from contextlib import suppress
 from datetime import datetime
@@ -24,6 +25,13 @@ MORNING_START_MINUTE = 10
 CHECK_INTERVAL_SECONDS = 600
 CHECK_INTERVAL_SECONDS_MORNING = 60
 DT_FORMAT = "%Y-%m-%d %H:%M:%S"
+# bsk（BrowserSkill）归本项目自己管：daemon 闲置 10 分钟自退（daemon 日志 idle_secs=600），
+# 原先靠系统计划任务的「每 5 分钟看护触发器」重跑 start_infoflow_stack.ps1 兜住（任务实例即
+# daemon 生命周期）。2026-09-30 起改由本循环保活，系统层只保留「登录时拉起」一条；bsk CLI
+# 更新检查也从系统计划任务（每 14 天）搬进这里。两个开关都用 INFOFLOW_* 惯例，默认开。
+BSK_UPDATE_CHECK_INTERVAL_DAYS = 14
+BSK_UPDATE_SCRIPT = BASE_DIR / "scripts" / "check_bsk_update.ps1"
+BSK_UPDATE_STAMP = BASE_DIR / "runtime" / "bsk_update_last_check.txt"
 # 环境变量开关的关闭取值（SSOT）：空值/未设置一律保持默认开启
 _FLAG_OFF_VALUES = ("0", "false", "no", "off", "disable", "disabled")
 
@@ -100,6 +108,18 @@ class AutoRunner:
                 await self._maybe_run_morning()
             except Exception:
                 logger.exception("auto-runner 调度循环单次执行失败，已跳过本轮")
+            # bsk 托管（2026-09-30 从系统计划任务搬进来）：保活 daemon + 每 14 天查一次更新。
+            # 各自独立 try：bsk 侧出问题不许影响 morning 流程。
+            if _env_flag_enabled("INFOFLOW_BSK_KEEPALIVE"):
+                try:
+                    await asyncio.to_thread(self._keep_bsk_daemon_alive)
+                except Exception:
+                    logger.exception("bsk daemon 保活失败，已跳过本轮")
+            if _env_flag_enabled("INFOFLOW_BSK_UPDATE_CHECK"):
+                try:
+                    await asyncio.to_thread(self._maybe_check_bsk_update)
+                except Exception:
+                    logger.exception("bsk 更新检查失败，已跳过本轮")
             # 8 点时段用 1 分钟粒度，避免 10 分钟间隔的相位漂移把当天首次抓取推迟数分钟
             interval = (
                 CHECK_INTERVAL_SECONDS_MORNING
@@ -127,6 +147,56 @@ class AutoRunner:
             return
 
         await self._do_run_morning(now, today)
+
+    def _keep_bsk_daemon_alive(self) -> None:
+        """bsk daemon 保活：不在就拉起（复用抓取侧同一个 ensure_daemon，单实例由 daemon 自己保证）。
+
+        原先这活由系统计划任务的「每 5 分钟看护触发器」干，现在归本项目自己。ensure_daemon 只跑
+        `bsk status --json` / `bsk daemon start`（都带 BSK_AUTO_START=0），不依赖 session，
+        所以能在调度循环里独立调用；本实例不建 session，with 退出时 stop() 直接返回。
+
+        注意：本循环 tick 间隔（600s）与 daemon 闲置阈值（600s）同量级，daemon 仍可能在两次 tick
+        之间自退——真正保证「抓取时一定在」的是抓取侧开工前的 ensure_daemon()；这里保证的是
+        「大多数时候是热的」，顺带让 browser-skill 的其他使用方不必等冷启动。
+        """
+        from connectors._shared.bsk_browser import BskBrowser
+
+        try:
+            with BskBrowser() as browser:
+                browser.ensure_daemon()
+        except Exception as exc:  # noqa: BLE001
+            # bsk 没装时 BskBrowser() 构造就会抛 BskError；这种情况只留一行可读日志，
+            # 不让调度循环每轮刷一次栈（抓取侧遇到同样情况会各自报自己的错）。
+            logger.warning("bsk daemon 保活跳过：%s", exc)
+
+    def _maybe_check_bsk_update(self) -> None:
+        """每 14 天跑一次 bsk 更新检查（复用 scripts\\check_bsk_update.ps1，逻辑不重写）。
+
+        用独立戳文件记时间，不碰 views.AUTOMATION_RUNTIME_PATH 那份共享 state——避免和 morning
+        流程并发写同一个文件互相覆盖。检查失败也落戳（失败原因由脚本自己写进
+        runtime\\bsk_update_check.log），否则每个 tick 都会重试一遍。
+        """
+        try:
+            if BSK_UPDATE_STAMP.is_file():
+                last = datetime.strptime(BSK_UPDATE_STAMP.read_text(encoding="utf-8").strip(), DT_FORMAT)
+                if (datetime.now() - last).days < BSK_UPDATE_CHECK_INTERVAL_DAYS:
+                    return
+        except (OSError, ValueError):
+            pass  # 戳文件缺失或损坏 → 当作「该查了」
+        if not BSK_UPDATE_SCRIPT.is_file():
+            logger.warning("找不到 bsk 更新检查脚本：%s", BSK_UPDATE_SCRIPT)
+            return
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(BSK_UPDATE_SCRIPT)],
+                capture_output=True,
+                timeout=180,
+            )
+            if result.returncode != 0:
+                logger.warning("bsk 更新检查退出码 %s，详情见 runtime\\bsk_update_check.log", result.returncode)
+        finally:
+            BSK_UPDATE_STAMP.parent.mkdir(parents=True, exist_ok=True)
+            BSK_UPDATE_STAMP.write_text(datetime.now().strftime(DT_FORMAT), encoding="utf-8")
 
     async def _do_run_morning(self, now: datetime, today: str) -> None:
         async with self._lock:
