@@ -1,12 +1,17 @@
-﻿# 定期检查 bsk（BrowserSkill）更新与版本错配，结果追加到 runtime\bsk_update_check.log。
+﻿# 定期检查 bsk（BrowserSkill）版本一致性，必要时把 CLI 追平扩展；结果追加到
+# runtime\bsk_update_check.log。
 #
-# 退出码约定（供计划任务「上次运行结果」判读）：
+# 为什么要「追平」这一档：浏览器扩展走扩展自己的更新渠道，会在后台静默升级；CLI 不会跟着动
+# （`bsk update` 也管不到扩展）。两者由上游成对发布、协议需一致，长期错开迟早出问题。故本脚本
+# 检测到**扩展版本高于 CLI** 时，直接 `bsk update -y` 把 CLI 升到最新（≥ 扩展版本）。
+# 反方向（CLI 高于扩展）无解：CLI 无法更新扩展，只能等扩展自己升级，故只提示、不动作。
+#
+# 退出码约定（供调用方判读）：
 #   0 = 全部最新：CLI 已是最新，且无 CLI/扩展版本错配
-#   2 = 有更新可用，或存在 CLI/扩展版本错配（daemon 状态未知时错配未知，不据此判 2）
+#   2 = 仍有待处理项：有更新可用、存在版本错配，或扩展仍领先 CLI（自动追平未成功）
 #   1 = 检查本身失败（如 bsk 不在 PATH、update 子命令无有效 JSON）
 #
-# 注意：`bsk update` 只管 CLI/daemon；浏览器扩展走扩展自己的更新渠道，CLI 无法更新它，
-# 故扩展版本错配只能提示用户手动更新扩展。
+# 注意：`bsk update` 只管 CLI/daemon；浏览器扩展走扩展自己的更新渠道，CLI 无法更新它。
 #
 # 不挂起：拿不到 daemon 状态时（没在跑、或权限级别低于 daemon 导致管道拒绝访问）
 # 这里优雅降级（仍报 CLI 检查结果，并如实写明失败原因），不会因此整体失败。
@@ -14,6 +19,8 @@ $ErrorActionPreference = 'Stop'
 
 $logPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'runtime\bsk_update_check.log'
 $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+# 升级后 daemon 会重启，status 需要一点时间才重新可用（官方建议最多 5 次、每次隔 1s）。
+$STATUS_RETRIES_AFTER_UPGRADE = 5
 
 function Resolve-Bsk {
     $cmd = Get-Command bsk -ErrorAction SilentlyContinue
@@ -37,6 +44,55 @@ function Write-Line([string]$text) {
     Write-Host $line
 }
 
+function ConvertTo-BskVersion([string]$text) {
+    # "0.3.2" / "v0.3.2" -> [version]；解析不了返回 $null，调用方据此跳过版本比较
+    # （宁可只报告，也不拿解析失败的字符串去做升级决定）。
+    if (-not $text) { return $null }
+    $clean = $text.Trim() -replace '^v', ''
+    if (-not $clean) { return $null }
+    try { return [version]$clean } catch { return $null }
+}
+
+function Get-BskUpdateInfo {
+    param([string]$Bsk)
+    try {
+        $raw = (& $Bsk update --check --json 2>$null) -join "`n"
+        if ($raw) { return ($raw | ConvertFrom-Json) }
+    } catch { return $null }
+    return $null
+}
+
+function Get-BskStatusInfo {
+    param([string]$Bsk, [int]$Retries = 1)
+    $lastErr = ''
+    for ($i = 1; $i -le $Retries; $i++) {
+        if ($i -gt 1) { Start-Sleep -Seconds 1 }
+        try {
+            $raw = (& $Bsk status --json 2>$null) -join "`n"
+            if ($raw) {
+                $data = $raw | ConvertFrom-Json
+                if ($data) { return @{ Data = $data; Err = '' } }
+            }
+            $lastErr = ($raw -replace '\s+', ' ')
+        } catch { $lastErr = $_.Exception.Message }
+    }
+    return @{ Data = $null; Err = $lastErr }
+}
+
+function Get-NewestExtensionVersion {
+    # 多浏览器同时连着时取最"新"的一个：只要有一个扩展领先，CLI 就得跟上它。
+    param($Status)
+    $newest = $null
+    $text = ''
+    if (-not $Status) { return @{ Version = $null; Text = '' } }
+    foreach ($b in @($Status.browsers)) {
+        if (-not $b -or -not $b.extension_version) { continue }
+        $v = ConvertTo-BskVersion ([string]$b.extension_version)
+        if ($v -and (-not $newest -or $v -gt $newest)) { $newest = $v; $text = [string]$b.extension_version }
+    }
+    return @{ Version = $newest; Text = $text }
+}
+
 $bsk = Resolve-Bsk
 if (-not $bsk) {
     Write-Line 'FAIL 未找到 bsk CLI（不在 PATH），请先安装 browser-skill。'
@@ -47,14 +103,51 @@ if (-not $bsk) {
 $env:BSK_AUTO_START = '0'
 
 # 1) CLI 更新检查（bsk update 只管 CLI/daemon，不覆盖扩展）。
-$update = $null
-try {
-    $raw = (& $bsk update --check --json 2>$null) -join "`n"
-    if ($raw) { $update = $raw | ConvertFrom-Json }
-} catch { $update = $null }
+$update = Get-BskUpdateInfo $bsk
 if (-not $update -or -not $update.status) {
     Write-Line 'FAIL bsk update --check 未返回有效 JSON，检查失败。'
     exit 1
+}
+
+# 2) daemon / 扩展版本：拿不到就优雅降级（仍报 CLI 结论），并如实写明失败原因。
+#    注意：若原因是「os error 5 拒绝访问」，那不是 daemon 没跑，而是调用方权限级别
+#    低于 daemon（daemon 由 Highest 任务启动，其命名管道拒绝 LIMITED 客户端）。
+$probe = Get-BskStatusInfo $bsk
+$status = $probe.Data
+$statusErr = $probe.Err
+
+# 3) 扩展领先就把 CLI 追平（本脚本唯一的写动作，只在真需要时发生）。
+$ext = Get-NewestExtensionVersion $status
+$cliVer = ConvertTo-BskVersion ([string]$update.current_version)
+$extAhead = ($ext.Version -and $cliVer -and $ext.Version -gt $cliVer)
+if ($extAhead) {
+    Write-Line "扩展已升级到 $($ext.Text)，CLI 仍为 $($update.current_version)：执行 bsk update -y 追平"
+    # 原生命令往 stderr 写东西时，$ErrorActionPreference='Stop' 会把重定向变成终止错误，
+    # 故这段临时降级为 Continue，改用退出码判成败。
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $upgradeOut = ''
+    $upgradeCode = -1
+    try {
+        $upgradeOut = (& $bsk update -y 2>&1) -join ' '
+        $upgradeCode = $LASTEXITCODE
+    } catch {
+        $upgradeOut = $_.Exception.Message
+    } finally { $ErrorActionPreference = $prevEap }
+    if ($upgradeCode -ne 0) {
+        $why = if ($upgradeOut) { $upgradeOut.Substring(0, [Math]::Min(200, $upgradeOut.Length)) } else { '无输出' }
+        Write-Line "FAIL bsk update 退出码 $upgradeCode：$why"
+    }
+    # 升级会替换 CLI 二进制并重启 daemon：等它重新就绪再复检，否则会把「重启中」误报成故障。
+    $update = Get-BskUpdateInfo $bsk
+    if (-not $update -or -not $update.status) {
+        Write-Line 'FAIL 追平后 bsk update --check 仍拿不到有效 JSON。'
+        exit 1
+    }
+    $probe = Get-BskStatusInfo $bsk -Retries $STATUS_RETRIES_AFTER_UPGRADE
+    $status = $probe.Data
+    $statusErr = $probe.Err
+    $cliVer = ConvertTo-BskVersion ([string]$update.current_version)
 }
 
 $cliCurrent = [string]$update.current_version
@@ -62,23 +155,13 @@ $cliLatest = [string]$update.latest_version
 $cliStatus = [string]$update.status
 $releaseUrl = [string]$update.release_url
 
-# 2) daemon / 扩展版本：拿不到就优雅降级（仍报 CLI 结论），并如实写明失败原因。
-#    注意：若原因是「os error 5 拒绝访问」，那不是 daemon 没跑，而是本任务的权限级别
-#    低于 daemon（daemon 由 Highest 任务启动，其命名管道拒绝 LIMITED 客户端）。
-$status = $null
-$statusErr = ''
-try {
-    $raw = (& $bsk status --json 2>$null) -join "`n"
-    if ($raw) { $status = $raw | ConvertFrom-Json }
-    if (-not $status) { $statusErr = ($raw -replace '\s+', ' ') }
-} catch { $statusErr = $_.Exception.Message }
-
 $parts = @()
 $updateAvailable = ($cliStatus -ne 'up_to_date')
 $parts += "CLI $cliCurrent -> $cliLatest ($cliStatus)"
 if ($updateAvailable -and $releaseUrl) { $parts += "release=$releaseUrl" }
 
 $hasSkew = $false
+$stillBehind = ($ext.Version -and $cliVer -and $ext.Version -gt $cliVer)
 if ($status -and $status.daemon_version) {
     $parts += "daemon $($status.daemon_version)"
     $extVersions = @()
@@ -87,9 +170,11 @@ if ($status -and $status.daemon_version) {
     }
     if ($extVersions.Count -gt 0) { $parts += '扩展 ' + ($extVersions -join ', ') }
     else { $parts += '扩展 无已连接浏览器' }
-    if (@($status.version_skew_browsers).Count -gt 0) {
+    # 过 Where-Object 再数：字段缺失时 @($null).Count 等于 1，会把「没这个字段」误报成「版本错配」。
+    $skewed = @($status.version_skew_browsers | Where-Object { $_ })
+    if ($skewed.Count -gt 0) {
         $hasSkew = $true
-        $parts += '版本错配 ' + (@($status.version_skew_browsers) -join ', ')
+        $parts += '版本错配 ' + ($skewed -join ', ')
     }
     else { $parts += '无版本错配' }
 }
@@ -97,13 +182,12 @@ else {
     $reason = if ($statusErr) { ($statusErr.Substring(0, [Math]::Min(110, $statusErr.Length))) } else { '原因未知' }
     $parts += "daemon 状态未知（bsk status 失败：$reason）"
 }
+if ($stillBehind) { $parts += "扩展 $($ext.Text) 仍领先 CLI $cliCurrent（自动追平未生效）" }
 
 Write-Line ($parts -join ' | ')
 
-if ($updateAvailable -or $hasSkew) {
-    if ($hasSkew) {
-        Write-Line '提示：扩展走浏览器扩展渠道更新，bsk CLI 无法更新扩展；请手动更新扩展。'
-    }
-    exit 2
+if ($hasSkew) {
+    Write-Line '提示：扩展走浏览器扩展渠道更新，bsk CLI 无法更新扩展；请手动更新扩展。'
 }
+if ($updateAvailable -or $hasSkew -or $stillBehind) { exit 2 }
 exit 0

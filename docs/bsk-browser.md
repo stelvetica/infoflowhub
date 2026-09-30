@@ -16,8 +16,9 @@ bsk 是一个通过浏览器扩展驱动**本机日常 Chrome** 的抓取工具�
 ## 版本与更新
 
 - **CLI / daemon**：`bsk update` 升级，`bsk update --check` 只检查不升级。
-- **浏览器扩展**：走浏览器扩展自己的更新渠道，`bsk update` **无法更新扩展**；扩展版本错配只能手动更新扩展。
-- **三者协议需一致**：`bsk status` 报 `daemon_version`、每个已连接浏览器的 `extension_version`，并用 `version_skew_browsers` 列出错配的浏览器。当前基线：CLI/daemon `0.3.1`、扩展 `0.3.0`、协议双方 `1.3`，无错配。
+- **浏览器扩展**：走浏览器扩展自己的更新渠道，`bsk update` **无法更新扩展**。
+- **扩展升级后 CLI 会自动跟上**：上游把 CLI 与扩展**成对发布**、协议需一致，而扩展会在 Chrome 里静默升级、CLI 不会自己动。故 `check_bsk_update.ps1` 检测到**扩展版本高于 CLI** 时直接 `bsk update -y` 把 CLI 追平（这是该脚本唯一的写动作，只在真需要时发生）。反方向无解——CLI 更新不了扩展，只能等扩展自己升，脚本只提示。
+- **三者协议需一致**：`bsk status` 报 `daemon_version`、每个已连接浏览器的 `extension_version`，并用 `version_skew_browsers` 列出错配的浏览器。当前基线：CLI/daemon `0.3.2`、扩展 `0.3.2`、协议双方 `1.3`，无错配。
 
 ## 运行前提：权限级别必须与 daemon 一致
 
@@ -25,17 +26,16 @@ daemon 由「InfoFlowHub 开机自启」计划任务以 **Highest（提权）** 
 **拒绝低完整性（LIMITED / 非提权）客户端的连接**——实测报 `os error 5 拒绝访问`：管道存在、
 52800 端口可达，纯粹是权限问题，很容易被误读成「daemon 没在跑」。
 
-因此：**凡是需要与 daemon 通信的进程（bsk 命令行、抓取用的 web 服务、本更新检查任务）
+因此：**凡是需要与 daemon 通信的进程（bsk 命令行、抓取用的 web 服务、bsk 更新检查）
 都必须与 daemon 处于同一权限级别**。实践含义：
 
-- 更新检查任务注册时必须 `/RL HIGHEST`（用 LIMITED 会稳定误报 daemon 不可达）。
+- bsk 更新检查跑在 web 服务进程里（见「定期检查」），权限随 web 服务——它由提权任务拉起，故一致；单独在非提权终端手动跑该脚本会误报 daemon 不可达。
 - 重启/手动拉起 web 服务时，若 daemon 是提权起的，web 服务也需提权，否则 bsk 抓取会失败。
 
 ## 定期检查
 
-- 计划任务「bsk 更新检查（每14天）」每 14 天运行 `scripts/check_bsk_update.ps1`，结果追加到 `runtime/bsk_update_check.log`（同时打印到控制台）。
-- 退出码：`0` 全部最新；`2` 有更新可用或 CLI/扩展版本错配；`1` 检查本身失败（如 bsk 不在 PATH）。拿不到 daemon 状态时脚本优雅降级（仍报 CLI 结果并**如实写明失败原因**，便于区分「没在跑」与「权限不足」），不会整体失败。
-- 注册脚本 `scripts/register_bsk_update_task.ps1`（以当前用户、**提权**、隐藏窗口运行）。
+- web 服务**每天**跑一次 `scripts/check_bsk_update.ps1`（`auto_runner._maybe_check_bsk_update()`，戳文件 `runtime/bsk_update_last_check.txt`），结果追加到 `runtime/bsk_update_check.log`（同时打印到控制台）。按天而非原先计划任务的每 14 天：扩展随时可能静默升级，粒度太粗会让「扩展升级 → CLI 追平」滞后到两周。
+- 退出码：`0` 全部最新；`2` 仍有待处理项（有更新可用、存在版本错配、或扩展仍领先 CLI）；`1` 检查本身失败（如 bsk 不在 PATH）。拿不到 daemon 状态时脚本优雅降级（仍报 CLI 结果并**如实写明失败原因**，便于区分「没在跑」与「权限不足」），不会整体失败。
 - 手动检查：
   - `bsk update --check --json` 看 CLI 是否有更新
   - `bsk status --json` 看 daemon 与扩展版本、是否错配

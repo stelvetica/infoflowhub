@@ -28,8 +28,11 @@ DT_FORMAT = "%Y-%m-%d %H:%M:%S"
 # bsk（BrowserSkill）归本项目自己管：daemon 闲置 10 分钟自退（daemon 日志 idle_secs=600），
 # 原先靠系统计划任务的「每 5 分钟看护触发器」重跑 start_infoflow_stack.ps1 兜住（任务实例即
 # daemon 生命周期）。2026-09-30 起改由本循环保活，系统层只保留「登录时拉起」一条；bsk CLI
-# 更新检查也从系统计划任务（每 14 天）搬进这里。两个开关都用 INFOFLOW_* 惯例，默认开。
-BSK_UPDATE_CHECK_INTERVAL_DAYS = 14
+# 更新检查也从系统计划任务搬进这里。两个开关都用 INFOFLOW_* 惯例，默认开。
+#
+# 检查按天跑而非原先的每 14 天：浏览器扩展走 Chrome 自己的渠道随时静默升级，CLI 不会跟着动，
+# 而 check_bsk_update.ps1 会在扩展领先时把 CLI 追平——14 天粒度会让这段错配期长达两周。
+BSK_UPDATE_CHECK_INTERVAL_DAYS = 1
 BSK_UPDATE_SCRIPT = BASE_DIR / "scripts" / "check_bsk_update.ps1"
 BSK_UPDATE_STAMP = BASE_DIR / "runtime" / "bsk_update_last_check.txt"
 # 环境变量开关的关闭取值（SSOT）：空值/未设置一律保持默认开启
@@ -108,7 +111,7 @@ class AutoRunner:
                 await self._maybe_run_morning()
             except Exception:
                 logger.exception("auto-runner 调度循环单次执行失败，已跳过本轮")
-            # bsk 托管（2026-09-30 从系统计划任务搬进来）：保活 daemon + 每 14 天查一次更新。
+            # bsk 托管（2026-09-30 从系统计划任务搬进来）：保活 daemon + 每天查一次更新。
             # 各自独立 try：bsk 侧出问题不许影响 morning 流程。
             if _env_flag_enabled("INFOFLOW_BSK_KEEPALIVE"):
                 try:
@@ -170,7 +173,7 @@ class AutoRunner:
             logger.warning("bsk daemon 保活跳过：%s", exc)
 
     def _maybe_check_bsk_update(self) -> None:
-        """每 14 天跑一次 bsk 更新检查（复用 scripts\\check_bsk_update.ps1，逻辑不重写）。
+        """跑一次 bsk 更新检查（复用 scripts\\check_bsk_update.ps1，逻辑不重写）。
 
         用独立戳文件记时间，不碰 views.AUTOMATION_RUNTIME_PATH 那份共享 state——避免和 morning
         流程并发写同一个文件互相覆盖。检查失败也落戳（失败原因由脚本自己写进
