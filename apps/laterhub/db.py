@@ -168,6 +168,11 @@ class DBManager:
             )
             return int(cursor.lastrowid)
 
+    def find_url(self, url: str) -> int | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT id FROM links WHERE url = ?", (url,)).fetchone()
+        return int(row["id"]) if row else None
+
     def list_by_status(self, *statuses: str):
         if not statuses:
             statuses = ("pending",)

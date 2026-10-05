@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlparse
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 
+from apps.laterhub.config import DB_PATH
+from apps.laterhub.db import DBManager, LinkRecord
 from web.services import md_render
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
 from web.services.views import (
@@ -377,6 +379,40 @@ async def bulk_finish_laterhub_action(request: Request):
     actionable_ids = get_laterhub_actionable_ids(params)
     mark_laterhub_finished_bulk(actionable_ids, True)
     return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params, "laterhub_params": build_laterhub_state_params(params)})
+
+
+def add_laterhub_link(url: str, title: str | None) -> dict:
+    """网页剪藏收链（油猴脚本/bookmarklet 等前端的唯一入口）：仅入库为未标签条目。
+
+    打标签全权归属每日 8:10 自动流程（_tag_pending_rows 全表扫无标签行），这里不触发打标；
+    source=manual_verify 复用面板已有的「人工补录」元数据。重复收录复用 upsert 语义：
+    会把已完成状态翻回未完成（重新收录=重新要读）。
+    """
+    if not url or len(url) > 2048:
+        raise ValueError("url 缺失或超长（上限 2048 字符）")
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("url 必须是 http/https 链接")
+    db = DBManager(DB_PATH)
+    duplicated = db.find_url(url) is not None
+    link_id = db.upsert_link(LinkRecord(url=url, title=(title or url)[:500], source="manual_verify"))
+    return {"ok": True, "id": link_id, "duplicated": duplicated}
+
+
+@router.post("/actions/laterhub/add-link")
+async def add_laterhub_link_action(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    url = str(payload.get("url") or "").strip()
+    title = str(payload.get("title") or "").strip() or None
+    try:
+        return add_laterhub_link(url, title)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/actions/source/save")
