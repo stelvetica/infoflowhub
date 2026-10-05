@@ -86,11 +86,16 @@ def _load_state(request: Request, cookie_key: str, builder) -> dict[str, str]:
 
         cookie_params = {key: value for key, value in parse_qsl(cookie_value, keep_blank_values=True)}
     merged = {**cookie_params, **params}
-    return builder(merged)
+    built = builder(merged)
+    # 游标(*_after)是「本次请求」参数而非持久状态：进白名单会被写进 cookie，
+    # 刷新后首屏就跳过前几批；但必须透传给视图，否则续载永远停在首批。
+    return {**built, **{key: value for key, value in merged.items() if key.endswith("_after")}}
 
 
 def _persist_state(response: Response, cookie_key: str, state: dict[str, str]) -> None:
-    value = urlencode({key: value for key, value in state.items() if value != ""})
+    value = urlencode(
+        {key: value for key, value in state.items() if value != "" and not key.endswith("_after")}
+    )
     response.set_cookie(
         cookie_key,
         value=value,
