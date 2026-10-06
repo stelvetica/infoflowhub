@@ -15,6 +15,7 @@ __pycache__/
 data/*.sqlite3
 data/*.db
 data/*.sqlite3.bak
+data/*.sqlite3.bak-*
 data/alphapai_markdown/
 data/reports/
 data/jiuyangongshe_markdown/
