@@ -81,8 +81,8 @@ def check_db(db_arg: str) -> bool:
             "SELECT name FROM sqlite_master WHERE type='table' AND name='links'"
         ).fetchone()
         if not has_links:
-            print(f"[自检] 数据库无 links 表，跳过 DB 校验: {db_path}")
-            return
+            print(f"[自检] 数据库无 links 表，未执行 DB 校验: {db_path}")
+            return False
         bad: set[str] = set()
         checked = 0
         for row in conn.execute("SELECT tags FROM links WHERE COALESCE(TRIM(tags), '') <> ''").fetchall():
@@ -95,6 +95,7 @@ def check_db(db_arg: str) -> bool:
                     bad.add(tag)
         assert not bad, f"数据库存在非白名单标签: {sorted(bad)}"
         print(f"[自检] DB 校验通过: {db_path}（检查了 {checked} 个非空标签项，全部在白名单内）")
+        return True
     finally:
         conn.close()
 
