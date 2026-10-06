@@ -92,12 +92,12 @@ def test_primary_auth_error_still_tries_backup(monkeypatch):
     """主家 401 也照样试备用——备用用的是另一套 key，很可能就能用。"""
     calls = _patch_post(
         monkeypatch,
-        {PRIMARY.model: _http_error(401), BACKUP.model: _ok('{"tags": ["文化-哲学/文学/艺术/音乐"]}')},
+        {PRIMARY.model: _http_error(401), BACKUP.model: _ok('{"tags": ["娱乐-文学/解说"]}')},
     )
 
     tags = ContentTagger(PRIMARY, backup_config=BACKUP).tag(title="标题", source="bilibili_watchlater")
 
-    assert tags == "文化-哲学/文学/艺术/音乐"
+    assert tags == "娱乐-文学/解说"
     assert calls == [PRIMARY.model, BACKUP.model]
 
 

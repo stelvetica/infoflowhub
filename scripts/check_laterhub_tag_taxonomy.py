@@ -1,4 +1,4 @@
-"""laterhub 标签体系 v2 最小自检（无框架、无 fixture）。
+"""laterhub 标签体系 v3 最小自检（无框架、无 fixture）。
 
 运行：python scripts/check_laterhub_tag_taxonomy.py [--db <sqlite 路径>]
 通过时退出码 0；任一断言失败即抛错退出非 0。
@@ -24,8 +24,37 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-DEPRECATED_MARKERS = ("人文-", "解说-", "技术-英语/写作", "技术-摄影/剪辑", "技术-音乐/唱歌", "社科-金融/商业/经济")
-APPROX_UNKNOWN = ("人文-哲学", "人文-玄学", "解说-文学", "解说-影视/游戏/动漫", "娱乐-综艺", "社科-金融/商业/经济")
+TAG_COUNT = 30
+
+# v2 → v3 被拆分的旧标签：必须从白名单与提示词中彻底消失。
+# 用"解析出的标签集合"做精确成员判断，而非子串匹配——「娱乐-影视/游戏/动漫」是 v3
+# 合法标签「娱乐-影视/游戏/动漫/解说」的前缀，子串判断会误报。
+DEPRECATED_TAGS = (
+    "技术-创作/表达",
+    "技术-效率/工具/开发",
+    "技术-科学/科普",
+    "社科-金融/商业/消费",
+    "社科-社会/时政",
+    "文化-哲学/文学/艺术/音乐",
+    "文化-玄学",
+    "生活-健康/健身",
+    "生活-穿搭/保养",
+    "生活-美食/旅行",
+    "娱乐-影视/游戏/动漫",
+    "娱乐-综艺/吃瓜",
+)
+APPROX_UNKNOWN = (
+    "人文-哲学",
+    "人文-玄学",
+    "解说-文学",
+    "解说-影视/游戏/动漫",
+    "技术-英语/写作",
+    "技术-摄影/剪辑",
+    "技术-音乐/唱歌",
+    "社科-金融/商业/经济",
+    "文化-哲学",
+    "技术-创作",
+)
 
 
 def parse_prompt_tags(prompt: str) -> list[str]:
@@ -42,29 +71,35 @@ def check_prompt_whitelist_consistency() -> None:
         f"提示词标签与 TAG_OPTIONS 不一致: 仅提示词={set(prompt_tags) - set(TAG_OPTIONS)}, "
         f"仅白名单={set(TAG_OPTIONS) - set(prompt_tags)}"
     )
-    assert len(prompt_tags) == len(TAG_OPTIONS) == 19, f"标签数量异常: prompt={len(prompt_tags)} options={len(TAG_OPTIONS)}"
+    assert len(prompt_tags) == len(TAG_OPTIONS) == TAG_COUNT, (
+        f"标签数量异常: prompt={len(prompt_tags)} options={len(TAG_OPTIONS)} 期望={TAG_COUNT}"
+    )
     assert prompt_tags == TAG_OPTIONS, "提示词标签顺序应与 TAG_OPTIONS 一致"
 
 
 def check_no_deprecated() -> None:
-    for marker in DEPRECATED_MARKERS:
-        assert marker not in SYSTEM_PROMPT, f"提示词残留已废弃标签片段: {marker}"
-        assert not any(marker in tag for tag in TAG_OPTIONS), f"白名单残留已废弃标签片段: {marker}"
-    print("[自检] 提示词与白名单均无已废弃标签")
+    prompt_tags = set(parse_prompt_tags(SYSTEM_PROMPT))
+    for tag in DEPRECATED_TAGS:
+        assert tag not in prompt_tags, f"提示词残留已废弃标签: {tag}"
+        assert tag not in TAG_WHITELIST, f"白名单残留已废弃标签: {tag}"
+    print(f"[自检] 提示词与白名单均无 {len(DEPRECATED_TAGS)} 个已废弃标签")
 
 
 def check_normalize() -> None:
     assert DEFAULT_TAG in TAG_WHITELIST, f"DEFAULT_TAG 不在白名单: {DEFAULT_TAG}"
-    assert len(TAG_OPTIONS) == 19
+    assert len(TAG_OPTIONS) == TAG_COUNT
     for tag in TAG_OPTIONS:
         assert normalize_tag(tag) == tag, f"合法标签未原样归一化: {tag}"
     for bad in APPROX_UNKNOWN:
         assert normalize_tag(bad) is None, f"近似/废弃串不应命中白名单: {bad}"
+    for bad in DEPRECATED_TAGS:
+        assert normalize_tag(bad) is None, f"已废弃标签不应命中白名单: {bad}"
     assert parse_tags_text("未知标签A,未知标签B") == [DEFAULT_TAG], "全未知输入应兜底为 DEFAULT_TAG"
     assert parse_tags_text("解说-文学") == [DEFAULT_TAG]
+    assert parse_tags_text("娱乐-影视/游戏/动漫") == [DEFAULT_TAG]
     assert parse_tags_text(None) == [DEFAULT_TAG]
     assert parse_tags_text("技术-AI,技术-AI") == ["技术-AI"]
-    print("[自检] 19 个合法标签原样通过；近似/废弃串返回 None；未知输入兜底为", DEFAULT_TAG)
+    print(f"[自检] {TAG_COUNT} 个合法标签原样通过；近似/废弃串返回 None；未知输入兜底为 {DEFAULT_TAG}")
 
 
 def check_db(db_arg: str) -> bool:
@@ -101,7 +136,7 @@ def check_db(db_arg: str) -> bool:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="laterhub 标签体系 v2 自检")
+    parser = argparse.ArgumentParser(description="laterhub 标签体系 v3 自检")
     parser.add_argument("--db", default="", help="可选：校验指定 SQLite；缺省用 apps.laterhub.config.DB_PATH")
     return parser.parse_args(argv)
 
