@@ -66,12 +66,12 @@ def test_primary_http_400_falls_through_to_backup(monkeypatch):
     """主家 400（网关瞬时拒绝）必须换备用，而不是直接判死。"""
     calls = _patch_post(
         monkeypatch,
-        {PRIMARY.model: _http_error(400), BACKUP.model: _ok('{"tags": ["技术-AI"]}')},
+        {PRIMARY.model: _http_error(400), BACKUP.model: _ok('{"tags": ["技术_AI"]}')},
     )
 
     tags = ContentTagger(PRIMARY, backup_config=BACKUP).tag(title="标题", source="douyin_favorite")
 
-    assert tags == "技术-AI"
+    assert tags == "技术_AI"
     assert calls == [PRIMARY.model, BACKUP.model]
 
 
@@ -79,12 +79,12 @@ def test_primary_null_content_falls_through_to_backup(monkeypatch):
     """content 为 null（思考模型耗尽 max_tokens）也必须换备用。"""
     calls = _patch_post(
         monkeypatch,
-        {PRIMARY.model: _null_content(), BACKUP.model: _ok('{"tags": ["心理-认知"]}')},
+        {PRIMARY.model: _null_content(), BACKUP.model: _ok('{"tags": ["心理_认知/学习"]}')},
     )
 
     tags = ContentTagger(PRIMARY, backup_config=BACKUP).tag(title="标题", source="douyin_favorite")
 
-    assert tags == "心理-认知"
+    assert tags == "心理_认知/学习"
     assert calls == [PRIMARY.model, BACKUP.model]
 
 
@@ -92,22 +92,22 @@ def test_primary_auth_error_still_tries_backup(monkeypatch):
     """主家 401 也照样试备用——备用用的是另一套 key，很可能就能用。"""
     calls = _patch_post(
         monkeypatch,
-        {PRIMARY.model: _http_error(401), BACKUP.model: _ok('{"tags": ["娱乐-文学/解说"]}')},
+        {PRIMARY.model: _http_error(401), BACKUP.model: _ok('{"tags": ["娱乐_文学/解说"]}')},
     )
 
     tags = ContentTagger(PRIMARY, backup_config=BACKUP).tag(title="标题", source="bilibili_watchlater")
 
-    assert tags == "娱乐-文学/解说"
+    assert tags == "娱乐_文学/解说"
     assert calls == [PRIMARY.model, BACKUP.model]
 
 
 def test_primary_success_never_calls_backup(monkeypatch):
     """主家成功就不该多花一次备用调用。"""
-    calls = _patch_post(monkeypatch, {PRIMARY.model: _ok('{"tags": ["技术-AI"]}')})
+    calls = _patch_post(monkeypatch, {PRIMARY.model: _ok('{"tags": ["技术_AI"]}')})
 
     tags = ContentTagger(PRIMARY, backup_config=BACKUP).tag(title="标题", source="douyin_favorite")
 
-    assert tags == "技术-AI"
+    assert tags == "技术_AI"
     assert calls == [PRIMARY.model]
 
 
