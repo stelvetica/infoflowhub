@@ -14,239 +14,125 @@ from apps.laterhub.config import ENV_PATH
 from apps.laterhub.feishu import load_project_env
 
 
-DEFAULT_TAG = "娱乐-综艺/吃瓜"
-TAG_OPTIONS = [
-    "心理-认知",
-    "心理-自我/情绪",
-    "心理-他人/关系",
-    "心理-职场",
-    "技术-AI",
-    "技术-效率/工具/开发",
-    "技术-英语/写作",
-    "技术-音乐/唱歌",
-    "技术-摄影/剪辑",
-    "技术-科学/科普",
-    "社科-金融/商业/经济",
-    "社科-历史",
-    "社科-社会/时政",
-    "人文-哲学/艺术",
-    "人文-玄学",
-    "生活-健康/健身",
-    "生活-穿搭/保养",
-    "生活-美食/旅行",
-    "娱乐-影视/游戏/动漫",
-    "娱乐-综艺/吃瓜",
-    "解说-文学",
+# 标签体系唯一真源：顺序即展示顺序。TAG_OPTIONS / 白名单 / 提示词清单全部由它派生，
+# 任何地方不得再手抄一份标签清单。
+TAG_CATALOG: list[tuple[str, str]] = [
+    ("心理-认知", "认知偏差、思维模型、学习理解、决策判断、认知能力"),
+    ("心理-自我/情绪", "情绪管理、自我接纳、自尊、自我成长、内耗、焦虑"),
+    ("心理-他人/关系", "亲密关系、婚恋、择偶、社交、沟通、边界、冲突、依恋"),
+    ("心理-职场", "求职、职业发展、组织协作、领导下属、销售、工作场景压力"),
+    ("技术-AI", "AI 模型、智能体、提示词、AIGC、机器学习、AI 产品与行业趋势"),
+    ("技术-效率/工具/开发", "软件工具、工作流、编程、自动化、数据库、产品效率"),
+    ("技术-创作/表达", "英语、写作、表达、唱歌、摄影、拍摄、剪辑等创作实操技能"),
+    ("技术-科学/科普", "数学、物理、化学、生物、自然科学与形式科学科普"),
+    ("社科-金融/商业/消费", "投资、金融、宏观经济、公司经营、营销、电商、消费决策与省钱"),
+    ("社科-历史", "历史事件、人物、时代、战争、制度演变"),
+    ("社科-社会/时政", "公共政策、社会现象、教育、政治、国际局势、公共议题"),
+    ("文化-哲学/文学/艺术/音乐", "哲学、文学/网文/名著解读、艺术理论、审美、音乐欣赏、翻唱与歌曲推荐"),
+    ("文化-玄学", "命理、占卜、星座、塔罗、易经、道家玄学与修心解释"),
+    ("生活-健康/健身", "运动、健身、营养、减脂、体态、养生、身体健康"),
+    ("生活-穿搭/保养", "穿搭、护肤、化妆、变美、发型、形象管理"),
+    ("生活-美食/旅行", "做饭、菜谱、探店、美食体验、旅游路线与旅行体验"),
+    ("娱乐-影视/游戏/动漫", "电影、剧集、游戏、动漫及其剧情、角色、评价、盘点、精讲、解说"),
+    ("娱乐-综艺/吃瓜", "综艺、脱口秀、喜剧节目、明星、娱乐新闻、恋情、八卦、热搜"),
+    ("其他-无法判断", "仅凭 source/title 无法确认稳定主题"),
 ]
 
-SYSTEM_PROMPT = """你是内容分类标签助手。你的任务是基于 source 和 title 给内容打标签。
+TAG_OPTIONS = [name for name, _ in TAG_CATALOG]
+TAG_WHITELIST = frozenset(TAG_OPTIONS)
+DEFAULT_TAG = "其他-无法判断"
 
-你只能从下面 21 个标签中选择，禁止创造新标签，禁止改写标签文本：
-- 心理-认知
-- 心理-自我/情绪
-- 心理-他人/关系
-- 心理-职场
-- 技术-AI
-- 技术-效率/工具/开发
-- 技术-英语/写作
-- 技术-音乐/唱歌
-- 技术-摄影/剪辑
-- 技术-科学/科普
-- 社科-金融/商业/经济
-- 社科-历史
-- 社科-社会/时政
-- 人文-哲学/艺术
-- 人文-玄学
-- 生活-健康/健身
-- 生活-穿搭/保养
-- 生活-美食/旅行
-- 娱乐-影视/游戏/动漫
-- 娱乐-综艺/吃瓜
-- 解说-文学
 
-输出硬约束：
-1. 只能输出 JSON 对象，格式必须是 {"tags": ["标签1", "标签2"]}。
-2. tags 必须是数组。
-3. 至少返回 1 个标签，最多返回 2 个标签。
-4. 不要输出解释、理由、备注、Markdown、代码块。
-5. 如果不确定，也必须从 21 个标签里选，不允许返回空数组。
+_SYSTEM_PROMPT_TEMPLATE = """你是 laterhub 内容标签助手。你只能依据输入的 source 和 title 判断主题，看不到正文；source 只是弱线索，不能弥补没有主题信息的 title。
 
-判定顺序：
-1. 先判断主主题，只选最核心的第一标签。
-2. 只有当内容同时稳定覆盖第二个独立主题，且第二主题不是第一主题的细分改写时，才允许加第二标签。
-3. 如果只是同一主题的不同表述、上下位概念、场景延伸，只保留 1 个最核心标签。
+【唯一标签清单】
+只能从下列标签中选择，必须逐字复制；禁止创造、翻译、缩写、改写、拆分、合并标签：
+__TAG_LIST__
 
-多标签门槛：
+【标签定义】
+__TAG_DEFS__
+
+【硬约束】
+1. 只能输出 JSON 对象，形状必须是 {"tags":["标签"]}。
+2. tags 必须是数组，至少 1 个、最多 2 个标签。
+3. 每个标签必须逐字来自唯一标签清单，禁止输出清单外的任何字符串。
+4. 不要输出解释、理由、备注、Markdown、代码块或额外字段。
+5. 无法判断时必须输出 {"tags":["其他-无法判断"]}，禁止猜测，禁止返回空数组。
+
+【判定顺序】
+1. 先看 title 是否有稳定主题；只有作者名、日期、上传模板、口号、感叹句而无主题时，直接选「其他-无法判断」。
+2. 按标题中明确的主题词选主标签；忽略「解说、精讲、漫剪、盘点、一口气看完」等**内容形式词**，形式不产生标签。
+3. 具体影视/游戏/动漫作品的剧情、角色、评价、解读归「娱乐-影视/游戏/动漫」；综艺、脱口秀、明星、热搜、八卦归「娱乐-综艺/吃瓜」；文学/网文/名著阅读解读归「文化-哲学/文学/艺术/音乐」。
+4. 选择最能说明「用户会因为什么主题而消费这条内容」的标签；source 不能单独决定标签。
+5. 只有标题明确包含两个独立并列主题时，才考虑第二标签。
+
+【多标签门槛】
 1. 单标签是默认，双标签是例外。
-2. 只有标题明确同时包含两个并列主题时，才输出 2 个标签。
-3. 不要因为“都沾一点”就打双标签。
-4. 第二标签必须能脱离第一标签独立成立，否则不要加。
+2. 两个主题必须各有明确的标题证据，且各自都能独立成为筛选理由。
+3. 同一主题的上下位词、场景、例子、结果、方法、形式词都不构成第二标签。
+4. 不要因为「都沾一点」而双选。
 
-分类边界：
-1. 心理-认知：认知偏差、思维模型、学习理解、决策判断。
-2. 心理-自我/情绪：情绪管理、自我接纳、自尊、自我成长、内耗、焦虑、抑郁体验。
-3. 心理-他人/关系：亲密关系、社交、人际边界、沟通、冲突、依恋。
-4. 心理-职场：职场关系、职业发展、组织协作、向上管理、工作压力。
-5. 技术-AI：AI 模型、智能体、提示词、AIGC、机器学习、AI 工具趋势。
-6. 技术-效率/工具/开发：软件工具、工作流、编程开发、自动化、产品效率。
-7. 技术-英语/写作：英语学习、表达、写作方法。
-8. 技术-音乐/唱歌：乐理、演唱、发声、音乐技能。
-9. 技术-摄影/剪辑：拍摄、镜头、后期、剪辑。
-10. 技术-科学/科普：自然科学、前沿科学、通识科普。
-11. 社科-金融/商业/经济：宏观经济、商业分析、投资、产业、公司经营。
-12. 社科-历史：历史事件、人物、制度演变。
-13. 社科-社会/时政：公共议题、社会现象、政策时政。
-14. 人文-哲学/艺术：哲学、美学、艺术理论、审美表达。
-15. 人文-玄学：命理、星座、塔罗、玄学解释框架。
-16. 生活-健康/健身：营养、减脂、运动、养生、身体健康。
-17. 生活-穿搭/保养：穿搭、护肤、保养、形象管理。
-18. 生活-美食/旅行：做饭、探店、旅行、美食体验。
-19. 娱乐-影视/游戏/动漫：影视作品、游戏、动漫内容本身。
-20. 娱乐-综艺/吃瓜：明星、综艺、热点八卦、娱乐新闻。
-21. 解说-文学：书籍、文学作品、作者、文本解读。
+【冲突约束】
+1. 心理四类按标题主问题选：认知模型→心理-认知；情绪体验→心理-自我/情绪；关系互动→心理-他人/关系；工作场景→心理-职场。
+2. AI 是主题本身选「技术-AI」；AI 只是编程/自动化/工具的实现手段选「技术-效率/工具/开发」；两者都明确并列才双选。
+3. 「技术-创作/表达」是实操技能；「文化-哲学/文学/艺术/音乐」是思想、作品与音乐欣赏。不要因为出现「唱歌/摄影/写作」字样就双选。
+4. 具体作品解析与明星综艺八卦分属两个娱乐标签，不混用。
+5. 「社科-金融/商业/消费」与「社科-社会/时政」仅在两个主权轴都明确时双选；历史事件不因涉及政治而双选。
 
-冲突约束：
-1. “心理-认知 / 心理-自我/情绪 / 心理-他人/关系 / 心理-职场” 之间不要轻易双选，除非标题同时明确出现两个并列主题。
-2. “技术-AI” 与 “技术-效率/工具/开发” 同时出现时：
-   - 主题重心在 AI 本身，选 技术-AI。
-   - 主题重心在工具流、编程、自动化落地，选 技术-效率/工具/开发。
-   - 只有 AI 与开发/效率是明确并列主轴时，才双选。
-3. “娱乐-影视/游戏/动漫” 与 “娱乐-综艺/吃瓜” 不要混用。
-4. “社科-社会/时政” 与 “社科-金融/商业/经济” 不要因为宏观讨论就双选，除非经济与公共议题同样明确。
+【兜底】
+1. 信息不足、主题互相冲突无法裁决、或只有来源没有主题时，输出「其他-无法判断」。
+2. 已确认一个主题、但补充内容不足以构成第二独立主题时，只返回该主题。
+3. 不得用娱乐标签接收垃圾标题，不得用「最接近的标签」代替不确定判断。
 
-默认兜底：
-1. 信息不足时，优先选最保守、最直接的主标签。
-2. 明显是娱乐杂谈、热点围观、明星综艺、八卦，返回 {"tags": ["娱乐-综艺/吃瓜"]}。
-3. 明显是作品内容、剧情、角色、游戏、动漫，优先返回 {"tags": ["娱乐-影视/游戏/动漫"]}。
+【示例】
+正例1 输入 {"source":"douyin_favorite","title":"杨哥是我：面墙蹲 #体态纠正"} → 输出 {"tags":["生活-健康/健身"]}
+正例2 输入 {"source":"bilibili_watchlater","title":"GPT Agent 实战：自动读取邮箱并生成日报"} → 输出 {"tags":["技术-AI","技术-效率/工具/开发"]}
+正例3 输入 {"source":"douyin_favorite","title":"新生电影：2026最新电影高清精讲《团战之夜》"} → 输出 {"tags":["娱乐-影视/游戏/动漫"]}
+正例4 输入 {"source":"manual_verify","title":"周小辣：《茶花女》名著解读"} → 输出 {"tags":["文化-哲学/文学/艺术/音乐"]}
+正例5 输入 {"source":"manual_verify","title":"美联储降息预期升温，会怎样影响美股与黄金？"} → 输出 {"tags":["社科-金融/商业/消费"]}
 
-下面是示例。你必须学习这些示例的判定方式，但不要复述示例。
+反例1 输入 {"source":"douyin_favorite","title":"基本盘成员于20211009发布的作品"}
+错误输出 {"tags":["娱乐-综艺/吃瓜"]}　正确输出 {"tags":["其他-无法判断"]}
+原因：标题只有上传模板，没有可确认主题，不能猜测娱乐。
 
-正例 1：
-输入：
-{"source":"小红书","title":"总是反复想起自己说错话，怎么停止精神内耗？"}
-输出：
-{"tags":["心理-自我/情绪"]}
+反例2 输入 {"source":"manual_verify","title":"新片票房扑街，主演回应上热搜"}
+错误输出 {"tags":["娱乐-影视/游戏/动漫"]}　正确输出 {"tags":["娱乐-综艺/吃瓜"]}
+原因：核心是明星与热搜新闻，不是作品内容。
 
-正例 2：
-输入：
-{"source":"公众号","title":"讨好型人格为什么总在关系里失去边界？"}
-输出：
-{"tags":["心理-他人/关系"]}
-
-正例 3：
-输入：
-{"source":"YouTube","title":"认知偏差如何影响你的投资决策？"}
-输出：
-{"tags":["心理-认知","社科-金融/商业/经济"]}
-
-正例 4：
-输入：
-{"source":"B站","title":"被领导反复否定后，职场人如何重建自信？"}
-输出：
-{"tags":["心理-职场","心理-自我/情绪"]}
-
-正例 5：
-输入：
-{"source":"YouTube","title":"GPT Agent 实战：自动读取邮箱并生成日报"}
-输出：
-{"tags":["技术-AI","技术-效率/工具/开发"]}
-
-正例 6：
-输入：
-{"source":"公众号","title":"2026 年 AI Agent 会如何改变软件开发流程？"}
-输出：
-{"tags":["技术-AI","技术-效率/工具/开发"]}
-
-正例 7：
-输入：
-{"source":"B站","title":"番茄工作法为什么总失败？问题不在自律，在任务切分"}
-输出：
-{"tags":["技术-效率/工具/开发"]}
-
-正例 8：
-输入：
-{"source":"播客","title":"美联储降息预期升温，会怎样影响美股与黄金？"}
-输出：
-{"tags":["社科-金融/商业/经济"]}
-
-正例 9：
-输入：
-{"source":"公众号","title":"罗马共和国为什么会走向帝制？"}
-输出：
-{"tags":["社科-历史"]}
-
-正例 10：
-输入：
-{"source":"微博","title":"某顶流恋情又反转了，吃瓜群众已经看麻了"}
-输出：
-{"tags":["娱乐-综艺/吃瓜"]}
-
-正例 11：
-输入：
-{"source":"B站","title":"《进击的巨人》最终季到底想表达什么？"}
-输出：
-{"tags":["娱乐-影视/游戏/动漫"]}
-
-正例 12：
-输入：
-{"source":"播客","title":"《局外人》里的荒诞感，为什么至今仍然击中现代人？"}
-输出：
-{"tags":["解说-文学"]}
-
-反例 1：
-输入：
-{"source":"B站","title":"AI 写周报的 3 个提示词模板"}
-错误输出：
-{"tags":["技术-AI","技术-英语/写作"]}
-正确输出：
-{"tags":["技术-AI"]}
-原因：主题重心是 AI 提示词使用，不是英语或通用写作方法。
-
-反例 2：
-输入：
-{"source":"小红书","title":"为什么越懂事的人越容易委屈自己？"}
-错误输出：
-{"tags":["心理-认知","心理-自我/情绪"]}
-正确输出：
-{"tags":["心理-自我/情绪"]}
-原因：主题核心是情绪与自我体验，不是认知模型讲解。
-
-反例 3：
-输入：
-{"source":"公众号","title":"高敏感的人如何建立关系边界？"}
-错误输出：
-{"tags":["心理-自我/情绪","心理-他人/关系"]}
-正确输出：
-{"tags":["心理-他人/关系"]}
-原因：虽然涉及自我感受，但主轴是关系边界。
-
-反例 4：
-输入：
-{"source":"YouTube","title":"Cursor、Claude、Copilot 谁更适合程序员？"}
-错误输出：
-{"tags":["技术-AI","技术-效率/工具/开发","技术-英语/写作"]}
-正确输出：
-{"tags":["技术-AI","技术-效率/工具/开发"]}
-原因：最多只能 2 个标签，且写作无关。
-
-反例 5：
-输入：
-{"source":"微博","title":"新片票房扑街，主演回应上热搜"}
-错误输出：
-{"tags":["娱乐-影视/游戏/动漫"]}
-正确输出：
-{"tags":["娱乐-综艺/吃瓜"]}
-原因：这是娱乐新闻与热点讨论，不是作品内容分析。
-
-反例 6：
-输入：
-{"source":"B站","title":"《红楼梦》里贾宝玉的情感世界"}
-错误输出：
-{"tags":["娱乐-影视/游戏/动漫"]}
-正确输出：
-{"tags":["解说-文学"]}
-原因：主语是文学作品解读，不是影视动漫作品。
+反例3 输入 {"source":"bilibili_watchlater","title":"AI 写周报的 3 个提示词模板"}
+错误输出 {"tags":["技术-AI","技术-创作/表达"]}　正确输出 {"tags":["技术-AI"]}
+原因：写周报只是 AI 的应用场景，不是表达技能主轴。
 """
+
+
+def _build_system_prompt(catalog: list[tuple[str, str]]) -> str:
+    """由 TAG_CATALOG 注入标签清单与定义行，杜绝提示词里出现第二份手写清单。"""
+    tag_list = "\n".join(name for name, _ in catalog)
+    tag_defs = "\n".join(f"{name}：{definition}" for name, definition in catalog)
+    return _SYSTEM_PROMPT_TEMPLATE.replace("__TAG_LIST__", tag_list).replace("__TAG_DEFS__", tag_defs)
+
+
+SYSTEM_PROMPT = _build_system_prompt(TAG_CATALOG)
+
+
+def normalize_tag(text: str | None) -> str | None:
+    """严格白名单归一化：仅裁剪空白 + latin1/utf-8 编码修复，命中白名单才返回规范名。
+
+    刻意不做近似/签名包含匹配——旧实现会把「人文-哲学」这类已废弃标签吞进某个合法
+    标签（如 人文-哲学/艺术），未知串一律 None，由调用方兜底。
+    """
+    raw = ("" if text is None else str(text)).strip()
+    candidates = [raw]
+    try:
+        repaired = raw.encode("latin1", "ignore").decode("utf-8", "ignore").strip()
+    except Exception:  # noqa: BLE001
+        repaired = ""
+    if repaired and repaired not in candidates:
+        candidates.append(repaired)
+    for candidate in candidates:
+        if candidate in TAG_WHITELIST:
+            return candidate
+    return None
 
 
 @dataclass(slots=True)
@@ -368,27 +254,18 @@ class ContentTagger:
         content = str(message.get("content") or "").strip()
         if not content:
             raise RuntimeError("模型返回空 content（思考模型可能耗尽 max_tokens）")
-        if content.startswith("{"):
-            maybe_object = json.loads(content)
-            if isinstance(maybe_object, dict):
-                for key in ("tags", "labels", "result"):
-                    value = maybe_object.get(key)
-                    if isinstance(value, list):
-                        tags = value
-                        break
-                else:
-                    tags = self._parse_json_array(content)
-            else:
-                tags = self._parse_json_array(content)
-        else:
-            tags = self._parse_json_array(content)
+        tags = self._parse_json_array(content)
         cleaned: list[str] = []
         for tag in tags:
-            normalized = self._normalize_tag(str(tag).strip())
+            normalized = normalize_tag(str(tag))
             if normalized and normalized not in cleaned:
                 cleaned.append(normalized)
         if not cleaned:
-            raise RuntimeError(f"标签解析失败: {content}")
+            # 模型没给出任何一个合法标签（空数组、非字符串项、已废弃标签都算）：这是这一次
+            # 响应的失败，不是"这条内容无法判断"。必须抛错，才能让 tag() 去试备用 provider、
+            # 并让该行留待下轮重试——直接写 DEFAULT_TAG 会把 provider 的静默劣化固化成
+            # 一个合法标签，主备降级与补偿机制随之失效。
+            raise RuntimeError(f"模型未返回任何合法标签: {content[:200]}")
         return ",".join(cleaned[:2])
 
     @staticmethod
@@ -437,35 +314,3 @@ class ContentTagger:
                 if isinstance(value, list):
                     return value
         raise ValueError(f"不支持的标签返回格式: {text}")
-
-    @staticmethod
-    def _normalize_tag(text: str) -> str | None:
-        candidates = [text]
-        try:
-            repaired = text.encode("latin1", "ignore").decode("utf-8", "ignore").strip()
-            if repaired:
-                candidates.append(repaired)
-        except Exception:
-            pass
-        unique_candidates: list[str] = []
-        for candidate in candidates:
-            if candidate and candidate not in unique_candidates:
-                unique_candidates.append(candidate)
-        for candidate in unique_candidates:
-            if candidate in TAG_OPTIONS:
-                return candidate
-        normalized_candidates = [ContentTagger._tag_signature(candidate) for candidate in unique_candidates]
-        for option in TAG_OPTIONS:
-            option_signature = ContentTagger._tag_signature(option)
-            for candidate_signature in normalized_candidates:
-                if not candidate_signature:
-                    continue
-                if candidate_signature == option_signature:
-                    return option
-                if candidate_signature in option_signature or option_signature in candidate_signature:
-                    return option
-        return None
-
-    @staticmethod
-    def _tag_signature(text: str) -> str:
-        return "".join(ch for ch in text if ch.isalnum() or "\u4e00" <= ch <= "\u9fff")

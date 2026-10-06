@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
+from apps.laterhub.tagger import TAG_OPTIONS
 from apps.subscriptions.config import load_settings, load_sources, save_sources
 from apps.subscriptions.rss_config import BSK_FAILURE_MARKER
 from apps.subscriptions.rss_db import (
@@ -923,13 +924,10 @@ def get_laterhub_view(query: dict[str, str]) -> dict[str, Any]:
     rows, all_rows, selected_tag, scope_counts, filter_scope = _filter_laterhub_rows(query)
     filter_finished = query.get("laterhub_filter_finished", "0")
     sort_rows_with_tiebreak(rows, sort, direction, "id")
-    all_tags_map: dict[str, str] = {}
-    for item in all_rows:
-        for tag in item["tag_list"]:
-            key = normalize_text(tag)
-            if key not in all_tags_map:
-                all_tags_map[key] = tag
-    all_tags = [all_tags_map[key] for key in sorted(all_tags_map.keys())]
+    # 筛选 chip 只输出「TAG_OPTIONS 白名单内、且当前数据确实存在」的标签，并按白名单顺序排列；
+    # DB 里的历史死标签（已下线/非法字符串）不得成为 chip。all_rows 的筛选语义不受影响。
+    present_tag_keys = {normalize_text(tag) for item in all_rows for tag in item["tag_list"]}
+    all_tags = [tag for tag in TAG_OPTIONS if normalize_text(tag) in present_tag_keys]
     batch, next_cursor = take_after_cursor(rows, cursor, sort, direction, "id", LATERHUB_BATCH_SIZE)
     actionable_ids = [int(item["id"]) for item in rows if not item["is_finished"]]
     state_params = build_laterhub_state_params(

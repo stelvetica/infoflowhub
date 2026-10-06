@@ -21,6 +21,7 @@ from apps.laterhub.tagger import (
     TaggerPermanentError,
     TaggerServiceUnavailable,
     TaggerTemporaryError,
+    normalize_tag,
 )
 from connectors._shared.bsk_session import BskRunnerSession
 from connectors.bilibili import fetch_bilibili_watchlater
@@ -58,9 +59,11 @@ def parse_tags_text(tags: str | None) -> list[str]:
     parts = [part.strip() for part in normalized.split(",") if part.strip()]
     deduped: list[str] = []
     for part in parts:
-        if part not in deduped:
-            deduped.append(part)
-    return deduped or [DEFAULT_TAG]
+        # 逐项严格白名单归一化：未知标签直接丢弃，只留合法项，最多 2 个
+        tag = normalize_tag(part)
+        if tag and tag not in deduped:
+            deduped.append(tag)
+    return deduped[:2] or [DEFAULT_TAG]
 
 
 def build_feishu_fields(row: Any) -> dict[str, Any]:
