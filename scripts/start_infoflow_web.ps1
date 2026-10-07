@@ -15,6 +15,7 @@ $bindHost = "127.0.0.1"
 $localUrl = "http://${bindHost}:${port}/"
 $logDir = Join-Path $root "runtime"
 $logPath = Join-Path $logDir "web.log"
+$errPath = Join-Path $logDir "web.err.log"
 
 if (!(Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
 
@@ -68,8 +69,19 @@ Write-Host "[OK] Old processes cleaned" -ForegroundColor Green
 # ============================================================
 Write-Host "=== Phase 2: Starting Web service ===" -ForegroundColor Cyan
 
-$command = "Set-Location '$root'; & '$python' -m uvicorn web.app:app --host $bindHost --port $port *>> '$logPath'"
-Start-Process powershell -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Command", $command -WindowStyle Hidden
+# 输出重定向必须走 Start-Process 的原生句柄，不能用内层 powershell + *>>：
+# PS 流层会把原生子进程 stderr 按 UTF-16 写盘，与 Python 直写的 stdout 字节混成
+# 一个文件两种编码，[bsk]/uvicorn 日志因此乱码不可 grep（2026-10-07 排障实录）。
+# 句柄直写后编码由 python -X utf8 统一为 UTF-8，-u 关掉 stdout 块缓冲保证实时。
+# 分工：web.log = 业务流程 stdout（laterhub 打印、[bilibili_auth]）；web.err.log =
+# 服务与诊断 stderr（uvicorn 日志、错误栈、[bsk] 命令日志）——排障先看后者。
+# Start-Process 重定向为截断写（不支持追加）：日志以「本次启动」为视角，重启即清零。
+Start-Process -FilePath $python `
+    -ArgumentList "-X", "utf8", "-u", "-m", "uvicorn", "web.app:app", "--host", $bindHost, "--port", "$port" `
+    -WorkingDirectory $root `
+    -RedirectStandardOutput $logPath `
+    -RedirectStandardError $errPath `
+    -WindowStyle Hidden
 
 $deadline = (Get-Date).AddSeconds(45)
 $webReady = $false
@@ -84,7 +96,7 @@ do {
     } catch {}
 } while ((Get-Date) -lt $deadline)
 
-if (-not $webReady) { throw "Web service failed to start within 45s: $localUrl (启动报错见 runtime\web.log 末尾)" }
+if (-not $webReady) { throw "Web service failed to start within 45s: $localUrl (启动报错见 runtime\web.err.log 末尾)" }
 
 Write-Host "[OK] Web service running at $localUrl" -ForegroundColor Green
 
