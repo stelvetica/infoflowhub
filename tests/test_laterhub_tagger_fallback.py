@@ -79,12 +79,12 @@ def test_primary_null_content_falls_through_to_backup(monkeypatch):
     """content 为 null（思考模型耗尽 max_tokens）也必须换备用。"""
     calls = _patch_post(
         monkeypatch,
-        {PRIMARY.model: _null_content(), BACKUP.model: _ok('{"tags": ["心理_认知/学习"]}')},
+        {PRIMARY.model: _null_content(), BACKUP.model: _ok('{"tags": ["心理_认知/学习方法"]}')},
     )
 
     tags = ContentTagger(PRIMARY, backup_config=BACKUP).tag(title="标题", source="douyin_favorite")
 
-    assert tags == "心理_认知/学习"
+    assert tags == "心理_认知/学习方法"
     assert calls == [PRIMARY.model, BACKUP.model]
 
 

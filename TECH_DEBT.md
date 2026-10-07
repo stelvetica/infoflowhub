@@ -31,3 +31,4 @@
 | 标签串分隔符三套口径：`apps/laterhub/pipeline.py` `parse_tags_text` / `web/services/utils.py` `split_tags` / `scripts/migrate_laterhub_tags_v4.py` `split_tags` | 三处各认一套分隔符（pipeline 认 `；?？:` 不认 `，！`；web 认 `，、；：;?\|` 不认 `！`；迁移脚本认 `，、；：！!` 不认 `;?？\|`）。库内标签串恒为半角逗号拼接，故三方结论当前一致、未暴露；但只要有人手写别的分隔符，迁移会因「映射表未覆盖」整库拒绝，而 web 与飞书会解析出不同标签数 | 抽一个共享 `split_tag_text()` 供三方共用，分隔符集合以白名单标签的实际形态为准 |
 | `apps/laterhub/db.py` `update_tags()`（标签写入唯一入口） | 不校验也不归一化，任意字符串都能落库。库内一旦出现非规范写法（尾随空格、零宽字符、全角连字符），该行**任何 chip 都筛不到**（chip 只由白名单派生），且下次迁移会整库拒绝 | 在 `update_tags` 内过 `normalize_tag` 再写，非法值拒绝或落 `DEFAULT_TAG` |
 | `apps/laterhub/tagger.py` 把 `title` 原样拼进 user message | 标题未折叠换行、无长度上限：外部内容源可用换行伪造出额外的 `source:` 行与 JSON 行，把分类引导到指定的合法标签（白名单限幅，造不出非法标签，但挡不住选错合法标签）；超长标题整条进 prompt | 折叠换行/控制字符并按字符数截断标题（如 200 字） |
+| `apps/laterhub/tagger.py` 的 `社科_哲学/社会/经济/金融` 与 `社科_艺术/音乐` 合并标签 | 单标签覆盖多个主题域，筛选粒度变粗、且模型在「哲学 vs 社会」上没有细分出口（v5 由 30 减到 27 时按用户要求合并） | 用户要求再细分时拆回独立标签（`TAG_CATALOG` 单点改动即可，派生白名单/提示词自动跟随） |

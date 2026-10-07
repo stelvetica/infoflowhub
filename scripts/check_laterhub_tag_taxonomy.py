@@ -1,4 +1,4 @@
-"""laterhub 标签体系 v3 最小自检（无框架、无 fixture）。
+"""laterhub 标签体系 v5 最小自检（无框架、无 fixture）。
 
 运行：python scripts/check_laterhub_tag_taxonomy.py [--db <sqlite 路径>]
 通过时退出码 0；任一断言失败即抛错退出非 0。
@@ -24,12 +24,25 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-TAG_COUNT = 30
+TAG_COUNT = 27
 
-# v3 → v4 改名后的旧标签：v3 的连字符名必须从白名单与提示词中彻底消失。
-# 用"解析出的标签集合"做精确成员判断，而非子串匹配——「心理_认知」是合法标签
-# 「心理_认知/学习」的前缀，子串判断会误报。
+# v4 → v5 起已消失的旧标签（改名或合并）。用"解析出的标签集合"做精确成员判断，而非子串
+# 匹配——「心理_认知/学习」是「心理_认知/学习方法」的前缀、「社科_哲学」是
+# 「社科_哲学/社会/经济/金融」的前缀、「社科_艺术」是「社科_艺术/音乐」的前缀，子串
+# 判断会把新合法标签误报为废弃。
+# 注意：v4 的另外 22 个名字（心理_他人/关系、技术_AI、生活_*、娱乐_*、其他_无法判断…）
+# 在 v5 仍然合法，本表刻意不收录——收录后"不在白名单"断言必然自相矛盾。
 DEPRECATED_TAGS = (
+    # v4 中已消失的 8 个名（v5 改名/合并掉）
+    "心理_认知/学习",
+    "心理_自我/情绪",
+    "社科_社会",
+    "社科_经济/金融",
+    "社科_哲学",
+    "社科_艺术",
+    "社科_音乐",
+    "社科_玄学",
+    # v3 连字符名（v4 起全部废弃）
     "心理-认知",
     "心理-自我/情绪",
     "心理-他人/关系",
@@ -71,8 +84,12 @@ APPROX_UNKNOWN = DEPRECATED_TAGS + (
     "社科-金融/商业/消费",
     "文化-哲学/文学/艺术/音乐",
     "生活-健康/健身",
+    # 合法 v5 名的前缀 / 已废弃名的近似串：全部必须返回 None，不得被吞进某个合法标签
     "心理_认知",
     "心理_认知/学习/",
+    "心理_自我/情绪/",
+    "社科_艺术/",
+    "社科_音乐/",
 )
 
 
@@ -157,7 +174,7 @@ def check_db(db_arg: str) -> bool:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="laterhub 标签体系 v3 自检")
+    parser = argparse.ArgumentParser(description="laterhub 标签体系 v5 自检")
     parser.add_argument("--db", default="", help="可选：校验指定 SQLite；缺省用 apps.laterhub.config.DB_PATH")
     return parser.parse_args(argv)
 
