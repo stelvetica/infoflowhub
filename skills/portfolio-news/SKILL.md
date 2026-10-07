@@ -38,7 +38,7 @@ description: 分析最新新闻对持仓池标的的利好/利空影响。触发
 3. **维护信息库**（AI）：读 `references/info-template.md`，基于标的池增量更新 `标的信息库.json`。
 4. **产影响分析**（AI）：读 `references/impact-template.md`，基于新闻+信息库产出 `新闻影响分析_YYYY-MM-DD.md`。
 5. **输出框速览**（AI）：在对话回复里附「中强影响标的速览」（口径见"输出质量"，md 结构不因此改动）。
-6. **打开产出**（AI）：完成后自动打开该 md（`python -c "import os; os.startfile(r'<绝对路径>')"`）；**临时 HTML 一律不打开；若任何环节被迫打开了页面，必须立即关闭**。
+6. **打开产出**（AI）：完成后自动打开该 md，固定用 marktext、不走系统关联（`python -c "import subprocess; subprocess.Popen([r'C:\Users\ETT\AppData\Local\Programs\marktext\marktext.exe', r'<绝对路径>'])"`；marktext 缺失则报错停止，不回退 startfile）；**临时 HTML 一律不打开；若任何环节被迫打开了页面，必须立即关闭**。
 
 ## 数据流
 

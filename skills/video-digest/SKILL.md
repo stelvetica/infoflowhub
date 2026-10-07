@@ -59,7 +59,7 @@ cd C:\Users\ETT\Playground\infoflowhub
 | 玄离199 科技补全116 | ✅ 简报 | DeepSeek 插件生态 + GitHub 崩溃/GTA6 泄露等本周科技事件 |
 
 - 失败条目如实说明原因（如"试看片段只有开头 35 秒"、"bijian/jianying 均限流，稍后重试"）。
-- 全部成功后可用 `python -c "import os; os.startfile(r'<产物绝对路径>')"` 打开第一份产物。
+- 全部成功后用 marktext 打开第一份产物（固定不走系统关联）：`python -c "import subprocess; subprocess.Popen([r'C:\Users\ETT\AppData\Local\Programs\marktext\marktext.exe', r'<产物绝对路径>'])"`。
 
 ## 硬约束
 
