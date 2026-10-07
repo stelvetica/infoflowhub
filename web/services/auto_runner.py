@@ -25,10 +25,10 @@ MORNING_START_MINUTE = 10
 CHECK_INTERVAL_SECONDS = 600
 CHECK_INTERVAL_SECONDS_MORNING = 60
 DT_FORMAT = "%Y-%m-%d %H:%M:%S"
-# bsk（BrowserSkill）归本项目自己管：daemon 闲置 10 分钟自退（daemon 日志 idle_secs=600），
-# 原先靠系统计划任务的「每 5 分钟看护触发器」重跑 start_infoflow_stack.ps1 兜住（任务实例即
-# daemon 生命周期）。2026-09-30 起改由本循环保活，系统层只保留「登录时拉起」一条；bsk CLI
-# 更新检查也从系统计划任务搬进这里。两个开关都用 INFOFLOW_* 惯例，默认开。
+# bsk（BrowserSkill）归本项目自己管：daemon 闲置自退，但无需 24 小时常驻保活——需要它的
+# 只有晨间流程与手动「立即获取」，两者开工前都会走抓取侧 ensure_daemon()（用前保活，foreground
+# 子进程拉起，见 bsk_browser._spawn_daemon_foreground）。系统层只保留「登录时拉起」一条；bsk CLI
+# 更新检查 2026-09-30 起也从系统计划任务搬进本循环，开关用 INFOFLOW_* 惯例，默认开。
 #
 # 检查按天跑而非原先的每 14 天：浏览器扩展走 Chrome 自己的渠道随时静默升级，CLI 不会跟着动，
 # 而 check_bsk_update.ps1 会在扩展领先时把 CLI 追平——14 天粒度会让这段错配期长达两周。
@@ -111,13 +111,9 @@ class AutoRunner:
                 await self._maybe_run_morning()
             except Exception:
                 logger.exception("auto-runner 调度循环单次执行失败，已跳过本轮")
-            # bsk 托管（2026-09-30 从系统计划任务搬进来）：保活 daemon + 每天查一次更新。
-            # 各自独立 try：bsk 侧出问题不许影响 morning 流程。
-            if _env_flag_enabled("INFOFLOW_BSK_KEEPALIVE"):
-                try:
-                    await asyncio.to_thread(self._keep_bsk_daemon_alive)
-                except Exception:
-                    logger.exception("bsk daemon 保活失败，已跳过本轮")
+            # bsk 更新检查（2026-09-30 从系统计划任务搬进来）。daemon 不做常驻保活：
+            # 抓取侧开工前的 ensure_daemon() 就是「用前保活」，常驻循环在 Job Object 宿主里
+            # 既拉不动（bsk 拒绝 breakaway）也没必要。
             if _env_flag_enabled("INFOFLOW_BSK_UPDATE_CHECK"):
                 try:
                     await asyncio.to_thread(self._maybe_check_bsk_update)
@@ -150,27 +146,6 @@ class AutoRunner:
             return
 
         await self._do_run_morning(now, today)
-
-    def _keep_bsk_daemon_alive(self) -> None:
-        """bsk daemon 保活：不在就拉起（复用抓取侧同一个 ensure_daemon，单实例由 daemon 自己保证）。
-
-        原先这活由系统计划任务的「每 5 分钟看护触发器」干，现在归本项目自己。ensure_daemon 只跑
-        `bsk status --json` / `bsk daemon start`（都带 BSK_AUTO_START=0），不依赖 session，
-        所以能在调度循环里独立调用；本实例不建 session，with 退出时 stop() 直接返回。
-
-        注意：本循环 tick 间隔（600s）与 daemon 闲置阈值（600s）同量级，daemon 仍可能在两次 tick
-        之间自退——真正保证「抓取时一定在」的是抓取侧开工前的 ensure_daemon()；这里保证的是
-        「大多数时候是热的」，顺带让 browser-skill 的其他使用方不必等冷启动。
-        """
-        from connectors._shared.bsk_browser import BskBrowser
-
-        try:
-            with BskBrowser() as browser:
-                browser.ensure_daemon()
-        except Exception as exc:  # noqa: BLE001
-            # bsk 没装时 BskBrowser() 构造就会抛 BskError；这种情况只留一行可读日志，
-            # 不让调度循环每轮刷一次栈（抓取侧遇到同样情况会各自报自己的错）。
-            logger.warning("bsk daemon 保活跳过：%s", exc)
 
     def _maybe_check_bsk_update(self) -> None:
         """跑一次 bsk 更新检查（复用 scripts\\check_bsk_update.ps1，逻辑不重写）。
