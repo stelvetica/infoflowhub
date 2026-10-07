@@ -1,4 +1,4 @@
-"""laterhub 标签体系 v5 最小自检（无框架、无 fixture）。
+"""laterhub 标签体系 v6 最小自检（无框架、无 fixture）。
 
 运行：python scripts/check_laterhub_tag_taxonomy.py [--db <sqlite 路径>]
 通过时退出码 0；任一断言失败即抛错退出非 0。
@@ -24,16 +24,27 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-TAG_COUNT = 27
+TAG_COUNT = 23
 
-# v4 → v5 起已消失的旧标签（改名或合并）。用"解析出的标签集合"做精确成员判断，而非子串
+# v4 → v5 → v6 起已消失的旧标签（改名或合并）。用"解析出的标签集合"做精确成员判断，而非子串
 # 匹配——「心理_认知/学习」是「心理_认知/学习方法」的前缀、「社科_哲学」是
 # 「社科_哲学/社会/经济/金融」的前缀、「社科_艺术」是「社科_艺术/音乐」的前缀，子串
 # 判断会把新合法标签误报为废弃。
-# 注意：v4 的另外 22 个名字（心理_他人/关系、技术_AI、生活_*、娱乐_*、其他_无法判断…）
-# 在 v5 仍然合法，本表刻意不收录——收录后"不在白名单"断言必然自相矛盾。
+# 注意：v5 中沿用下来的 14 个名字（心理_认知/学习方法、心理_他人/关系、技术_英语、生活_健身、
+# 其他_无法判断…）在 v6 仍然合法，本表刻意不收录——收录后"不在白名单"断言必然自相矛盾。
 DEPRECATED_TAGS = (
-    # v4 中已消失的 8 个名（v5 改名/合并掉）
+    # v5 中已消失的 9 个名（v6 合并/改名掉）
+    "技术_AI",
+    "技术_工具",
+    "技术_开发",
+    "生活_健康",
+    "生活_保养",
+    "娱乐_文学/解说",
+    "娱乐_文学",
+    "娱乐_影视/游戏/动漫/解说",
+    "娱乐_综艺",
+    "娱乐_吃瓜",
+    # v4 中已消失、v6 仍非法的 8 个名
     "心理_认知/学习",
     "心理_自我/情绪",
     "社科_社会",
@@ -84,12 +95,17 @@ APPROX_UNKNOWN = DEPRECATED_TAGS + (
     "社科-金融/商业/消费",
     "文化-哲学/文学/艺术/音乐",
     "生活-健康/健身",
-    # 合法 v5 名的前缀 / 已废弃名的近似串：全部必须返回 None，不得被吞进某个合法标签
+    "娱乐-综艺/吃瓜",
+    # 合法 v6 名的前缀 / 已废弃名的近似串：全部必须返回 None，不得被吞进某个合法标签
     "心理_认知",
     "心理_认知/学习/",
     "心理_自我/情绪/",
     "社科_艺术/",
     "社科_音乐/",
+    "娱乐_文学/",
+    "娱乐_影视/游戏/动漫/",
+    "技术_AI/工具/",
+    "生活_健康/保养/",
 )
 
 
@@ -134,9 +150,9 @@ def check_normalize() -> None:
     assert parse_tags_text("解说-文学") == [DEFAULT_TAG]
     assert parse_tags_text("娱乐-影视/游戏/动漫") == [DEFAULT_TAG]
     assert parse_tags_text(None) == [DEFAULT_TAG]
-    assert parse_tags_text("技术_AI,技术_AI") == ["技术_AI"]
+    assert parse_tags_text("技术_AI/工具/开发,技术_AI/工具/开发") == ["技术_AI/工具/开发"]
     # 尾空格属于可安全裁剪的噪声：normalize_tag 裁剪后应命中合法标签（不是近似匹配）。
-    assert normalize_tag("技术_AI ") == "技术_AI", "尾空格应裁剪后命中合法标签"
+    assert normalize_tag("技术_AI/工具/开发 ") == "技术_AI/工具/开发", "尾空格应裁剪后命中合法标签"
     print(f"[自检] {TAG_COUNT} 个合法标签原样通过；近似/废弃串返回 None；未知输入兜底为 {DEFAULT_TAG}")
 
 
@@ -174,7 +190,7 @@ def check_db(db_arg: str) -> bool:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="laterhub 标签体系 v5 自检")
+    parser = argparse.ArgumentParser(description="laterhub 标签体系 v6 自检")
     parser.add_argument("--db", default="", help="可选：校验指定 SQLite；缺省用 apps.laterhub.config.DB_PATH")
     return parser.parse_args(argv)
 
