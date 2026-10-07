@@ -6,8 +6,8 @@
         <form hx-post="/actions/laterhub/fetch-now?{{ params|urlencode }}" hx-target="#laterhub-panel" hx-swap="innerHTML">
           <button class="btn" type="submit">立即抓取</button>
         </form>
-        <button class="chip laterhub-tags-toggle-btn {% if laterhub.selected_tags %}active{% endif %}" type="button" aria-expanded="false" aria-controls="laterhub-chips">
-          <span>标签</span>{% if laterhub.selected_tags %}<span class="laterhub-tags-count">{{ laterhub.selected_tags|length }}</span>{% endif %}
+        <button class="chip laterhub-tags-toggle-btn {% if laterhub.selected_tags %}active{% endif %}" type="button" aria-expanded="{{ 'true' if laterhub.selected_tags else 'false' }}" aria-controls="laterhub-chips">
+          <span>{{ laterhub.selected_tags[0] if laterhub.selected_tags else '全部标签' }}</span>
         </button>
       </div>
       <form class="toolbar toolbar-inline laterhub-status-form" hx-get="/fragments/laterhub" hx-target="#laterhub-panel" hx-swap="innerHTML">
@@ -30,8 +30,8 @@
       <input type="hidden" name="laterhub_dir" value="{{ laterhub.dir }}">
       <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
       <input type="hidden" name="laterhub_filter_finished" value="{{ laterhub.filter_finished }}">
-      <div class="chips laterhub-chips" id="laterhub-chips" hidden>
-        <button class="chip {% if not laterhub.selected_tags %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="">全部标签</button>
+      {# 有筛选时保持展开，让当前选中的子标签可见；无筛选默认收起，展开由缩放按钮控制 #}
+      <div class="chips laterhub-chips" id="laterhub-chips" {% if not laterhub.selected_tags %}hidden{% endif %}>
         {# 按大主题分组换行：大方向变化处插入换行元素；「其他」不另起一行，与「娱乐」同行 #}
         {% set ns = namespace(prev_group='') %}
         {% for tag in laterhub.all_tags %}

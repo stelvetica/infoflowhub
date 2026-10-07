@@ -609,11 +609,26 @@
     const chips = document.getElementById("laterhub-chips");
     if (!btn || !chips || btn.dataset.ready === "1") return;
     btn.dataset.ready = "1";
+    const setOpen = (open) => {
+      chips.hidden = !open;
+      btn.setAttribute("aria-expanded", String(open));
+      btn.classList.toggle("open", open);
+    };
     btn.addEventListener("click", () => {
-      const willOpen = chips.hidden;
-      chips.hidden = !willOpen;
-      btn.setAttribute("aria-expanded", String(willOpen));
-      btn.classList.toggle("open", willOpen);
+      if (chips.hidden) {
+        setOpen(true);
+        return;
+      }
+      // 收起 = 回到全部标签：清空筛选并走片段刷新（无筛选的面板默认收起）。
+      // 无筛选时仅收起，不做请求。
+      const form = chips.closest("form");
+      const filter = form && form.querySelector('input[name="laterhub_filter_tag"]');
+      if (filter && filter.value) {
+        filter.value = "";
+        form.requestSubmit();
+        return;
+      }
+      setOpen(false);
     });
   }
 
