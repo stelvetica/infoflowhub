@@ -484,17 +484,11 @@ td { font-size: var(--fs-sm); }
 .laterhub-status-select-small { width: 92px; padding-top: 6px; padding-bottom: 6px; }
 .laterhub-filter-label { color: var(--muted); font-size: var(--fs-xs); }
 .laterhub-title-row { flex: 0 0 auto; }
-/* 标签收展:默认收起,点击「标签」按钮展开 chip 列表 */
+/* 标签缩放按钮：兼作「全部标签」——收起时显示当前筛选（无筛选即全部标签），
+   展开时 ▾ 翻转；收起动作会清空筛选并走片段刷新 */
 .laterhub-tags-toggle-btn { display: inline-flex; align-items: center; gap: 4px; }
 .laterhub-tags-toggle-btn::after { content: "▾"; font-size: 9px; color: var(--muted); transition: transform 0.18s ease; }
 .laterhub-tags-toggle-btn.open::after { transform: rotate(180deg); }
-.laterhub-tags-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 15px; height: 15px; padding: 0 4px;
-  border-radius: var(--radius-pill);
-  background: var(--accent); color: #fff;
-  font-size: 10px; line-height: 1;
-}
 .laterhub-chips { margin-top: var(--sp-1); }
 .laterhub-link-cell { padding-right: 4px; }
 .laterhub-link-cell a { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
