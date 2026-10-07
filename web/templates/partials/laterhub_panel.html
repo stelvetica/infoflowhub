@@ -32,7 +32,12 @@
       <input type="hidden" name="laterhub_filter_finished" value="{{ laterhub.filter_finished }}">
       <div class="chips laterhub-chips" id="laterhub-chips" hidden>
         <button class="chip {% if not laterhub.selected_tags %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="">全部标签</button>
+        {# 按大主题分组换行：大方向变化处插入换行元素；「其他」不另起一行，与「娱乐」同行 #}
+        {% set ns = namespace(prev_group='') %}
         {% for tag in laterhub.all_tags %}
+          {% set group = tag.split('_')[0] %}
+          {% if ns.prev_group and group != ns.prev_group and group != '其他' %}<span class="chip-break" aria-hidden="true"></span>{% endif %}
+          {% set ns.prev_group = group %}
           {% set active = tag in laterhub.selected_tags %}
           <button class="chip {% if active %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="{{ '' if active else tag }}">{{ tag }}</button>
         {% endfor %}
