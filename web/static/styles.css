@@ -432,6 +432,14 @@ td { font-size: var(--fs-sm); }
 .chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 /* 大主题分组换行：占满整行的零高元素，在 flex 换行容器里把后续 chip 顶到下一行 */
 .chip-break { flex-basis: 100%; height: 0; }
+/* 行首大方向标签头（如「心理：」），与 chip 垂直居中对齐 */
+.chip-group-label {
+  align-self: center;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  user-select: none;
+}
 .chip {
   padding: 5px 9px;
   border-radius: var(--radius-pill);

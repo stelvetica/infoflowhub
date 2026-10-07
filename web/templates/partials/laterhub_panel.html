@@ -32,15 +32,19 @@
       <input type="hidden" name="laterhub_filter_finished" value="{{ laterhub.filter_finished }}">
       {# 有筛选时保持展开，让当前选中的子标签可见；无筛选默认收起，展开由缩放按钮控制 #}
       <div class="chips laterhub-chips" id="laterhub-chips" {% if not laterhub.selected_tags %}hidden{% endif %}>
-        {# 按大主题分组换行：大方向变化处插入换行元素；「其他」不另起一行，与「娱乐」同行 #}
-        {% set ns = namespace(prev_group='') %}
-        {% for tag in laterhub.all_tags %}
-          {% set group = tag.split('_')[0] %}
-          {% if ns.prev_group and group != ns.prev_group and group != '其他' %}<span class="chip-break" aria-hidden="true"></span>{% endif %}
+        {# 按大主题分组换行，行首显示「大方向：」；chip 只显示 _ 之后的细分（筛选值仍是完整标签名）；
+       「其他」不是独立大方向，不另起行、无行头，与「娱乐」同行 #}
+      {% set ns = namespace(prev_group='') %}
+      {% for tag in laterhub.all_tags %}
+        {% set group = tag.split('_')[0] %}
+        {% if group != ns.prev_group %}
+          {% if ns.prev_group and group != '其他' %}<span class="chip-break" aria-hidden="true"></span>{% endif %}
+          {% if group != '其他' %}<span class="chip-group-label">{{ group }}：</span>{% endif %}
           {% set ns.prev_group = group %}
-          {% set active = tag in laterhub.selected_tags %}
-          <button class="chip {% if active %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="{{ '' if active else tag }}">{{ tag }}</button>
-        {% endfor %}
+        {% endif %}
+        {% set active = tag in laterhub.selected_tags %}
+        <button class="chip {% if active %}active{% endif %}" type="submit" name="laterhub_filter_tag" value="{{ '' if active else tag }}">{{ group if group == '其他' else tag.split('_', 1)[1] }}</button>
+      {% endfor %}
       </div>
     </form>
   </section>
