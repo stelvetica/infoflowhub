@@ -42,7 +42,8 @@ STOP_RETRY_DELAY_SECONDS = 1.5
 # daemon 闲置 10 分钟自退（daemon 日志实测 `daemon exceeded idle threshold; exiting,
 # idle_secs=600`）。本模块所有命令都带 BSK_AUTO_START=0（不让命令顺手拉起），所以定时抓取撞上
 # 它不在时 session start 只会 exit=2 让整源跳过（2026-09-29 08:12 抖音/小黑盒双双被跳过）。
-# 开工前显式拉起一次即可：`bsk daemon start` 本地模式立即返回（实测 0.07s），约 1s 后就绪。
+# 开工前显式拉起一次即可（ensure_daemon → foreground 子进程，见 _spawn_daemon_foreground），
+# 约 1s 后就绪。
 DAEMON_START_WAIT_SECONDS = 5.0
 DAEMON_POLL_INTERVAL_SECONDS = 0.5
 # daemon 起来但没连浏览器（用户没开 Chrome）时，session start 必失败、整批浏览器源全灭。
@@ -119,6 +120,31 @@ def _launch_user_chrome() -> str:
         creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
     )
     return exe
+
+
+# 守住最近一次 foreground daemon 子进程的引用：Popen 未 wait 就被 GC 会刷 ResourceWarning。
+# 单槽即可——daemon 单实例，重复拉起会被 daemon 自己拒绝。
+_last_daemon_proc: "subprocess.Popen[bytes] | None" = None
+
+
+def _spawn_daemon_foreground(command: Sequence[str], log: Callable[[str], None]) -> None:
+    """以前台子进程方式拉起 daemon（不用 `bsk daemon start` 的脱离模式）。
+
+    脱离模式要求进程脱离 Job Object 独立存活，而抓取宿主（登录计划任务拉起的 uvicorn、
+    开发者终端）普遍处在禁止 breakaway 的 Job 里，bsk 检测到后直接拒绝（exit=2，即
+    2026-10-05 下午起保活与人工抓取全灭的根因）。foreground 模式不做脱离，子进程留在
+    宿主的 Job 里与宿主同生共死：宿主（uvicorn/登录脚本）本就是登录会话内的常驻进程，
+    daemon 闲置自退负责收尾。daemon 单实例，与登录脚本已持有的 daemon 并发拉起时这里
+    会立即失败，由随后的 status 轮询确认现状即可。
+    """
+    global _last_daemon_proc
+    _last_daemon_proc = subprocess.Popen(
+        [*command, "daemon", "start", "--foreground"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    log("cmd=daemon start --foreground 已派发（前台子进程，随宿主存活）")
 
 
 def _js_find(selector: str | None, text: str | None, exact: bool) -> str:
@@ -254,13 +280,7 @@ class BskBrowser:
         if payload is None:
             self._log(f"bsk daemon 不在（{reason}），尝试拉起")
             try:
-                self._run(
-                    ["daemon", "start"],
-                    label="daemon start",
-                    check=False,
-                    stop_session_on_timeout=False,
-                    help_watchdog=False,
-                )
+                _spawn_daemon_foreground(self._command, self._log)
             except Exception as exc:  # noqa: BLE001
                 self._log(f"cmd=daemon start err={exc}（继续尝试 session start）")
                 return

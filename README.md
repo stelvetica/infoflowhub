@@ -128,7 +128,7 @@ infoflowhub/
 - `scripts\register_autostart_task.ps1`（注册「InfoFlowHub 开机自启」）——已被统一入口取代。老机上若还留着那条任务，去机器配置仓跑 `manage_startup_items.ps1 -Remove "InfoFlowHub 开机自启"` 删掉。
 - `scripts\register_bsk_update_task.ps1`（注册「bsk 更新检查」）——该检查已下沉进 `web/services/auto_runner.py`（见 `docs/bsk-browser.md`），文件仅留作手动排查用。
 
-**分层规则**（机器配置仓定，改启动项前先读它）：涉及「**开机启动**」的放进机器配置清单；涉及「**持续监控 / 定时 / 看护**」的放进各自项目、由项目启动后自己调用，别放系统层——bsk daemon 保活与更新检查就是这样落在 `auto_runner` 里的。
+**分层规则**（机器配置仓定，改启动项前先读它）：涉及「**开机启动**」的放进机器配置清单；涉及「**持续监控 / 定时 / 看护**」的放进各自项目、由项目启动后自己调用，别放系统层——bsk CLI 更新检查就落在 `auto_runner` 里；daemon 无常驻保活，抓取侧开工前的 `ensure_daemon()` 即「用前保活」（foreground 子进程拉起，见 `docs/bsk-browser.md`）。
 
 ### 可选：浏览器抓取器
 
