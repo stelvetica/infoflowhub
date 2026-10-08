@@ -527,23 +527,41 @@ def get_laterhub_source_stats() -> list[dict[str, Any]]:
     return result
 
 
-def mark_laterhub_finished(link_id: int, finished: bool) -> None:
-    if not LATERHUB_DB_PATH.exists():
-        return
+def _write_laterhub_finished(link_ids: list[int], finished: bool) -> int:
+    """laterhub 完成态的唯一写入点：标完成只写完成；取消完成 = 回到「未处理」。
+
+    取消完成必须连已打开一起清——否则该行既不在「未处理」（排除已打开）也不在
+    「已完成」（只显示完成的），等于没生效。同一条规则见 db.upsert_link 的抓取重命中分支。
+    """
+    if not LATERHUB_DB_PATH.exists() or not link_ids:
+        return 0
+    normalized_ids = sorted({int(link_id) for link_id in link_ids})
+    placeholders = ", ".join("?" for _ in normalized_ids)
+    now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    flag = 1 if finished else 0
     conn = _laterhub_conn()
     try:
-        now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn.execute(
-            """
+        cursor = conn.execute(
+            f"""
             UPDATE links
-            SET is_finished = ?, finished_at = ?, updated_at = ?
-            WHERE id = ?
+            SET is_finished = ?,
+                finished_at = ?,
+                -- CASE 读更新前的值：只把本来就是完成的行推回未处理，未完成的行不动
+                is_opened = CASE WHEN ? = 0 AND is_finished = 1 THEN 0 ELSE is_opened END,
+                opened_at = CASE WHEN ? = 0 AND is_finished = 1 THEN NULL ELSE opened_at END,
+                updated_at = ?
+            WHERE id IN ({placeholders})
             """,
-            (1 if finished else 0, now_text if finished else None, now_text, link_id),
+            (flag, now_text if finished else None, flag, flag, now_text, *normalized_ids),
         )
         conn.commit()
+        return int(cursor.rowcount or 0)
     finally:
         conn.close()
+
+
+def mark_laterhub_finished(link_id: int, finished: bool) -> None:
+    _write_laterhub_finished([link_id], finished)
 
 
 def mark_laterhub_opened(link_id: int, opened: bool = True) -> None:
@@ -571,25 +589,7 @@ def mark_laterhub_opened(link_id: int, opened: bool = True) -> None:
 
 
 def mark_laterhub_finished_bulk(link_ids: list[int], finished: bool) -> int:
-    if not LATERHUB_DB_PATH.exists() or not link_ids:
-        return 0
-    normalized_ids = sorted({int(link_id) for link_id in link_ids})
-    placeholders = ", ".join("?" for _ in normalized_ids)
-    now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    conn = _laterhub_conn()
-    try:
-        cursor = conn.execute(
-            f"""
-            UPDATE links
-            SET is_finished = ?, finished_at = ?, updated_at = ?
-            WHERE id IN ({placeholders})
-            """,
-            (1 if finished else 0, now_text if finished else None, now_text, *normalized_ids),
-        )
-        conn.commit()
-        return int(cursor.rowcount or 0)
-    finally:
-        conn.close()
+    return _write_laterhub_finished(link_ids, finished)
 
 
 def _build_laterhub_rows() -> tuple[list[dict[str, Any]], str, dict[str, int]]:
