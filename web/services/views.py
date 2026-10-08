@@ -528,10 +528,10 @@ def get_laterhub_source_stats() -> list[dict[str, Any]]:
 
 
 def _write_laterhub_finished(link_ids: list[int], finished: bool) -> int:
-    """laterhub 完成态的唯一写入点：标完成只写完成；取消完成 = 回到「未处理」。
+    """laterhub 完成态的唯一写入点：标完成只写完成；取消完成 = 回到「未完成」。
 
-    取消完成必须连已打开一起清——否则该行既不在「未处理」（排除已打开）也不在
-    「已完成」（只显示完成的），等于没生效。同一条规则见 db.upsert_link 的抓取重命中分支。
+    取消完成连已打开一起清，是为了回到干净的待办状态（未读样式）；与抓取再次命中时
+    的规则同源，见 db.upsert_link 的重命中分支。
     """
     if not LATERHUB_DB_PATH.exists() or not link_ids:
         return 0
@@ -546,7 +546,7 @@ def _write_laterhub_finished(link_ids: list[int], finished: bool) -> int:
             UPDATE links
             SET is_finished = ?,
                 finished_at = ?,
-                -- CASE 读更新前的值：只把本来就是完成的行推回未处理，未完成的行不动
+                -- CASE 读更新前的值：只把本来就是完成的行推回未完成，未完成的行不动
                 is_opened = CASE WHEN ? = 0 AND is_finished = 1 THEN 0 ELSE is_opened END,
                 opened_at = CASE WHEN ? = 0 AND is_finished = 1 THEN NULL ELSE opened_at END,
                 updated_at = ?
@@ -648,9 +648,9 @@ def _filter_laterhub_rows(query: dict[str, str]) -> tuple[list[dict[str, Any]], 
             continue
         if filter_finished == "opened" and not item["is_opened"]:
             continue
+        # 「未完成」= 所有没标完成的（点开过也算，读态只决定链接样式）；「已完成」「已打开」
+        # 已从下拉下线，仅 URL 直达这两个旧值时可用。
         if filter_finished == "0" and item["is_finished"]:
-            continue
-        if filter_finished == "0" and item["is_opened"]:
             continue
         if selected_key and selected_key not in item["tag_keys"]:
             continue

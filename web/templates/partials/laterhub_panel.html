@@ -17,10 +17,9 @@
         <input type="hidden" name="laterhub_filter_tag" value="{{ laterhub.selected_tags_text }}">
         <span class="laterhub-filter-label">状态</span>
         <select class="select laterhub-status-select laterhub-status-select-small" name="laterhub_filter_finished" aria-label="按状态筛选" onchange="this.form.requestSubmit()">
+          {# 只留「未完成/全部」，未完成为默认；后端仍认 1/opened 两个旧值（URL 直达），下拉不再暴露 #}
+          <option value="0" {% if laterhub.filter_finished == '0' %}selected{% endif %}>未完成</option>
           <option value="" {% if laterhub.filter_finished == '' %}selected{% endif %}>全部</option>
-          <option value="1" {% if laterhub.filter_finished == '1' %}selected{% endif %}>已完成</option>
-          <option value="opened" {% if laterhub.filter_finished == 'opened' %}selected{% endif %}>已打开</option>
-          <option value="0" {% if laterhub.filter_finished == '0' %}selected{% endif %}>未处理</option>
         </select>
       </form>
     </div>
