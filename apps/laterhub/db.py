@@ -127,6 +127,11 @@ class DBManager:
                             WHEN COALESCE(?, '') <> '' THEN NULL
                             ELSE tag_error_message
                         END,
+                        -- 抓取又抓到 = 源列表里还在 = 没处理完：完成态清零。清完成时必须连「已打开」
+                        -- 一起清（否则该行卡在未处理/已完成两个视图之外，等于白清）；
+                        -- CASE 读的是更新前的值，故只影响「本来就是完成」的行。
+                        is_opened = CASE WHEN is_finished = 1 THEN 0 ELSE is_opened END,
+                        opened_at = CASE WHEN is_finished = 1 THEN NULL ELSE opened_at END,
                         is_finished = 0,
                         finished_at = NULL,
                         updated_at = ?,
