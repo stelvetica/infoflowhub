@@ -342,7 +342,7 @@
     if (fresh) {
       row.replaceWith(document.importNode(fresh, true));
     } else {
-      // 当前筛选(如「未处理」)已不含该条目。游标锚在「排序键+身份」上,移除一行不影响续载定位
+      // 当前筛选(如「未完成」)已不含该条目。游标锚在「排序键+身份」上,移除一行不影响续载定位
       row.remove();
     }
     // 只同步总数:该响应是整块面板(首批),其 data-next-cursor 会倒退,不能覆盖当前游标
