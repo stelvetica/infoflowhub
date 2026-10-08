@@ -114,10 +114,11 @@ button, input, select, textarea { font: inherit; }
 
 .stack { display: grid; gap: var(--sp-4); margin: 0 auto; width: 100%; max-width: min(1600px, 100%); }
 
-/* 左右分栏(主视图):左栏=新闻 + 订阅内容,右栏=稍后处理 */
+/* 左右分栏(主视图):左栏=新闻 + 订阅内容,右栏=稍后处理
+   默认居中 50%:中缝初始落在正中央;模板 aria 初值须同步(自检盯着这两处一致) */
 .split-shell {
   --laterhub-min: 320px;
-  --laterhub-width: 36%;
+  --laterhub-width: 50%;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(var(--laterhub-min), var(--laterhub-width));
   gap: var(--sp-4);
