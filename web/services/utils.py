@@ -7,6 +7,7 @@ from functools import cmp_to_key
 from typing import Any
 from urllib.parse import quote, unquote
 
+from apps.subscriptions.rss_db import SHARED_PAGE_SOURCE_IDS
 from connectors._shared.common import resolve_web_target
 
 
@@ -29,7 +30,9 @@ def read_entry_key(source_id: str, link: str, title: str = "") -> str:
     normalized_source = strip_invalid_unicode(source_id or "").strip().lower()
     normalized_link = strip_invalid_unicode(link or "").strip()
     normalized_title = strip_invalid_unicode(title or "").strip()
-    if normalized_source == "alphapai" and normalized_title:
+    # link 不唯一的源(一个聚合页挂多条)必须让标题参与 hash：只按 link 算会让整源共用
+    # 一把已读钥匙，点开任意一条 = 全源连坐已读，未读视图里整源消失。
+    if normalized_source in SHARED_PAGE_SOURCE_IDS and normalized_title:
         return read_link_key(f"{normalized_source}|{normalized_title}")
     return read_link_key(normalized_link)
 
