@@ -1,8 +1,10 @@
 (() => {
   const STORAGE_KEY = "infoflowhub:read-links:v3";
   // 中缝拖拽:存比例而非像素,窗口缩放后比例依然成立,故无需 resize 监听。
-  const SPLIT_RATIO_KEY = "infoflowhub:laterhub-ratio";
+  // v2:默认比例由 36% 改居中 50%,旧键里的存值会盖掉新默认值,故换键并清理旧键
+  const SPLIT_RATIO_KEY = "infoflowhub:laterhub-ratio:v2";
   const LEGACY_SPLIT_WIDTH_KEY = "infoflowhub:laterhub-width";
+  const LEGACY_SPLIT_RATIO_KEY = "infoflowhub:laterhub-ratio";
   const SPLIT_MAX_RATIO = 0.6;
   // 每个订阅面板(主订阅区/新闻卡片)独立的交互配置与未读态。
   const panels = [
@@ -661,8 +663,8 @@
     const shell = document.querySelector(".split-shell");
     if (!resizer || !shell || resizer.dataset.ready === "1") return;
     resizer.dataset.ready = "1";
-    // 旧的像素宽度键已废弃,留着会让人以为它仍在生效
-    window.localStorage.removeItem(LEGACY_SPLIT_WIDTH_KEY);
+    // 废弃键清掉:旧的像素宽度键留着会让人以为它仍在生效,旧的 36% 默认比例键会盖掉新默认值
+    [LEGACY_SPLIT_WIDTH_KEY, LEGACY_SPLIT_RATIO_KEY].forEach((key) => window.localStorage.removeItem(key));
 
     // 下限取 CSS 里的 --laterhub-min,不重复写死像素
     const minSide = parseFloat(getComputedStyle(shell).getPropertyValue("--laterhub-min")) || 320;

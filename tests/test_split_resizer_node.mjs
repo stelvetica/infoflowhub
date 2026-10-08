@@ -6,10 +6,14 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, "..", "web", "static", "app.js"), "utf8");
+const styles = readFileSync(join(here, "..", "web", "static", "styles.css"), "utf8");
+const template = readFileSync(join(here, "..", "web", "templates", "index.html"), "utf8");
 
 const SHELL_WIDTH = 1000; // 左栏 + 间隔 + 右栏
-const RATIO_KEY = "infoflowhub:laterhub-ratio";
+const RATIO_KEY = "infoflowhub:laterhub-ratio:v2";
 const LEGACY_KEY = "infoflowhub:laterhub-width";
+const LEGACY_RATIO_KEY = "infoflowhub:laterhub-ratio";
+const CSS_DEFAULT = 50; // CSS --laterhub-width 的默认百分比
 
 let failed = 0;
 function assert(cond, label) {
@@ -78,7 +82,7 @@ function loadPage() {
   // 右栏实际宽度跟随已应用的比例,键盘微调以此为基准
   side.getBoundingClientRect = () => {
     const ratio = parseFloat(shell.style.getPropertyValue("--laterhub-width")) / 100;
-    return { width: (Number.isFinite(ratio) ? ratio : 0.36) * SHELL_WIDTH };
+    return { width: (Number.isFinite(ratio) ? ratio : CSS_DEFAULT / 100) * SHELL_WIDTH };
   };
 
   globalThis.window = globalThis;
@@ -128,6 +132,10 @@ function loadPage() {
   };
 }
 
+// 用例0: 默认比例只写在 CSS 里,模板的无障碍初值必须与之一致(两处都改才不跑偏)
+assert(styles.includes(`--laterhub-width: ${CSS_DEFAULT}%;`), `CSS 默认比例是居中 ${CSS_DEFAULT}%`);
+assert(template.includes(`aria-valuenow="${CSS_DEFAULT}"`), "模板 aria 初值与 CSS 默认比例一致");
+
 // 用例1: 没有存储时不写内联变量,沿用 CSS 默认比例
 const first = loadPage();
 assert(first.appliedRatio() === "", "无存储时不覆盖 CSS 默认比例");
@@ -160,6 +168,13 @@ store.set(LEGACY_KEY, "460");
 const reloaded = loadPage();
 assert(reloaded.appliedRatio() === "50.00%", "刷新后沿用已存比例");
 assert(store.has(LEGACY_KEY) === false, "旧的像素宽度键被清理");
+
+// 用例7: 只剩旧的 36% 时代比例键 → 作废,回到 CSS 的居中默认
+store.clear();
+store.set(LEGACY_RATIO_KEY, "0.36");
+const upgraded = loadPage();
+assert(store.has(LEGACY_RATIO_KEY) === false, "旧的 36% 比例键被清理");
+assert(upgraded.appliedRatio() === "", "旧键不再盖掉居中默认值");
 
 if (failed > 0) {
   console.error(`\n${failed} 项断言失败`);
