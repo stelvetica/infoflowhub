@@ -22,13 +22,18 @@ logger = logging.getLogger(__name__)
 
 MORNING_START_HOUR = 8
 MORNING_START_MINUTE = 10
+# 晨间流程前置的「订阅 + 稍后读」抓取槽：7:05 只抓数据、不跑 skill，让早读更早拿到。
+# 窗口 [7:05, 8:10) 内当天跑一次；过了 8:10 不补跑——晨间流程自己会抓，补一遍纯属白抓。
+PREFETCH_START_HOUR = 7
+PREFETCH_START_MINUTE = 5
 CHECK_INTERVAL_SECONDS = 600
 CHECK_INTERVAL_SECONDS_MORNING = 60
 DT_FORMAT = "%Y-%m-%d %H:%M:%S"
 # bsk（BrowserSkill）归本项目自己管：daemon 闲置自退，但无需 24 小时常驻保活——需要它的
-# 只有晨间流程与手动「立即获取」，两者开工前都会走抓取侧 ensure_daemon()（用前保活，foreground
-# 子进程拉起，见 bsk_browser._spawn_daemon_foreground）。系统层只保留「登录时拉起」一条；bsk CLI
-# 更新检查 2026-09-30 起也从系统计划任务搬进本循环，开关用 INFOFLOW_* 惯例，默认开。
+# 只有晨间流程、7:05 前置抓取槽与手动「立即获取」，三者开工前都会走抓取侧 ensure_daemon()
+# （用前保活，foreground 子进程拉起，见 bsk_browser._spawn_daemon_foreground）。系统层只保留
+# 「登录时拉起」一条；bsk CLI 更新检查 2026-09-30 起也从系统计划任务搬进本循环，开关用
+# INFOFLOW_* 惯例，默认开。
 #
 # 检查按天跑而非原先的每 14 天：浏览器扩展走 Chrome 自己的渠道随时静默升级，CLI 不会跟着动，
 # 而 check_bsk_update.ps1 会在扩展领先时把 CLI 追平——14 天粒度会让这段错配期长达两周。
@@ -42,6 +47,14 @@ _FLAG_OFF_VALUES = ("0", "false", "no", "off", "disable", "disabled")
 def _env_flag_enabled(name: str, default: str = "1") -> bool:
     """解析布尔型环境变量开关：0/false/no/off/disable(d) 视为关闭，其余（含空值）开启。"""
     return os.environ.get(name, default).strip().lower() not in _FLAG_OFF_VALUES
+
+
+def _fetch_all() -> dict[str, Any]:
+    """抓订阅 + 稍后读（稍后读三源共用 bsk 会话，复用用户 Chrome 实时登录态，不复制 profile）。
+
+    同步阻塞，调用方用 asyncio.to_thread 包；前置槽与晨间流程共用这一处取数（SSOT）。
+    """
+    return {"subscriptions": fetch_now(), "laterhub": fetch_laterhub_now()}
 
 
 def _flow_products(started_at: str) -> list[dict[str, Any]]:
@@ -105,8 +118,12 @@ class AutoRunner:
 
     async def _loop(self) -> None:
         while not self._stopped.is_set():
-            # 防御纵深：_maybe_run_morning 内部任一未捕获异常都不得让常驻循环退出，
+            # 防御纵深：_maybe_run_* 内部任一未捕获异常都不得让常驻循环退出，
             # 否则当天 last_run_date 不落盘、flow 永远停在 running、次日也不再跑。
+            try:
+                await self._maybe_run_prefetch()
+            except Exception:
+                logger.exception("前置抓取槽单次执行失败，已跳过本轮")
             try:
                 await self._maybe_run_morning()
             except Exception:
@@ -119,16 +136,82 @@ class AutoRunner:
                     await asyncio.to_thread(self._maybe_check_bsk_update)
                 except Exception:
                     logger.exception("bsk 更新检查失败，已跳过本轮")
-            # 8 点时段用 1 分钟粒度，避免 10 分钟间隔的相位漂移把当天首次抓取推迟数分钟
+            # 7 点与 8 点时段用 1 分钟粒度，避免 10 分钟间隔的相位漂移把当天首次抓取推迟数分钟
             interval = (
                 CHECK_INTERVAL_SECONDS_MORNING
-                if datetime.now().hour == MORNING_START_HOUR
+                if datetime.now().hour in (PREFETCH_START_HOUR, MORNING_START_HOUR)
                 else CHECK_INTERVAL_SECONDS
             )
             try:
                 await asyncio.wait_for(self._stopped.wait(), timeout=interval)
             except TimeoutError:
                 continue
+
+    async def _maybe_run_prefetch(self) -> None:
+        """7:05 前置抓取槽：只抓订阅与稍后读，不跑 skill（新闻/公告仍归 8:10 晨间流程）。
+
+        窗口 [7:05, 8:10) 内当天跑一次；过 8:10 不补跑（晨间流程自己会抓）。状态只写
+        slots.prefetch，不碰 flow / last_run_date——那是晨间流程的槽位语义，前置槽不得占用
+        （占用会让 8:10 的新闻流程被 last_run_date 判为「今天已跑」而整天不跑）。
+
+        开工即落 last_attempt_date，失败当天不重试：窗口内每 60 秒 tick 一次，重试会变成
+        最多 65 次的白抓；失败只降级成「今天没有前置槽」，8:10 晨间流程照常兜底。
+        """
+        now = datetime.now()
+        if (now.hour, now.minute) < (PREFETCH_START_HOUR, PREFETCH_START_MINUTE):
+            return
+        if (now.hour, now.minute) >= (MORNING_START_HOUR, MORNING_START_MINUTE):
+            return
+        today = now.date().isoformat()
+        if str(self._slot("prefetch").get("last_attempt_date") or "") == today:
+            return
+        await self._do_run_prefetch(today)
+
+    async def _do_run_prefetch(self, today: str) -> None:
+        async with self._lock:
+            # 双检：等锁期间可能已抓过（另一 tick 抢先），或晨间流程已跑完（它自己会抓）
+            if str(self._slot("prefetch").get("last_attempt_date") or "") == today:
+                return
+            if str(self._load_state().get("last_run_date") or "") == today:
+                return
+
+            payload: dict[str, Any] = {
+                "last_attempt_date": today,
+                "started_at": self._format_dt(datetime.now()),
+                "finished_at": "",
+                "status": "running",
+                "error": "",
+                "result": {},
+            }
+            self._write_slot("prefetch", dict(payload))
+            try:
+                payload["result"] = await asyncio.to_thread(_fetch_all)
+                payload["status"] = "success"
+            except Exception as exc:
+                payload["status"] = "error"
+                payload["error"] = normalize_utf8_text(str(exc))
+            payload["finished_at"] = self._format_dt(datetime.now())
+            self._write_slot("prefetch", payload)
+            if payload["status"] == "error":
+                logger.warning("前置抓取槽失败：%s", payload["error"])
+            else:
+                logger.info("前置抓取槽完成：%s", payload["result"])
+
+    def _slot(self, name: str) -> dict[str, Any]:
+        """读单个槽状态；缺失或形状不对一律当空槽（写入端保证形状）。"""
+        slots = self._load_state().get("slots")
+        slot = slots.get(name) if isinstance(slots, dict) else None
+        return slot if isinstance(slot, dict) else {}
+
+    def _write_slot(self, name: str, payload: dict[str, Any]) -> None:
+        """整文件读改写，把 {name: payload} 合并进 state['slots']，其它字段原样保留。"""
+        state = self._load_state()
+        slots = state.get("slots")
+        if not isinstance(slots, dict):
+            slots = {}
+        slots[name] = payload
+        state["slots"] = slots
+        self._save_state(state)
 
     async def _maybe_run_morning(self) -> None:
         now = datetime.now()
@@ -190,10 +273,7 @@ class AutoRunner:
             started_at = self._begin_flow(refreshed)
 
             try:
-                # laterhub 三源共用一个 bsk 会话，复用用户日常 Chrome 的实时登录态，不复制 profile
-                subscriptions = await asyncio.to_thread(fetch_now)
-                laterhub = await asyncio.to_thread(fetch_laterhub_now)
-                result = {"subscriptions": subscriptions, "laterhub": laterhub}
+                result = await asyncio.to_thread(_fetch_all)
             except Exception as exc:
                 state = self._load_state()
                 error = normalize_utf8_text(str(exc))
