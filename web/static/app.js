@@ -606,6 +606,11 @@
     panel.lastSyncSignature = targetSignature;
   }
 
+  // 标签面板展开态。片段刷新会重建整块 DOM，服务端只能按「有无筛选」推断展开，
+  // 于是「点掉已选中的标签回到全部标签」会被重建成收起。用这个标记跨交换保留用户意图：
+  // null = 尚未初始化（以服务端渲染为准），之后由用户点击决定。
+  let laterhubTagsOpen = null;
+
   function setupLaterhubTagsToggle() {
     const btn = document.querySelector(".laterhub-tags-toggle-btn");
     const chips = document.getElementById("laterhub-chips");
@@ -616,20 +621,28 @@
       btn.setAttribute("aria-expanded", String(open));
       btn.classList.toggle("open", open);
     };
+    if (laterhubTagsOpen === null) {
+      laterhubTagsOpen = !chips.hidden;
+    } else if (laterhubTagsOpen !== !chips.hidden) {
+      setOpen(laterhubTagsOpen);
+    }
     btn.addEventListener("click", () => {
       if (chips.hidden) {
+        laterhubTagsOpen = true;
         setOpen(true);
         return;
       }
-      // 收起 = 回到全部标签：清空筛选并走片段刷新（无筛选的面板默认收起）。
+      // 收起 = 回到全部标签：清空筛选并走片段刷新（交换后按 laterhubTagsOpen 保持收起）。
       // 无筛选时仅收起，不做请求。
       const form = chips.closest("form");
       const filter = form && form.querySelector('input[name="laterhub_filter_tag"]');
       if (filter && filter.value) {
+        laterhubTagsOpen = false;
         filter.value = "";
         form.requestSubmit();
         return;
       }
+      laterhubTagsOpen = false;
       setOpen(false);
     });
   }
