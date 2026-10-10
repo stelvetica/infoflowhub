@@ -28,6 +28,12 @@ class _FakePopen:
         return self._stdout, self._stderr
 
 
+@pytest.fixture(autouse=True)
+def _no_retry_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    """单测不该为退避真睡几分钟：默认清空重试间隔；验证重试的用例自行覆盖。"""
+    monkeypatch.setattr(skill_runner, "SKILL_RETRY_DELAYS_SECONDS", ())
+
+
 @pytest.fixture()
 def cli_ready(monkeypatch: pytest.MonkeyPatch) -> None:
     """让 node 与 CLI 都「存在」，以便进入子进程分支。"""
@@ -151,6 +157,68 @@ def test_run_skill_returns_error_when_popen_fails(cli_ready: None, monkeypatch: 
     assert result["status"] == "error"
     assert "句柄耗尽" in result["error"]
     assert result["finished_at"]
+
+
+def test_run_skill_retries_once_then_succeeds(cli_ready: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """首次非零退出、重试后成功：返回 success（服务端掐流正是这种瞬时失败）。"""
+    attempts: list[int] = []
+
+    def fake_popen(command, **kwargs):
+        attempts.append(1)
+        return _FakePopen(returncode=1 if len(attempts) == 1 else 0, stderr="The stream was terminated by the server.")
+
+    monkeypatch.setattr(skill_runner.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(skill_runner, "SKILL_RETRY_DELAYS_SECONDS", (0,))
+    result = skill_runner.run_skill("portfolio-news", cwd=tmp_path)
+    assert result["status"] == "success"
+    assert len(attempts) == 2
+    assert result["error"] == ""
+
+
+def test_run_skill_exhausts_retries_and_reports_attempts(cli_ready: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """全部尝试都失败：返回 error，并在文案里注明实际尝试次数，便于面板定位。"""
+    attempts: list[int] = []
+
+    def fake_popen(command, **kwargs):
+        attempts.append(1)
+        return _FakePopen(returncode=1, stderr="The stream was terminated by the server.")
+
+    monkeypatch.setattr(skill_runner.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(skill_runner, "SKILL_RETRY_DELAYS_SECONDS", (0, 0))
+    result = skill_runner.run_skill("portfolio-news", cwd=tmp_path)
+    assert result["status"] == "error"
+    assert len(attempts) == 3
+    assert "重试 2 次仍失败" in result["error"]
+
+
+def test_run_skill_timeout_is_not_retried(cli_ready: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """超时不重试：单次已耗满 timeout，重试只会把整条流程拖得更长。"""
+    attempts: list[int] = []
+
+    def fake_popen(command, **kwargs):
+        attempts.append(1)
+        return _FakePopen(timeout_once=True)
+
+    monkeypatch.setattr(skill_runner.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(skill_runner, "_kill_process_tree", lambda process: None)
+    monkeypatch.setattr(skill_runner, "SKILL_RETRY_DELAYS_SECONDS", (0, 0))
+    assert skill_runner.run_skill("portfolio-news", cwd=tmp_path, timeout=5)["status"] == "timeout"
+    assert len(attempts) == 1
+
+
+def test_run_skill_unavailable_is_not_retried(cli_ready: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """CLI 缺失不重试：重试解决不了环境问题。"""
+    attempts: list[int] = []
+
+    def fake_popen(command, **kwargs):
+        attempts.append(1)
+        return _FakePopen(returncode=0)
+
+    monkeypatch.setattr(skill_runner, "find_zcode_cli", lambda: None)
+    monkeypatch.setattr(skill_runner.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(skill_runner, "SKILL_RETRY_DELAYS_SECONDS", (0, 0))
+    assert skill_runner.run_skill("portfolio-news", cwd=tmp_path)["status"] == "unavailable"
+    assert attempts == []
 
 
 def _write_provider_config(root: Path, version: str, endpoint: str) -> Path:
