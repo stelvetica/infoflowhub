@@ -1,7 +1,7 @@
-"""无头执行 ZCode skill 的薄封装：发现 CLI、跑子进程、超时控制。
+"""无头执行 ZCode skill 的薄封装：发现 CLI、跑子进程、超时控制、失败退避重试。
 
 职责单一：只负责「跑一次 skill 并回传结果」，不碰状态文件、不碰视图。
-ponytail: 天花板——只判退出码，不解析 token 用量、不做重试；升级路径是接入 CLI 返回的 usage 做成本统计。
+ponytail: 天花板——只判退出码，不解析 token 用量、不看产物是否其实已生成；升级路径是接入 CLI 返回的 usage 做成本统计。
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import time
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,11 @@ from pathlib import Path
 # 严格按此顺序执行：新闻影响分析先跑，公告清单后跑（公告产物不能因前者失败而缺失）
 SKILLS = ("portfolio-news", "portfolio-announcements")
 SKILL_TIMEOUT_SECONDS = 1200  # 每个 skill 20 分钟
+# 失败后按此间隔（秒）退避重试，最后一个间隔用完即收工。
+# 服务端偶发掐流（`The stream was terminated by the server`）实测十几分钟到半小时自愈——
+# 2026-10-09/10-10 连续两天晨间流程撞上，失败即放弃只能等次日调度或人工补跑；
+# 第二次等待拉长是为跨过更长的故障窗口。只重试非零退出码，timeout/unavailable 见 run_skill。
+SKILL_RETRY_DELAYS_SECONDS = (180, 600)
 SKILL_PROMPT_TEMPLATE = "/skill {name} 按 SKILL.md 完整执行本流程"
 # 相对 %LOCALAPPDATA% 的 CLI 位置；不硬编码用户名
 CLI_RELATIVE_PATH = Path("Programs") / "ZCode" / "resources" / "glm" / "zcode.cjs"
@@ -92,18 +98,12 @@ def _kill_process_tree(process: subprocess.Popen) -> None:
         process.kill()
 
 
-def run_skill(name: str, *, cwd: Path, timeout: int = SKILL_TIMEOUT_SECONDS) -> dict:
-    """同步执行一个 skill（调用方放进 asyncio.to_thread），返回结构化结果，不抛异常。"""
-    started_at = _now()
-    result = {"name": name, "status": "error", "started_at": started_at, "finished_at": "", "error": ""}
-
+def _run_skill_once(name: str, *, cwd: Path, timeout: int) -> dict:
+    """跑一次 skill 子进程，返回 {"status", "error"}；不抛异常。"""
     node = shutil.which("node")
     cli = find_zcode_cli()
     if not node or not cli:
-        result["status"] = "unavailable"
-        result["error"] = "未找到 node 或 ZCode CLI"
-        result["finished_at"] = _now()
-        return result
+        return {"status": "unavailable", "error": "未找到 node 或 ZCode CLI"}
 
     command = [
         node,
@@ -129,10 +129,7 @@ def run_skill(name: str, *, cwd: Path, timeout: int = SKILL_TIMEOUT_SECONDS) -> 
             env={**os.environ, **_provider_config_env()},
         )
     except OSError as exc:
-        result["status"] = "error"
-        result["error"] = f"启动 skill {name} 子进程失败：{_tail(str(exc))}"
-        result["finished_at"] = _now()
-        return result
+        return {"status": "error", "error": f"启动 skill {name} 子进程失败：{_tail(str(exc))}"}
 
     try:
         _stdout, stderr = process.communicate(timeout=timeout)
@@ -140,15 +137,37 @@ def run_skill(name: str, *, cwd: Path, timeout: int = SKILL_TIMEOUT_SECONDS) -> 
         _kill_process_tree(process)
         with suppress(Exception):
             process.communicate(timeout=10)
-        result["status"] = "timeout"
-        result["error"] = f"skill {name} 超过 {timeout}s 未完成，已终止进程树"
-        result["finished_at"] = _now()
-        return result
+        return {"status": "timeout", "error": f"skill {name} 超过 {timeout}s 未完成，已终止进程树"}
 
-    result["finished_at"] = _now()
     if process.returncode == 0:
-        result["status"] = "success"
-        return result
-    result["status"] = "error"
-    result["error"] = _tail(stderr) or f"skill {name} 退出码 {process.returncode}"
-    return result
+        return {"status": "success", "error": ""}
+    return {"status": "error", "error": _tail(stderr) or f"skill {name} 退出码 {process.returncode}"}
+
+
+def run_skill(name: str, *, cwd: Path, timeout: int = SKILL_TIMEOUT_SECONDS) -> dict:
+    """同步执行一个 skill（调用方放进 asyncio.to_thread）：失败按 SKILL_RETRY_DELAYS_SECONDS 退避重试。
+
+    只重试非零退出码——服务端掐流走这条；timeout 单次已耗满 20 分钟、unavailable 是 CLI 缺失，
+    重试都不会变好，直接返回。started_at 记首次尝试时刻，finished_at 记最终返回时刻。
+    """
+    started_at = _now()
+    attempts = 0
+    outcome = {"status": "error", "error": ""}
+    # 末尾的 None 是哨兵：最后一次尝试跑完即收工，不再等待
+    for delay in (*SKILL_RETRY_DELAYS_SECONDS, None):
+        attempts += 1
+        outcome = _run_skill_once(name, cwd=cwd, timeout=timeout)
+        if outcome["status"] != "error" or delay is None:
+            break
+        time.sleep(delay)
+
+    error = outcome["error"]
+    if outcome["status"] == "error" and attempts > 1:
+        error = f"重试 {attempts - 1} 次仍失败：{error}"
+    return {
+        "name": name,
+        "status": outcome["status"],
+        "started_at": started_at,
+        "finished_at": _now(),
+        "error": error,
+    }
