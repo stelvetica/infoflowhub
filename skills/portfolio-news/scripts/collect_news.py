@@ -1,7 +1,8 @@
 """取各资讯源最新新闻 MD，解析热点条目并合并去重，输出单一热点清单。
 
 职责（确定性）：
-- 扫描各新闻源目录 *.md，逐源按「文件名日期（次键 mtime）」降序取最新 PER_SOURCE_LIMIT 条。
+- 扫描各新闻源目录 *.md，只取**上个交易日收盘后**发布的条目（窗口内全取，不设条数配额）；
+  交易日由蓝宝书「晨会版 / 午间版」文件名日期反推，见 market_close_cutoff。
 - 校验（全局口径，不按源分别要求）：所选集合中文件名起始日期 = 今日的条数 ≥ TODAY_MIN_COUNT；
   全部源目录都空/缺失则报错停止；单个源目录缺失或为空只跳过，并在输出中标注。
 - 源格式自适应：含「单独一行纯数字」→ 蓝宝书编号条目模式；否则走文章模式（韭研公社等），
@@ -17,7 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 REPORTS_DIR = Path(r"C:\Users\ETT\Playground\infoflowhub\data\reports")
@@ -25,9 +26,19 @@ NEWS_DIRS = (
     Path(r"C:\Users\ETT\Playground\infoflowhub\data\alphapai_markdown"),
     Path(r"C:\Users\ETT\Playground\infoflowhub\data\jiuyangongshe_markdown"),
 )
-PER_SOURCE_LIMIT = 2
+# 取新闻的窗口口径（蓝宝书与韭研公社一致）：只取「上个交易日收盘后」发布的条目，窗口内全取、
+# 不设条数配额——盘前/盘中发的旧版、隔日精选与学习笔记讲的是市场已消化的事，进分析就是噪声。
+# 窗口内没有内容的来源整源跳过（**不降级**补更早的条目），剔除情况写进产出与 stdout。
+MARKET_CLOSE = time(15, 0)  # A 股收盘时刻
+# 交易日证据：蓝宝书「晨会版 / 午间版」只在交易日刊出（晚间版、全球版周末与假期也发），
+# 故用它们的文件名日期反推交易日集合，省掉一张需要逐年维护的节假日表。
+TRADING_DAY_EDITION_TAGS = ("晨会版", "午间版")
+BLUEBOOK_NAME_MARK = "蓝宝书"
+BLUEBOOK_NAME_HEAD = 60  # 版本词只出现在文件名标题段，正文混进文件名时不再向后找
 TODAY_MIN_COUNT = 1
 USED_NEWS_NAME = "used_news.json"
+STALE_PROBE = 6  # 扫到窗口之前的日期后，最多再读几个文件头，用来认领「窗口内无内容」的来源
+PUBLISHED_LINE_RE = re.compile(r"^-\s*发布时间[:：]\s*(\d{4})/(\d{2})/(\d{2})\s+(\d{2}):(\d{2})")
 
 # ponytail: 条目解析依赖蓝宝书固定格式（单独行数字开启条目、章节说明行固定措辞），
 # 源格式变化时需同步调整 NOISE_PATTERNS / META_PREFIXES。
@@ -94,7 +105,6 @@ ARTICLE_SHORT_LEN = 20  # 不含冒号时按标题行处理的上限
 ARTICLE_TITLE_OUT_MAX = 60  # 长段落块派生标题的截断长度
 # 只有「足够长的段落块」才回填为前一条标题的正文；否则它本身就是一条（券商标题等）
 ARTICLE_BODY_MIN_LEN = 60
-MAX_SCAN_PER_DIR = 20  # 每个源目录最多向前看几个文件来识别来源标签（每标签取 PER_SOURCE_LIMIT 条）
 
 
 def parse_args() -> argparse.Namespace:
@@ -109,7 +119,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--selftest", action="store_true",
-        help="只跑内置夹具自检（离线），校验两类韭研文章的切条规则",
+        help="只跑内置夹具自检（离线），校验切条规则与上个交易日收盘窗口筛选",
     )
     args = p.parse_args()
     # append + 可变默认值的坑：默认值不能直接挂在 action="append" 上（会被就地追加污染）
@@ -172,9 +182,90 @@ def _head_text(path: Path, limit: int = 2048) -> str:
         return ""
 
 
-def collect_latest_news(dirs: list[Path], today: date) -> list[Path]:
-    """逐「来源」取最新 PER_SOURCE_LIMIT 条，并做全局今日覆盖校验。"""
-    latest: list[Path] = []
+def published_at(path: Path, head: str) -> datetime | None:
+    """md 头 `- 发布时间: YYYY/MM/DD HH:MM` → datetime；缺失或格式异常回退文件名日期零点。
+
+    回退值（零点）必然早于当日收盘，故「判不出发布时间」的内容按陈旧处理（宁可少取）。
+    """
+    for raw in head.splitlines():
+        match = PUBLISHED_LINE_RE.match(raw.strip())
+        if match:
+            try:
+                return datetime(*(int(group) for group in match.groups()))
+            except ValueError:
+                break
+    day = extract_date_from_name(path.name)
+    return datetime.combine(day, time.min) if day else None
+
+
+def trading_days_from_corpus(dirs: list[Path]) -> set[date]:
+    """交易日集合 = 蓝宝书「晨会版 / 午间版」文件名日期（这两种版本只在交易日刊出）。"""
+    days: set[date] = set()
+    for d in dirs:
+        for f in d.glob("*.md"):
+            head = f.name[:BLUEBOOK_NAME_HEAD]
+            if BLUEBOOK_NAME_MARK in head and any(tag in head for tag in TRADING_DAY_EDITION_TAGS):
+                day = extract_date_from_name(f.name)
+                if day:
+                    days.add(day)
+    return days
+
+
+def last_close_from_days(days: set[date], now: datetime) -> datetime | None:
+    """已收盘交易日里最近一次的收盘时刻；今日是交易日但尚未到收盘则取上一交易日。"""
+    closed = [
+        d for d in days
+        if d < now.date() or (d == now.date() and now.time() >= MARKET_CLOSE)
+    ]
+    return datetime.combine(max(closed), MARKET_CLOSE) if closed else None
+
+
+def weekday_close(now: datetime) -> datetime:
+    """无交易日历证据时的兜底：最近一个已收盘的工作日（不认节假日，截断点会偏严）。"""
+    day = now.date() if now.time() >= MARKET_CLOSE else now.date() - timedelta(days=1)
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return datetime.combine(day, MARKET_CLOSE)
+
+
+def market_close_cutoff(dirs: list[Path], now: datetime) -> tuple[datetime, str]:
+    """取新闻窗口的起点 = 上个交易日收盘时刻；返回 (窗口起点, 口径备注)。"""
+    derived = last_close_from_days(trading_days_from_corpus(dirs), now)
+    if derived:
+        return derived, ""
+    return weekday_close(now), "缺蓝宝书交易日刊号（晨会版/午间版），韭研公社截断点按工作日估算"
+
+
+def select_fresh(
+    scanned: list[tuple[Path, str, datetime | None]], cutoff: datetime,
+) -> tuple[list[Path], set[str]]:
+    """保留截断点之后发布的条目（窗口内全取，不设条数配额）。
+
+    scanned 需按发布日期降序（collect_recent_news 已保证），故某个来源遇到的第一条就是它最新的
+    一条：这条都没赶上窗口，说明该来源在窗口内无内容——返回它的来源键供输出标注。
+    返回 (选中, 窗口内无内容的来源键)。
+    """
+    picked: list[Path] = []
+    fresh_keys: set[str] = set()
+    empty_keys: set[str] = set()
+    for path, key, published in scanned:
+        if published is not None and published > cutoff:
+            fresh_keys.add(key)
+            picked.append(path)
+            continue
+        if key not in fresh_keys:
+            empty_keys.add(key)
+    return picked, empty_keys
+
+
+def collect_recent_news(dirs: list[Path], today: date, now: datetime) -> tuple[list[Path], list[str]]:
+    """扫描各源目录 → 只取上个交易日收盘后发布的条目 → 全局今日覆盖校验。
+
+    返回 (所选文件, 口径备注)；备注同样写进产出与 stdout，避免静默剔除。
+    """
+    cutoff, cutoff_note = market_close_cutoff(dirs, now)
+    scanned: list[tuple[Path, str, datetime | None]] = []
+    intraday = 0  # 上个交易日盘内（15:00 前）发布的条目数——最容易被误当成新鲜内容的一批
     for d in dirs:
         files = sorted(
             d.glob("*.md"),
@@ -183,28 +274,53 @@ def collect_latest_news(dirs: list[Path], today: date) -> list[Path]:
             key=lambda f: (extract_date_from_name(f.name) or date.min, f.stat().st_mtime),
             reverse=True,
         )
-        per_key: dict[str, int] = {}
-        for f in files[:MAX_SCAN_PER_DIR]:
-            key = source_key(f, _head_text(f))
-            if per_key.get(key, 0) >= PER_SOURCE_LIMIT:
-                continue
-            per_key[key] = per_key.get(key, 0) + 1
-            latest.append(f)
-    if not latest:
+        for index, f in enumerate(files):
+            day = extract_date_from_name(f.name)
+            if day is None or day < cutoff.date():
+                # 已经走到窗口之前的日子：整段更早，不再逐条读头；只再探几个文件头，
+                # 让「窗口内无内容」的来源能在标注里被点名（否则说不清是谁被跳过）
+                for probe in files[index:index + STALE_PROBE]:
+                    head = _head_text(probe)
+                    scanned.append((probe, source_key(probe, head), None))
+                break
+            head = _head_text(f)
+            published = published_at(f, head)
+            if published is None or published <= cutoff:
+                intraday += 1
+            scanned.append((f, source_key(f, head), published))
+    picked, empty_keys = select_fresh(scanned, cutoff)
+    if not picked:
+        if scanned:
+            newest = max((p for _, _, p in scanned if p is not None), default=None)
+            stamp = f"{newest:%Y-%m-%d %H:%M}" if newest else "未知"
+            raise ValueError(
+                f"所选目录里最新的一条也停在 {stamp}，早于上个交易日（{cutoff:%Y-%m-%d}）"
+                f"{cutoff:%H:%M} 收盘，没有新鲜内容可分析，停止流程。"
+            )
         raise FileNotFoundError(
             "所有新闻源目录均为空或缺失，停止流程：\n"
             + "\n".join(str(d) for d in dirs)
         )
 
-    today_count = sum(1 for f in latest if extract_date_from_name(f.name) == today)
+    today_count = sum(1 for f in picked if extract_date_from_name(f.name) == today)
     if today_count < TODAY_MIN_COUNT:
-        names = [f.name[:80] for f in latest]
+        names = [f.name[:80] for f in picked]
         raise ValueError(
-            f"所选 {len(latest)} 条中仅 {today_count} 条为今日（{today}），"
+            f"所选 {len(picked)} 条中仅 {today_count} 条为今日（{today}），"
             f"不满足≥{TODAY_MIN_COUNT} 条要求，停止流程。所选：\n"
             + "\n".join(names)
         )
-    return latest
+    window = f"上个交易日（{cutoff:%Y-%m-%d}）{cutoff:%H:%M} 收盘后"
+    notes: list[str] = []
+    if cutoff_note:
+        notes.append(cutoff_note)
+    notes.append(
+        f"口径：只取{window}发布的新闻"
+        + (f"（该交易日盘内 {intraday} 条未纳入）" if intraday else "")
+    )
+    if empty_keys:
+        notes.append("窗口内无新内容，已整源跳过：" + "、".join(sorted(empty_keys)))
+    return picked, notes
 
 
 def skipped_sources(dirs: list[Path]) -> list[Path]:
@@ -406,10 +522,12 @@ def merge_entries(
 
 
 def build_output(entries: list[dict], labels: list[str], skipped: list[Path],
-                 today: date) -> str:
+                 today: date, notes: list[str]) -> str:
     lines: list[str] = [f"# 今日热点 {today}", ""]
     src_names = list(dict.fromkeys(labels))  # 同名源去重，保留出现顺序
     lines.append(f"> 合并自 {len(labels)} 条新闻：{' / '.join(src_names)}")
+    for note in notes:
+        lines.append(f"> {note}")
     if skipped:
         lines.append("")
         lines.append("> 已跳过（源目录缺失或为空）：" + "、".join(str(d) for d in skipped))
@@ -623,6 +741,40 @@ def run_selftest() -> int:
     meta = parse_article(SELFTEST_META)
     check("边界：meta 缺行时不泄漏成条目", len(meta) == 1 and "发布时间" not in meta[0][0])
 
+    # 窗口起点（上个交易日收盘）：交易日由蓝宝书「晨会版/午间版」日期反推 → 最近一次已收盘交易日的 15:00
+    # 夹具里 10/9（周五）是最近交易日，10/10、10/11 休市，10/12（周一）是当日交易日
+    days = {date(2026, 10, 8), date(2026, 10, 9)}
+    check("截断点：周一盘前取上周五收盘", last_close_from_days(days, datetime(2026, 10, 12, 8, 18)) == datetime(2026, 10, 9, 15, 0))
+    check("截断点：交易日盘中仍取上一交易日", last_close_from_days(days, datetime(2026, 10, 12, 10, 0)) == datetime(2026, 10, 9, 15, 0))
+    check("截断点：交易日收盘后取当日", last_close_from_days(days | {date(2026, 10, 12)}, datetime(2026, 10, 12, 15, 30)) == datetime(2026, 10, 12, 15, 0))
+    check("截断点：休市日取上一交易日", last_close_from_days(days, datetime(2026, 10, 11, 8, 19)) == datetime(2026, 10, 9, 15, 0))
+    check("截断点：无交易日证据时按工作日兜底", weekday_close(datetime(2026, 10, 11, 8, 19)) == datetime(2026, 10, 9, 15, 0))
+    check("截断点：兜底在工作日盘前取前一工作日", weekday_close(datetime(2026, 10, 12, 8, 18)) == datetime(2026, 10, 9, 15, 0))
+
+    # 窗口筛选（夹具按发布日期降序）：上个交易日收盘后发布的全取，更早的一条不留
+    cutoff = datetime(2026, 10, 9, 15, 0)
+    scanned = [
+        (Path("a_晨会版.md"), "Alpha派 蓝宝书", datetime(2026, 10, 12, 7, 5)),
+        (Path("b_全球版.md"), "Alpha派 蓝宝书", datetime(2026, 10, 12, 8, 4)),
+        (Path("c_晚间版.md"), "Alpha派 蓝宝书", datetime(2026, 10, 11, 20, 5)),
+        (Path("d_团子精选.md"), "韭研公社 韭菜团子", datetime(2026, 10, 11, 18, 15)),
+        (Path("e_团子精选.md"), "韭研公社 韭菜团子", datetime(2026, 10, 8, 18, 15)),
+        (Path("f_学习笔记.md"), "韭研公社 韭韭八十一", datetime(2026, 10, 8, 13, 54)),
+        (Path("g_学习笔记.md"), "韭研公社 韭韭八十一", None),
+    ]
+    picked, empty_keys = select_fresh(scanned, cutoff)
+    picked_names = [p.name for p in picked]
+    check("窗口：收盘后的蓝宝书各版全取（含前一天的晚间版）", picked_names[:3] == ["a_晨会版.md", "b_全球版.md", "c_晚间版.md"])
+    check("窗口：窗口内有内容的韭研条目照常纳入", "d_团子精选.md" in picked_names)
+    check("窗口：早于收盘的条目一律剔除", "e_团子精选.md" not in picked_names and "f_学习笔记.md" not in picked_names)
+    check("窗口：判不出发布时间（None）的条目按陈旧剔除", "g_学习笔记.md" not in picked_names)
+    check("窗口：只报「最新一条就陈旧」的来源键", empty_keys == {"韭研公社 韭韭八十一"})
+
+    stale_pick, stale_empty = select_fresh(
+        [(Path("x_晚间版.md"), "Alpha派 蓝宝书", datetime(2026, 10, 8, 20, 5))], cutoff
+    )
+    check("窗口：某来源最新一条就陈旧时整源跳过并报键", stale_pick == [] and stale_empty == {"Alpha派 蓝宝书"})
+
     failed = [name for name, ok in checks if not ok]
     for name, ok in checks:
         print(f"  [{'PASS' if ok else 'FAIL'}] {name}")
@@ -638,8 +790,9 @@ def main() -> None:
     args = parse_args()
     if args.selftest:
         raise SystemExit(run_selftest())
-    today = date.today()
-    latest = collect_latest_news(args.dir, today)
+    now = datetime.now()
+    today = now.date()
+    picked, notes = collect_recent_news(args.dir, today, now)
     skipped = skipped_sources(args.dir)
 
     all_entries: list[tuple[str, str, str, list[tuple[str, str]]]] = []
@@ -656,17 +809,19 @@ def main() -> None:
         )
 
     entries, dup = merge_entries(all_entries)
-    md = build_output(entries, labels, skipped, today)
+    md = build_output(entries, labels, skipped, today, notes)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(md, encoding="utf-8")
     used_path = args.output.parent / USED_NEWS_NAME
-    record_used(used_path, latest)
+    record_used(used_path, picked)
 
     print(
         f"已生成：{args.output.resolve()}"
-        f"（{len(latest)} 条新闻 / {len(entries)} 个热点，跨新闻标题去重合并 {dup} 条；"
+        f"（{len(picked)} 条新闻 / {len(entries)} 个热点，跨新闻标题去重合并 {dup} 条；"
         f"留痕 {used_path.resolve()}）"
     )
+    for note in notes:
+        print(f"  {note}")
     for d in skipped:
         print(f"  已跳过（源目录缺失或为空）：{d}")
 
