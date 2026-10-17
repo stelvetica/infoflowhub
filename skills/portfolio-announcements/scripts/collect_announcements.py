@@ -51,6 +51,10 @@ KEYWORDS = re.compile(
 # 白名单/关键词命中但明确属噪音的：A股IPO超额配售（绿鞋）是发行机制文件，非再融资配售
 EXCLUDE = re.compile(r"超额配售|超額配售|绿鞋|綠鞋")
 
+# P2 类型噪音（《skill 口径》法律意见书一类程序性文件）：标题常含"分红/重组/要约"等 P0 关键词
+# 而误命中，按类型整体排除；且此类行若留在组内会被 dedupe 当成关键件，误剔真正的分红实施公告
+NOISE_TYPES = {"法律意见书"}
+
 # 程序性会议决议（董事会/监事会/股东大会）：无增量信息，实质事项均另有专项公告；
 # 标题含 P0 关键词的决议（如"利润分配…决议公告"）仍保留
 RESOLUTION = re.compile(r"(董事会|监事会|股东(大)?会)[^。]{0,12}决议(公告)?$")
@@ -99,7 +103,7 @@ def to_em_code(code):
 
 
 def is_p0(title, col_type):
-    if EXCLUDE.search(title):
+    if EXCLUDE.search(title) or col_type in NOISE_TYPES:
         return False
     if RESOLUTION.search(title) and not KEYWORDS.search(title):
         return False
@@ -164,6 +168,10 @@ def main():
         assert not is_p0("XX:独立董事提名人声明与承诺", "独立董事提名人声明")
         assert not is_p0("XX:关于使用闲置募集资金进行现金管理的公告", "其他")
         assert not is_p0("XX:首次公开发行股票并在科创板上市超额配售选择权实施公告", "其他")
+        # P2 类型噪音：标题含"分红"仍不取；且它被剔后，同组分红实施公告不得被 dedupe 误剔
+        # （真实回归：澜起科技 2026-10-17 差异化分红法律意见书 ↔ 半年度权益分派实施公告）
+        assert not is_p0("XX:关于差异化分红事项之专项法律意见书", "法律意见书")
+        assert is_p0("XX:2026年半年度权益分派实施公告", "分配方案实施")
         assert not is_p0("XX:第七届董事会第二次会议决议公告", "分配预案")
         assert not is_p0("XX:2026年第三次临时股东大会决议公告", "其他")
         assert is_p0("XX:关于2026年中期利润分配预案的董事会决议公告", "分配预案")
@@ -180,7 +188,7 @@ def main():
         # 关键词：出售资产与收购同属重大经营，须命中
         assert is_p0("XX:关于出售参股公司股权的公告", "收购出售资产/股权")
         # 同事件去重：定增配套文件剔除，留预案/募集说明书
-        mk = lambda i, t: {"code": "X", "title": t, "art": i}
+        mk = lambda i, t, c="其他": {"code": "X", "title": t, "art": i, "col": c}
         # 当日重跑无新增（候选全为当日已输出）→ 判定为空，保留已有清单不覆盖
         assert unseen_today([mk("1", "X")], {"1": "2026-09-23"}, "2026-09-23") == []
         assert [h["art"] for h in unseen_today([mk("1", "X"), mk("3", "Z")],
@@ -201,6 +209,10 @@ def main():
         # 组内无关键公告时衍生件保留
         grp4 = [mk("1", "XX:2026年第二次中期权益分派实施公告")]
         assert [h["art"] for h in dedupe(grp4)] == ["1"]
+        # 端到端：法律意见书被 P2 类型剔后，同组分红实施公告存活（不误剔）
+        raw5 = [mk("1", "XX:关于差异化分红事项之专项法律意见书", "法律意见书"),
+                mk("2", "XX:2026年半年度权益分派实施公告", "分配方案实施")]
+        assert [h["art"] for h in dedupe([h for h in raw5 if is_p0(h["title"], h["col"])])] == ["2"]
         print("selftest PASS")
         return
 
