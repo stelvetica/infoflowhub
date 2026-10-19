@@ -39,7 +39,7 @@
   {% set gate_verdict = gate.get('verdict') or '' %}
   {% if gate_verdict %}
   {% set gate_text = {'trading': '交易日', 'closed': '非交易日', 'unknown': '未经日历确认（保守放行）'}.get(gate_verdict, gate_verdict) %}
-  {% set gate_source = {'weekend': '周末', 'bluebook': '蓝宝书已刊', 'eastmoney-kline': '东财指数日K', 'assumed': '保守假定'}.get(gate.get('source') or '', gate.get('source') or '') %}
+  {% set gate_source = {'local-calendar': '本地交易日历', 'weekend': '周末', 'bluebook': '蓝宝书已刊', 'eastmoney-kline': '东财指数日K', 'assumed': '保守假定'}.get(gate.get('source') or '', gate.get('source') or '') %}
   <span class="news-flow-text">今日门禁 <strong>{{ gate_text }}</strong>
     {%- if gate_source %} · 来源 {{ gate_source }}{% endif %}
     {%- if gate.get('checked_at') %} · 判定于 {{ gate.get('checked_at') }}{% endif %}

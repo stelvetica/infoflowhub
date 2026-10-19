@@ -3,12 +3,13 @@
 覆盖不变式：窗口外不跑、窗口内当天跑一次、过 8:20 不补跑、
 前置槽不得写 last_run_date（否则 8:20 晨间流程会被判「今天已跑」而整天不跑）、
 非交易日两个槽都不动作且落盘 market_gate、门禁开关关掉后行为等同改动前。
-全程打桩：不抓真实数据、不碰真实 runtime 状态文件、不查真实交易日历。
+全程打桩：不抓真实数据、不碰真实 runtime 状态文件、不查真实交易日历、不起交易日历刷新子进程。
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,9 @@ def runner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[AutoRunner,
     # 晨间流程会跑真实 skill / 开浏览器，这里全部短路，只管调度语义。
     monkeypatch.setattr(auto_runner, "run_skill", lambda name, cwd=None: {"name": name, "status": "success"})
     monkeypatch.setattr(auto_runner, "_open_panel", lambda: None)
+    # 交易日历刷新会真起 node 子进程（跨仓、带网络）：默认打桩成「不动作」，
+    # 否则测试行为会随「今天几号 / 本机日历是否可用」漂移。专门用例再各自覆盖。
+    monkeypatch.setattr(auto_runner, "refresh_local_calendar", lambda now=None: "")
     return AutoRunner(), calls
 
 
@@ -101,6 +105,67 @@ def test_skips_after_morning_start(runner: tuple[AutoRunner, list[str]]) -> None
     _set_now(8, 30)  # 机器起晚了：晨间流程自己会抓，前置槽不补跑
     _tick(bot)
     assert calls == []
+
+
+# ── 交易日历刷新挂在 7:10 前置槽上 ───────────────────────────────
+
+
+def test_prefetch_refreshes_calendar_once_and_still_fetches(
+    runner: tuple[AutoRunner, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """刷新点复用前置槽的「当天一次」语义：窗口内只刷一遍，且不阻断抓取。"""
+    bot, calls = runner
+    seen: list[Any] = []
+    monkeypatch.setattr(
+        auto_runner, "refresh_local_calendar", lambda now=None: seen.append(now) or "本地交易日历已刷新"
+    )
+    _set_now(7, 10)
+    _tick(bot)
+    assert seen == [datetime(2026, 10, 7, 7, 10)]  # 用槽里同一个 now，不重新取时钟
+    assert calls == ["fetch"]
+
+    _set_now(7, 40)  # 窗口内再 tick：槽守卫挡住，刷新跟着只跑一遍
+    _tick(bot)
+    assert len(seen) == 1
+    assert calls == ["fetch"]
+
+
+def test_prefetch_does_not_refresh_outside_window(
+    runner: tuple[AutoRunner, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bot, _calls = runner
+    seen: list[Any] = []
+    monkeypatch.setattr(auto_runner, "refresh_local_calendar", lambda now=None: seen.append(now) or "")
+    _set_now(6, 59)
+    _tick(bot)
+    _set_now(8, 30)
+    _tick(bot)
+    assert seen == []
+
+
+def test_prefetch_logs_refresh_note(
+    runner: tuple[AutoRunner, list[str]], monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    bot, _calls = runner
+    monkeypatch.setattr(auto_runner, "refresh_local_calendar", lambda now=None: "本地交易日历已刷新")
+    with caplog.at_level(logging.INFO, logger="web.services.auto_runner"):
+        _set_now(7, 10)
+        _tick(bot)
+    assert any("本地交易日历已刷新" in record.getMessage() for record in caplog.records)
+
+
+def test_prefetch_is_silent_when_refresh_returns_nothing(
+    runner: tuple[AutoRunner, list[str]], monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """返回空串 = 不动作（非 10/20 且日历未过期）：不写日志，也没有其它副作用。"""
+    bot, calls = runner
+    monkeypatch.setattr(auto_runner, "refresh_local_calendar", lambda now=None: "")
+    with caplog.at_level(logging.INFO, logger="web.services.auto_runner"):
+        _set_now(7, 10)
+        _tick(bot)
+    assert not any("交易日历" in record.getMessage() for record in caplog.records)
+    assert calls == ["fetch"]
+    assert bot._slot("prefetch")["last_attempt_date"] == "2026-10-07"
 
 
 def test_failure_not_retried_same_day(runner: tuple[AutoRunner, list[str]], monkeypatch: pytest.MonkeyPatch) -> None:

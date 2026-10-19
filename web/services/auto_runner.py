@@ -18,6 +18,7 @@ from infra.market_calendar import (
     SOURCE_ASSUMED,
     MarketVerdict,
     market_gate,
+    refresh_local_calendar,
 )
 from infra.text_normalizer import normalize_utf8_text
 from web.services import views
@@ -232,6 +233,11 @@ class AutoRunner:
 
         本槽**不过交易日门禁**（与晨间流程不同）：它是给早读备料的，周末与节假日照样要看
         蓝宝书全球版/晚间版与韭研（两者周末照发），拦下来只会让人早上无料可读。
+
+        顺便在守卫之后刷新本地交易日历（每月 10/20 号、或日历已过期）：刷新点放这里是因为
+        前置槽自带「当天一次」语义，窗口内每 60 秒 tick 也只刷一遍；而 7:10 早于 8:20 的门禁，
+        刷完当天门禁立刻用上新历。机器当天没开、错过 7:10 就不刷——门禁自然退回旧证据链
+        （周末 / 蓝宝书 / 日 K），不额外造一个补刷入口。
         """
         now = datetime.now()
         if (now.hour, now.minute) < (PREFETCH_START_HOUR, PREFETCH_START_MINUTE):
@@ -241,6 +247,12 @@ class AutoRunner:
         today = now.date().isoformat()
         if str(self._slot("prefetch").get("last_attempt_date") or "") == today:
             return
+        # 走 to_thread：刷新是内部 subprocess.run（最坏 CALENDAR_REFRESH_TIMEOUT_SECONDS 秒），
+        # 直接 await 会把事件循环连同面板请求一起卡住。refresh_local_calendar 契约是不抛异常，
+        # 故这里不包 try——它失败只会返回一句说明，抓取槽照常往下走。
+        note = await asyncio.to_thread(refresh_local_calendar, now)
+        if note:
+            logger.info("%s", note)
         await self._do_run_prefetch(today)
 
     async def _do_run_prefetch(self, today: str) -> None:
