@@ -797,7 +797,7 @@ def main() -> None:
 
     all_entries: list[tuple[str, str, str, list[tuple[str, str]]]] = []
     labels: list[str] = []
-    for f in latest:
+    for f in picked:
         text = f.read_text(encoding="utf-8")
         src = source_label(f, text)
         labels.append(src)
@@ -805,7 +805,7 @@ def main() -> None:
             all_entries.append((src, title, body, links))
     if not all_entries:
         raise ValueError(
-            f"未能从 {len(latest)} 条新闻中解析出热点条目，停止流程（源格式可能变化）。"
+            f"未能从 {len(picked)} 条新闻中解析出热点条目，停止流程（源格式可能变化）。"
         )
 
     entries, dup = merge_entries(all_entries)
