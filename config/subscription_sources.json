@@ -287,7 +287,7 @@
     },
     {
       "id": "史诗级韭菜",
-      "name": "史诗级韭菜",
+      "name": "观点 价值 史诗级韭菜",
       "group": "",
       "feed_url": "https://rsshub.app/bilibili/user/dynamic/322005137",
       "site_url": "https://space.bilibili.com/322005137/dynamic",
@@ -310,7 +310,7 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "复用日常 Chrome 登录会话（bsk 后端，不复制 profile）。随每日例行任务8:10跑",
+      "note": "复用日常 Chrome 登录会话（bsk 后端，不复制 profile）。随每日例行抓取（7:10 前置槽 / 8:20 晨间流程）跑",
       "channel": "web",
       "auth_key": "alphapai_main",
       "fallback_mode": "none"
