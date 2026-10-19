@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -231,13 +232,16 @@ def _write_provider_config(root: Path, version: str, endpoint: str) -> Path:
 
 @pytest.fixture()
 def runtime_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """造一个受控的 App 运行时缓存根，并把 personal 配置指到临时文件（两条路径都确定）。"""
+    """造一个受控的 App 运行时缓存根，personal/pinned 配置都指到临时文件（三条路径都确定）。"""
     monkeypatch.delenv(skill_runner.BUILTIN_PROVIDER_CONFIG_ENV, raising=False)
+    # 关掉模型钉死：本 fixture 只验 builtin 定位，personal 因此回退原件（钉死路径另有用例）
+    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, "")
     runtime_root = tmp_path / "runtime"
     monkeypatch.setattr(skill_runner, "PROVIDER_RUNTIME_ROOT", runtime_root)
     personal = tmp_path / "provider_config.json"
     personal.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(skill_runner, "PERSONAL_PROVIDER_CONFIG", personal)
+    monkeypatch.setattr(skill_runner, "PINNED_PROVIDER_CONFIG", tmp_path / "skill_provider_config.json")
     return runtime_root
 
 
@@ -259,16 +263,119 @@ def test_provider_config_env_skips_missing_personal(runtime_cache: Path):
     assert list(skill_runner._provider_config_env()) == [skill_runner.BUILTIN_PROVIDER_CONFIG_ENV]
 
 
-def test_provider_config_env_keeps_app_injected_value(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    """App 拉起的进程已带该变量：不覆盖，避免把 App 选定的那份换掉。"""
-    monkeypatch.setenv(skill_runner.BUILTIN_PROVIDER_CONFIG_ENV, "C:/app/injected.json")
-    monkeypatch.setattr(skill_runner, "PROVIDER_RUNTIME_ROOT", tmp_path)
-    _write_provider_config(tmp_path, "3.14.4", "bbb")
+def test_provider_config_env_empty_without_runtime_cache(runtime_cache: Path):
+    """缓存不存在（如未装 App）：不补变量，让 CLI 按自己的逻辑报错，不掩盖问题。"""
     assert skill_runner._provider_config_env() == {}
 
 
-def test_provider_config_env_empty_without_runtime_cache(runtime_cache: Path):
-    """缓存不存在（如未装 App）：不补变量，让 CLI 按自己的逻辑报错，不掩盖问题。"""
+def _pin_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    """把 personal/pinned 两份配置指到 tmp_path（绝不碰真实用户配置里的密钥），并清掉模型环境变量。"""
+    personal = tmp_path / "provider_config.json"
+    pinned = tmp_path / "runtime" / "skill_provider_config.json"
+    monkeypatch.setattr(skill_runner, "PERSONAL_PROVIDER_CONFIG", personal)
+    monkeypatch.setattr(skill_runner, "PINNED_PROVIDER_CONFIG", pinned)
+    monkeypatch.delenv(skill_runner.SKILL_MODEL_ENV, raising=False)
+    return personal, pinned
+
+
+def _write_source_config(personal: Path) -> dict:
+    """造一份源 personal 配置：defaultModelSelection 是别的模型，另带须原样保留的键与假密钥。"""
+    data = {
+        "config": {"defaultModelSelection": {"providerId": "custom:other", "modelId": "other-1"}, "note": "保留"},
+        "secret": "sk-fake",
+    }
+    personal.parent.mkdir(parents=True, exist_ok=True)
+    personal.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return data
+
+
+def test_pinned_personal_config_repins_default_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """源配置指向别的模型时，副本被掰回默认钉死模型，且其余键与源逐一致。"""
+    personal, pinned = _pin_paths(tmp_path, monkeypatch)
+    source = _write_source_config(personal)
+    assert skill_runner.pinned_personal_config() == pinned
+    written = json.loads(pinned.read_text(encoding="utf-8"))
+    assert written["config"]["defaultModelSelection"] == {"providerId": "custom:r4", "modelId": "glm-5.3-flash"}
+    assert written["config"]["note"] == source["config"]["note"]
+    assert written["secret"] == source["secret"]
+
+
+def test_pinned_personal_config_honors_env_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """环境变量覆盖默认值，并按最后一个 "/" 切分 providerId/modelId。"""
+    personal, pinned = _pin_paths(tmp_path, monkeypatch)
+    _write_source_config(personal)
+    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, "custom:agnes/agnes-3.0-flash")
+    skill_runner.pinned_personal_config()
+    assert json.loads(pinned.read_text(encoding="utf-8"))["config"]["defaultModelSelection"] == {
+        "providerId": "custom:agnes",
+        "modelId": "agnes-3.0-flash",
+    }
+
+
+def test_pinned_personal_config_empty_env_disables_pin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """置空串 = 关闭钉死：不生成副本，personal 回退原件路径（降级开关）。"""
+    personal, pinned = _pin_paths(tmp_path, monkeypatch)
+    _write_source_config(personal)
+    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, "")
+    monkeypatch.delenv(skill_runner.BUILTIN_PROVIDER_CONFIG_ENV, raising=False)
+    runtime_root = tmp_path / "runtime_cache"
+    monkeypatch.setattr(skill_runner, "PROVIDER_RUNTIME_ROOT", runtime_root)
+    _write_provider_config(runtime_root, "3.14.4", "bbb")
+    assert skill_runner.pinned_personal_config() is None
+    assert not pinned.exists()
+    assert skill_runner._provider_config_env()[skill_runner.PERSONAL_PROVIDER_CONFIG_ENV] == str(personal)
+
+
+@pytest.mark.parametrize("bad_source", ["missing", "corrupt"])
+def test_pinned_personal_config_returns_none_on_unusable_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad_source: str
+):
+    """源配置缺失/JSON 损坏：返回 None 且不抛异常（不得阻断 skill 执行）。"""
+    personal, pinned = _pin_paths(tmp_path, monkeypatch)
+    if bad_source == "corrupt":
+        personal.write_text("{ 不是 JSON", encoding="utf-8")
+    assert skill_runner.pinned_personal_config() is None
+    assert not pinned.exists()
+
+
+def test_pinned_personal_config_returns_none_on_write_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """写入失败（如磁盘满）：返回 None 且不抛异常。"""
+    personal, _pinned = _pin_paths(tmp_path, monkeypatch)
+    _write_source_config(personal)
+
+    def boom(*_args, **_kwargs):
+        raise OSError("磁盘满")
+
+    monkeypatch.setattr(skill_runner.os, "replace", boom)
+    assert skill_runner.pinned_personal_config() is None
+
+
+def test_provider_config_env_app_injected_keeps_builtin_but_adds_pinned_personal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """App 已注入 builtin 时仍补钉死后的 personal。
+
+    本条断言本次按新行为改写：旧实现此处直接 `return {}`，会让「App 拉起服务」这条路径漏掉
+    模型钉死——skill 的模型随「谁拉起服务」而变，故必须补 personal。
+    """
+    monkeypatch.setenv(skill_runner.BUILTIN_PROVIDER_CONFIG_ENV, "C:/app/injected.json")
+    monkeypatch.setattr(skill_runner, "PROVIDER_RUNTIME_ROOT", tmp_path / "runtime_cache")
+    personal, pinned = _pin_paths(tmp_path, monkeypatch)
+    _write_source_config(personal)
+    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, skill_runner.DEFAULT_SKILL_MODEL)
+    env = skill_runner._provider_config_env()
+    assert skill_runner.BUILTIN_PROVIDER_CONFIG_ENV not in env  # 不覆盖 App 注入值
+    assert env[skill_runner.PERSONAL_PROVIDER_CONFIG_ENV] == str(pinned)
+    assert json.loads(pinned.read_text(encoding="utf-8"))["config"]["defaultModelSelection"]["modelId"] == "glm-5.3-flash"
+
+
+def test_provider_config_env_app_injected_without_pin_returns_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """钉死不可用（源配置缺失）时，App 注入分支保持改动前行为：返回 {}。"""
+    monkeypatch.setenv(skill_runner.BUILTIN_PROVIDER_CONFIG_ENV, "C:/app/injected.json")
+    monkeypatch.setattr(skill_runner, "PROVIDER_RUNTIME_ROOT", tmp_path / "runtime_cache")
+    personal, _pinned = _pin_paths(tmp_path, monkeypatch)
+    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, skill_runner.DEFAULT_SKILL_MODEL)
+    assert not personal.exists()
     assert skill_runner._provider_config_env() == {}
 
 

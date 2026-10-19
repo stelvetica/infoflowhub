@@ -9,8 +9,10 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from apps.subscriptions import rss_db
+from web.app import app
 from web.services import auto_runner, views
 
 STARTED_AT = "2026-09-22 08:10:00"
@@ -342,3 +344,74 @@ def test_run_skills_now_keeps_existing_last_result(env: dict[str, Path], temp_db
     asyncio.run(runner.run_skills_now())
 
     assert views.read_json(env["runtime"], {})["last_result"] == existing
+
+
+# ── 今日交易日门禁：状态条渲染 ──────────────────────────────────
+
+
+@pytest.fixture()
+def client() -> TestClient:
+    # 不用 with 进入上下文：避免触发 lifespan（AutoRunner 后台任务）
+    return TestClient(app)
+
+
+def _write_gate(runtime: Path, gate: object, flow: dict | None = None) -> None:
+    """写状态文件：带一个顶层 market_gate（gate=None 即不写该字段）。"""
+    runtime.parent.mkdir(parents=True, exist_ok=True)
+    payload: dict = {"flow": flow if flow is not None else {"flow_id": "x", "status": "success", "products": []}}
+    if gate is not None:
+        payload["market_gate"] = gate
+    runtime.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
+def test_market_gate_closed_renders_skip_hint(env: dict[str, Path], temp_db: Path, client: TestClient):
+    _write_gate(
+        env["runtime"],
+        {"date": "2026-10-19", "market": "A", "verdict": "closed", "source": "weekend", "note": "", "checked_at": "2026-10-19 08:20:03"},
+    )
+    text = client.get("/fragments/news-flow-status").text
+    assert "今日门禁" in text
+    assert "非交易日" in text
+    assert "来源 周末" in text
+    assert "判定于 2026-10-19 08:20:03" in text
+    assert "今日已跳过" in text  # 只有 closed 才有这句
+
+
+def test_market_gate_trading_has_no_skip_hint(env: dict[str, Path], temp_db: Path, client: TestClient):
+    _write_gate(
+        env["runtime"],
+        {"date": "2026-10-19", "market": "A", "verdict": "trading", "source": "bluebook", "note": "", "checked_at": "2026-10-19 08:20:03"},
+    )
+    text = client.get("/fragments/news-flow-status").text
+    assert "交易日" in text
+    assert "来源 蓝宝书已刊" in text
+    assert "今日已跳过" not in text
+
+
+def test_market_gate_unknown_renders_conservative_pass(env: dict[str, Path], temp_db: Path, client: TestClient):
+    _write_gate(env["runtime"], {"date": "2026-10-19", "verdict": "unknown", "source": "assumed", "checked_at": "2026-10-19 08:20:03"})
+    text = client.get("/fragments/news-flow-status").text
+    assert "未经日历确认（保守放行）" in text
+    assert "今日已跳过" not in text
+    # 未知 verdict 也不能把模板带崩（兜底原样展示）
+    _write_gate(env["runtime"], {"verdict": "bogus", "source": "weird", "checked_at": ""})
+    text = client.get("/fragments/news-flow-status").text
+    assert "bogus" in text
+
+
+def test_market_gate_missing_or_malformed_degrades_gracefully(env: dict[str, Path], temp_db: Path, client: TestClient):
+    """字段缺失/形状不符一律兜底「暂无门禁结论」，绝不 500。"""
+    for gate in (None, "不是对象", ["列表"], 42):
+        _write_gate(env["runtime"], gate)
+        assert views.get_market_gate() == {}  # 缺失/非 dict 一律回空
+        response = client.get("/fragments/news-flow-status")
+        assert response.status_code == 200
+        assert "今日已跳过" not in response.text
+        assert "暂无门禁结论" in response.text
+
+
+def test_market_gate_view_reads_top_level_field(env: dict[str, Path]):
+    _write_gate(env["runtime"], {"verdict": "trading", "source": "bluebook"})
+    assert views.get_market_gate() == {"verdict": "trading", "source": "bluebook"}
+    # flow 与门禁互不干扰：flow 照常读到
+    assert views.get_flow_state()["flow_id"] == "x"

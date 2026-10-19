@@ -24,6 +24,7 @@ from web.services.views import (
     get_flow_state,
     get_laterhub_summary,
     get_laterhub_view,
+    get_market_gate,
     get_nav_settings,
     get_news_view,
     get_settings_view,
@@ -166,6 +167,9 @@ def render_main(request: Request, params: dict[str, str]):
             "news": news,
             "news_params": news_params,
             "flow": get_flow_state(),
+            # 门禁结论与 flow 分属顶层两个字段，须一并送入：状态条是 index.html/片段共用同一 include，
+            # 漏传会让「局部刷新（/fragments/news）后门禁行消失」。
+            "market_gate": get_market_gate(),
             "laterhub": laterhub,
             "laterhub_params": laterhub_params,
             "settings": settings,
@@ -199,7 +203,7 @@ async def news_fragment(request: Request):
     response = templates.TemplateResponse(
         request,
         "partials/news_table.html",
-        {"news": get_news_view(params), "news_params": params, "params": params, "flow": get_flow_state()},
+        {"news": get_news_view(params), "news_params": params, "params": params, "flow": get_flow_state(), "market_gate": get_market_gate()},
     )
     persist_news_state(response, params)
     return response
@@ -211,7 +215,7 @@ async def news_flow_status_fragment(request: Request):
     return templates.TemplateResponse(
         request,
         "partials/news_flow_status.html",
-        {"flow": get_flow_state(), "params": query_dict(request)},
+        {"flow": get_flow_state(), "market_gate": get_market_gate(), "params": query_dict(request)},
     )
 
 
@@ -384,7 +388,7 @@ async def bulk_finish_laterhub_action(request: Request):
 def add_laterhub_link(url: str, title: str | None) -> dict:
     """网页剪藏收链（油猴脚本/bookmarklet 等前端的唯一入口）：仅入库为未标签条目。
 
-    打标签全权归属每日 8:10 自动流程（_tag_pending_rows 全表扫无标签行），这里不触发打标；
+    打标签全权归属每日 8:20 自动流程（_tag_pending_rows 全表扫无标签行），这里不触发打标；
     source=manual_verify 复用面板已有的「人工补录」元数据。重复收录复用 upsert 语义：
     会把已完成状态翻回未完成（重新收录=重新要读）。
     """
