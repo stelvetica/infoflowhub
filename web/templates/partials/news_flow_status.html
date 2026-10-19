@@ -33,4 +33,19 @@
   {% endif %}
   {% if flow.get('error') %}<span class="news-flow-errors">{{ flow.get('error') }}</span>{% endif %}
   {% endif %}
+  {# 今日交易日门禁：与 flow 同源文件但属顶层独立字段，缺失/形状不符只兜底一句文案，不报错。
+     文案复用现有 class（.news-flow-text/.subtle），不新增 CSS。 #}
+  {% set gate = market_gate or {} %}
+  {% set gate_verdict = gate.get('verdict') or '' %}
+  {% if gate_verdict %}
+  {% set gate_text = {'trading': '交易日', 'closed': '非交易日', 'unknown': '未经日历确认（保守放行）'}.get(gate_verdict, gate_verdict) %}
+  {% set gate_source = {'weekend': '周末', 'bluebook': '蓝宝书已刊', 'eastmoney-kline': '东财指数日K', 'assumed': '保守假定'}.get(gate.get('source') or '', gate.get('source') or '') %}
+  <span class="news-flow-text">今日门禁 <strong>{{ gate_text }}</strong>
+    {%- if gate_source %} · 来源 {{ gate_source }}{% endif %}
+    {%- if gate.get('checked_at') %} · 判定于 {{ gate.get('checked_at') }}{% endif %}
+    {%- if gate_verdict == 'closed' %} · 今日已跳过{% endif %}
+  </span>
+  {% else %}
+  <span class="subtle">暂无门禁结论</span>
+  {% endif %}
 </div>

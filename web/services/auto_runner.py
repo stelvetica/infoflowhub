@@ -6,11 +6,19 @@ import os
 import subprocess
 import webbrowser
 from contextlib import suppress
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from connectors._shared.chrome_runner import INFOFLOW_WEB_URL
+from infra.market_calendar import (
+    DEFAULT_MARKET,
+    VERDICT_CLOSED,
+    VERDICT_UNKNOWN,
+    SOURCE_ASSUMED,
+    MarketVerdict,
+    market_gate,
+)
 from infra.text_normalizer import normalize_utf8_text
 from web.services import views
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
@@ -21,16 +29,23 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 logger = logging.getLogger(__name__)
 
 MORNING_START_HOUR = 8
-MORNING_START_MINUTE = 10
-# 晨间流程前置的「订阅 + 稍后读」抓取槽：7:05 只抓数据、不跑 skill，让早读更早拿到。
-# 窗口 [7:05, 8:10) 内当天跑一次；过了 8:10 不补跑——晨间流程自己会抓，补一遍纯属白抓。
+MORNING_START_MINUTE = 20
+# 晨间流程前置的「订阅 + 稍后读」抓取槽：7:10 只抓数据、不跑 skill，让早读更早拿到。
+# 窗口 [7:10, 8:20) 内当天跑一次；过了 8:20 不补跑——晨间流程自己会抓，补一遍纯属白抓。
 PREFETCH_START_HOUR = 7
-PREFETCH_START_MINUTE = 5
+PREFETCH_START_MINUTE = 10
 CHECK_INTERVAL_SECONDS = 600
 CHECK_INTERVAL_SECONDS_MORNING = 60
 DT_FORMAT = "%Y-%m-%d %H:%M:%S"
+# 交易日门禁开关（见 infra/market_calendar.py）：MARKET_GATE_FLAG=0 整门禁关闭，行为等同改动前；
+# GATE_NETWORK_FLAG=0 只走离线证据（周末 / 蓝宝书），不碰东财接口。
+MARKET_GATE_FLAG = "INFOFLOW_MARKET_GATE"
+GATE_NETWORK_FLAG = "INFOFLOW_MARKET_CALENDAR_NETWORK"
+# 非决定性结论（unknown）的内存缓存时长：盘前取不到证据不代表开盘后取不到，短 TTL 让
+# 开盘后能自动升级成决定性结论；决定性结论（trading/closed）缓存到当天结束。
+GATE_CACHE_TTL_SECONDS = 120
 # bsk（BrowserSkill）归本项目自己管：daemon 闲置自退，但无需 24 小时常驻保活——需要它的
-# 只有晨间流程、7:05 前置抓取槽与手动「立即获取」，三者开工前都会走抓取侧 ensure_daemon()
+# 只有晨间流程、7:10 前置抓取槽与手动「立即获取」，三者开工前都会走抓取侧 ensure_daemon()
 # （用前保活，foreground 子进程拉起，见 bsk_browser._spawn_daemon_foreground）。系统层只保留
 # 「登录时拉起」一条；bsk CLI 更新检查 2026-09-30 起也从系统计划任务搬进本循环，开关用
 # INFOFLOW_* 惯例，默认开。
@@ -93,6 +108,9 @@ class AutoRunner:
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
         self._stopped = asyncio.Event()
+        # 门禁结论内存缓存：(落盘形状, 有效截止时刻)。决定性结论有效到当天结束，
+        # 非决定性 120 秒——避免窗口内每 60 秒 tick 都重算一次判定链。
+        self._gate_cache: tuple[dict[str, str], datetime] | None = None
 
     async def start(self) -> None:
         self._recover_interrupted_flow()
@@ -136,7 +154,8 @@ class AutoRunner:
                     await asyncio.to_thread(self._maybe_check_bsk_update)
                 except Exception:
                     logger.exception("bsk 更新检查失败，已跳过本轮")
-            # 7 点与 8 点时段用 1 分钟粒度，避免 10 分钟间隔的相位漂移把当天首次抓取推迟数分钟
+            # 7 点与 8 点时段（含 7:10 前置槽、8:20 晨间流程两个开工点）用 1 分钟粒度，
+            # 避免 10 分钟间隔的相位漂移把当天首次抓取推迟数分钟
             interval = (
                 CHECK_INTERVAL_SECONDS_MORNING
                 if datetime.now().hour in (PREFETCH_START_HOUR, MORNING_START_HOUR)
@@ -147,15 +166,72 @@ class AutoRunner:
             except TimeoutError:
                 continue
 
-    async def _maybe_run_prefetch(self) -> None:
-        """7:05 前置抓取槽：只抓订阅与稍后读，不跑 skill（新闻/公告仍归 8:10 晨间流程）。
+    def _market_verdict(self, now: datetime) -> dict[str, str]:
+        """取今日市场结论（唯一入口）：内存缓存 → 落盘的闭市结论 → 实算，算完落盘 + 存内存。
 
-        窗口 [7:05, 8:10) 内当天跑一次；过 8:10 不补跑（晨间流程自己会抓）。状态只写
+        为什么读落盘：进程重启后（每天都会重启一次量级）不留盘就得重打一次网络查日 K。
+        只采信落盘的 closed——它是「今天不必再试」的终局信号；其余结论重算成本很低（离线证据
+        或一次 5 秒请求），重算反而能拿到更晚发布的新证据。
+        ponytail: market_gate 是同步阻塞调用，最坏在事件循环里卡 KLINE_TIMEOUT_SECONDS=5 秒；
+        每个日历日只发生一次，暂不值得为它引入 asyncio.to_thread 与线程池生命周期。
+        """
+        today = now.date().isoformat()
+        checked_at = now.strftime(DT_FORMAT)
+        if not _env_flag_enabled(MARKET_GATE_FLAG):
+            # 门禁关闭 = 回到改动前的行为：不查证据、不落盘、一律放行。
+            # 走 MarketVerdict.to_state() 而非手拼 dict，保证落盘形状只有一处定义（SSOT）。
+            return MarketVerdict(
+                DEFAULT_MARKET, today, VERDICT_UNKNOWN, SOURCE_ASSUMED, "门禁已关闭（INFOFLOW_MARKET_GATE=0）", checked_at
+            ).to_state()
+
+        cached = self._gate_cache
+        if cached and cached[0]["date"] == today and now < cached[1]:
+            return dict(cached[0])
+
+        saved = self._load_state().get("market_gate")
+        if (
+            isinstance(saved, dict)
+            and saved.get("verdict") == VERDICT_CLOSED
+            and str(saved.get("date") or "") == today
+        ):
+            payload = {key: str(value) for key, value in saved.items()}
+            self._cache_verdict(payload, now)
+            return payload
+
+        payload = market_gate(
+            DEFAULT_MARKET,
+            now=now,
+            allow_network=_env_flag_enabled(GATE_NETWORK_FLAG),
+        ).to_state()
+        self._write_market_gate(payload)
+        self._cache_verdict(payload, now)
+        return payload
+
+    def _cache_verdict(self, payload: dict[str, str], now: datetime) -> None:
+        decisive = payload.get("verdict") != VERDICT_UNKNOWN
+        expires = now.replace(hour=23, minute=59, second=59, microsecond=0)
+        if not decisive:
+            expires = now + timedelta(seconds=GATE_CACHE_TTL_SECONDS)
+        self._gate_cache = (dict(payload), expires)
+
+    def _write_market_gate(self, payload: dict[str, str]) -> None:
+        """整文件读改写，只覆盖 state['market_gate']，其它字段原样保留（同 _write_slot 语义）。"""
+        state = self._load_state()
+        state["market_gate"] = dict(payload)
+        self._save_state(state)
+
+    async def _maybe_run_prefetch(self) -> None:
+        """7:10 前置抓取槽：只抓订阅与稍后读，不跑 skill（新闻/公告仍归 8:20 晨间流程）。
+
+        窗口 [7:10, 8:20) 内当天跑一次；过 8:20 不补跑（晨间流程自己会抓）。状态只写
         slots.prefetch，不碰 flow / last_run_date——那是晨间流程的槽位语义，前置槽不得占用
-        （占用会让 8:10 的新闻流程被 last_run_date 判为「今天已跑」而整天不跑）。
+        （占用会让 8:20 的新闻流程被 last_run_date 判为「今天已跑」而整天不跑）。
 
         开工即落 last_attempt_date，失败当天不重试：窗口内每 60 秒 tick 一次，重试会变成
-        最多 65 次的白抓；失败只降级成「今天没有前置槽」，8:10 晨间流程照常兜底。
+        最多 65 次的白抓；失败只降级成「今天没有前置槽」，8:20 晨间流程照常兜底。
+
+        本槽**不过交易日门禁**（与晨间流程不同）：它是给早读备料的，周末与节假日照样要看
+        蓝宝书全球版/晚间版与韭研（两者周末照发），拦下来只会让人早上无料可读。
         """
         now = datetime.now()
         if (now.hour, now.minute) < (PREFETCH_START_HOUR, PREFETCH_START_MINUTE):
@@ -223,9 +299,16 @@ class AutoRunner:
             return
 
         # Catch-up: if today's run was missed (process was down at the
-        # 8:10 start), run as soon as the process is alive again at or after
+        # 8:20 start), run as soon as the process is alive again at or after
         # the start, so a day is never silently skipped.
         if (now.hour, now.minute) < (MORNING_START_HOUR, MORNING_START_MINUTE):
+            return
+
+        # 非交易日整天不跑：结论落盘（_market_verdict 内），后续 tick 直接命中缓存/落盘短路。
+        # 刻意不写 last_run_date——它的语义是「真跑过的日历日」，写它会让节假日被当成已跑过。
+        verdict = self._market_verdict(now)
+        if verdict["verdict"] == VERDICT_CLOSED:
+            logger.info("今日非交易日，跳过晨间流程（%s，来源 %s）", today, verdict["source"])
             return
 
         await self._do_run_morning(now, today)

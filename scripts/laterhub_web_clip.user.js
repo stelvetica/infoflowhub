@@ -2,7 +2,7 @@
 // @name         InfoFlowHub 网页剪藏
 // @namespace    https://laptop-qrpmtrh0.tail7b1e6d.ts.net/
 // @version      1.0
-// @description  Alt+S（或油猴菜单）把当前页面收进 InfoFlowHub 稍后读（人工补录）；标签由每日 8:10 自动流程统一打
+// @description  Alt+S（或油猴菜单）把当前页面收进 InfoFlowHub 稍后读（人工补录）；标签由每日 8:20 自动流程统一打
 // @author       WorkBuddy
 // @match        *://*/*
 // @exclude      https://laptop-qrpmtrh0.tail7b1e6d.ts.net/*

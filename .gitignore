@@ -30,6 +30,8 @@ runtime/health/*.json
 !runtime/health/*.example.json
 runtime/auth/
 runtime/tmp_chrome_probe.mjs
+# skill 执行模型钉死副本：镜像 personal provider 配置，含密钥，绝不入库
+runtime/skill_provider_config.json
 web/__pycache__/
 
 # 调试 / 会话产物，不入库

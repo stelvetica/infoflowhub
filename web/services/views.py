@@ -821,6 +821,17 @@ def get_flow_state() -> dict[str, Any]:
     return flow if isinstance(flow, dict) else {}
 
 
+def get_market_gate() -> dict[str, Any]:
+    """读取「今日交易日门禁」结论（auto_runner 写、状态条只读展示）。
+
+    与 get_flow_state 同形：文件缺失/字段缺失/形状不符一律回空 dict，模板据此渲染
+    「暂无门禁结论」而不是报错——门禁是旁路信息，读不到不能连累面板。
+    """
+    state = read_json(AUTOMATION_RUNTIME_PATH, {})
+    gate = state.get("market_gate") if isinstance(state, dict) else None
+    return gate if isinstance(gate, dict) else {}
+
+
 def _build_report_row(path: Path, kind: str) -> dict[str, Any]:
     """单文件 → 完整产物行；白名单扫描与流程产物补全共用（SSOT）。"""
     matched = re.search(r"\d{4}-\d{2}-\d{2}", path.name)
