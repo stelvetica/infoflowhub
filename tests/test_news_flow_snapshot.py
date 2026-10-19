@@ -388,6 +388,17 @@ def test_market_gate_trading_has_no_skip_hint(env: dict[str, Path], temp_db: Pat
     assert "今日已跳过" not in text
 
 
+def test_market_gate_local_calendar_source_label(env: dict[str, Path], temp_db: Path, client: TestClient):
+    """本地日历是链首证据，状态条要能把它与周末/日K 区分开。"""
+    _write_gate(
+        env["runtime"],
+        {"date": "2026-10-19", "market": "A", "verdict": "closed", "source": "local-calendar", "note": "本地交易日历覆盖至 2026-12-31 且不含今日 → 休市", "checked_at": "2026-10-19 08:20:03"},
+    )
+    text = client.get("/fragments/news-flow-status").text
+    assert "来源 本地交易日历" in text
+    assert "今日已跳过" in text
+
+
 def test_market_gate_unknown_renders_conservative_pass(env: dict[str, Path], temp_db: Path, client: TestClient):
     _write_gate(env["runtime"], {"date": "2026-10-19", "verdict": "unknown", "source": "assumed", "checked_at": "2026-10-19 08:20:03"})
     text = client.get("/fragments/news-flow-status").text
