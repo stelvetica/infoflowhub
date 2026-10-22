@@ -388,7 +388,7 @@ async def bulk_finish_laterhub_action(request: Request):
 def add_laterhub_link(url: str, title: str | None) -> dict:
     """网页剪藏收链（油猴脚本/bookmarklet 等前端的唯一入口）：仅入库为未标签条目。
 
-    打标签全权归属每日 8:20 自动流程（_tag_pending_rows 全表扫无标签行），这里不触发打标；
+    打标签全权归属每日 8:10 自动流程（_tag_pending_rows 全表扫无标签行），这里不触发打标；
     source=manual_verify 复用面板已有的「人工补录」元数据。重复收录复用 upsert 语义：
     会把已完成状态翻回未完成（重新收录=重新要读）。
     """

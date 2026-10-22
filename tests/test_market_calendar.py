@@ -285,7 +285,7 @@ def test_local_calendar_containing_today_is_trading_even_preopen(tmp_path: Path,
 def test_local_calendar_covering_future_without_today_is_closed_preopen(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """链首最核心的价值：覆盖到今天之后却不含今日 = 确凿休市，**盘前就能定论**。
 
-    工作日节假日因此能在 8:20 门禁被拦下；日 K 在盘前做不到这件事（今日行尚未生成）。
+    工作日节假日因此能在 8:10 门禁被拦下；日 K 在盘前做不到这件事（今日行尚未生成）。
     """
     probe = _NoNetwork()
     monkeypatch.setattr(mkt, "kline_state", probe)

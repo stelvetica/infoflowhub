@@ -1,7 +1,7 @@
 """7:10 前置抓取槽与交易日门禁的窗口/状态语义回归检查。
 
-覆盖不变式：窗口外不跑、窗口内当天跑一次、过 8:20 不补跑、
-前置槽不得写 last_run_date（否则 8:20 晨间流程会被判「今天已跑」而整天不跑）、
+覆盖不变式：窗口外不跑、窗口内当天跑一次、过 8:10 不补跑、
+前置槽不得写 last_run_date（否则 8:10 晨间流程会被判「今天已跑」而整天不跑）、
 非交易日两个槽都不动作且落盘 market_gate、门禁开关关掉后行为等同改动前。
 全程打桩：不抓真实数据、不碰真实 runtime 状态文件、不查真实交易日历、不起交易日历刷新子进程。
 """
@@ -97,7 +97,7 @@ def test_does_not_consume_morning_slot(runner: tuple[AutoRunner, list[str]]) -> 
     bot, _calls = runner
     _set_now(7, 10)
     _tick(bot)
-    # last_run_date 是晨间流程的槽位标记，前置槽绝不能写——否则 8:20 流程整天不跑
+    # last_run_date 是晨间流程的槽位标记，前置槽绝不能写——否则 8:10 流程整天不跑
     assert bot._load_state().get("last_run_date") in ("", None)
 
 

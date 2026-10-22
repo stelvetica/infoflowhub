@@ -80,9 +80,9 @@ def publish_reports() -> None:
         )
 
 MORNING_START_HOUR = 8
-MORNING_START_MINUTE = 20
+MORNING_START_MINUTE = 10
 # 晨间流程前置的「订阅 + 稍后读」抓取槽：7:10 只抓数据、不跑 skill，让早读更早拿到。
-# 窗口 [7:10, 8:20) 内当天跑一次；过了 8:20 不补跑——晨间流程自己会抓，补一遍纯属白抓。
+# 窗口 [7:10, 8:10) 内当天跑一次；过了 8:10 不补跑——晨间流程自己会抓，补一遍纯属白抓。
 PREFETCH_START_HOUR = 7
 PREFETCH_START_MINUTE = 10
 CHECK_INTERVAL_SECONDS = 600
@@ -205,7 +205,7 @@ class AutoRunner:
                     await asyncio.to_thread(self._maybe_check_bsk_update)
                 except Exception:
                     logger.exception("bsk 更新检查失败，已跳过本轮")
-            # 7 点与 8 点时段（含 7:10 前置槽、8:20 晨间流程两个开工点）用 1 分钟粒度，
+            # 7 点与 8 点时段（含 7:10 前置槽、8:10 晨间流程两个开工点）用 1 分钟粒度，
             # 避免 10 分钟间隔的相位漂移把当天首次抓取推迟数分钟
             interval = (
                 CHECK_INTERVAL_SECONDS_MORNING
@@ -272,20 +272,20 @@ class AutoRunner:
         self._save_state(state)
 
     async def _maybe_run_prefetch(self) -> None:
-        """7:10 前置抓取槽：只抓订阅与稍后读，不跑 skill（新闻/公告仍归 8:20 晨间流程）。
+        """7:10 前置抓取槽：只抓订阅与稍后读，不跑 skill（新闻/公告仍归 8:10 晨间流程）。
 
-        窗口 [7:10, 8:20) 内当天跑一次；过 8:20 不补跑（晨间流程自己会抓）。状态只写
+        窗口 [7:10, 8:10) 内当天跑一次；过 8:10 不补跑（晨间流程自己会抓）。状态只写
         slots.prefetch，不碰 flow / last_run_date——那是晨间流程的槽位语义，前置槽不得占用
-        （占用会让 8:20 的新闻流程被 last_run_date 判为「今天已跑」而整天不跑）。
+        （占用会让 8:10 的新闻流程被 last_run_date 判为「今天已跑」而整天不跑）。
 
         开工即落 last_attempt_date，失败当天不重试：窗口内每 60 秒 tick 一次，重试会变成
-        最多 65 次的白抓；失败只降级成「今天没有前置槽」，8:20 晨间流程照常兜底。
+        最多 65 次的白抓；失败只降级成「今天没有前置槽」，8:10 晨间流程照常兜底。
 
         本槽**不过交易日门禁**（与晨间流程不同）：它是给早读备料的，周末与节假日照样要看
         蓝宝书全球版/晚间版与韭研（两者周末照发），拦下来只会让人早上无料可读。
 
         顺便在守卫之后刷新本地交易日历（每月 10/20 号、或日历已过期）：刷新点放这里是因为
-        前置槽自带「当天一次」语义，窗口内每 60 秒 tick 也只刷一遍；而 7:10 早于 8:20 的门禁，
+        前置槽自带「当天一次」语义，窗口内每 60 秒 tick 也只刷一遍；而 7:10 早于 8:10 的门禁，
         刷完当天门禁立刻用上新历。机器当天没开、错过 7:10 就不刷——门禁自然退回旧证据链
         （周末 / 蓝宝书 / 日 K），不额外造一个补刷入口。
         """
@@ -361,7 +361,7 @@ class AutoRunner:
             return
 
         # Catch-up: if today's run was missed (process was down at the
-        # 8:20 start), run as soon as the process is alive again at or after
+        # 8:10 start), run as soon as the process is alive again at or after
         # the start, so a day is never silently skipped.
         if (now.hour, now.minute) < (MORNING_START_HOUR, MORNING_START_MINUTE):
             return

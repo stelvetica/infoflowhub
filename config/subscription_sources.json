@@ -310,7 +310,7 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "复用日常 Chrome 登录会话（bsk 后端，不复制 profile）。随每日例行抓取（7:10 前置槽 / 8:20 晨间流程）跑",
+      "note": "复用日常 Chrome 登录会话（bsk 后端，不复制 profile）。随每日例行抓取（7:10 前置槽 / 8:10 晨间流程）跑",
       "channel": "web",
       "auth_key": "alphapai_main",
       "fallback_mode": "none"
