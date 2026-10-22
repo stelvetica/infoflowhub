@@ -1,4 +1,4 @@
-"""手动跑一次完整 skill 流程（portfolio-news → portfolio-announcements）。
+"""手动跑一次完整 skill 流程（portfolio-announcements → portfolio-news）。
 
 定时流程（auto_runner）只在早上跑一次；当日失败或想立即重跑时用本脚本。
 走 AutoRunner.run_skills_now——与 auto_runner 同一套收尾逻辑，会按一次完整流程

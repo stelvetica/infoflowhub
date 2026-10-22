@@ -52,6 +52,7 @@ def runner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[AutoRunner,
     )
     # 晨间流程会跑真实 skill / 开浏览器，这里全部短路，只管调度语义。
     monkeypatch.setattr(auto_runner, "run_skill", lambda name, cwd=None: {"name": name, "status": "success"})
+    monkeypatch.setattr(auto_runner, "publish_reports", lambda: None)
     monkeypatch.setattr(auto_runner, "_open_panel", lambda: None)
     # 交易日历刷新会真起 node 子进程（跨仓、带网络）：默认打桩成「不动作」，
     # 否则测试行为会随「今天几号 / 本机日历是否可用」漂移。专门用例再各自覆盖。

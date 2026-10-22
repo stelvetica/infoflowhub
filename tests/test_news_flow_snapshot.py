@@ -44,6 +44,8 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
     runtime = tmp_path / "runtime" / "automation_runtime.json"
     monkeypatch.setattr(views, "REPORTS_DIR", reports)
     monkeypatch.setattr(views, "AUTOMATION_RUNTIME_PATH", runtime)
+    # 回写观察目录在测试里一律短路，避免真实复制/删除本机产物
+    monkeypatch.setattr(auto_runner, "publish_reports", lambda: None)
     return {"reports": reports, "runtime": runtime}
 
 
@@ -332,6 +334,19 @@ def test_run_skills_now_marks_partial_when_skill_fails(env: dict[str, Path], tem
     assert state["flow"]["status"] == "partial"
     # 与自动路径一致：flow 记 partial，但 last_status 仍代表流程本身跑完
     assert state["last_status"] == "success"
+
+
+def test_publish_reports_runs_even_when_skill_fails(env: dict[str, Path], temp_db: Path, opened: list[str], monkeypatch: pytest.MonkeyPatch):
+    """回写不依赖 skill 成功：md 已落盘、skill 退出码失败时也要把最新产物刷进观察目录。"""
+    calls: list[str] = []
+    monkeypatch.setattr(auto_runner, "publish_reports", lambda: calls.append("publish"))
+    monkeypatch.setattr(
+        auto_runner,
+        "run_skill",
+        lambda name, *, cwd, timeout=None: {"name": name, "status": "failed", "started_at": "", "finished_at": "", "error": "boom"},
+    )
+    asyncio.run(auto_runner.AutoRunner().run_skills_now())
+    assert calls == ["publish"]
 
 
 def test_run_skills_now_keeps_existing_last_result(env: dict[str, Path], temp_db: Path, opened: list[str], monkeypatch: pytest.MonkeyPatch):

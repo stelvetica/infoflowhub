@@ -18,8 +18,9 @@ from infra.utf8_json import dump_json_utf8, load_json_utf8
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
-# 严格按此顺序执行：新闻影响分析先跑，公告清单后跑（公告产物不能因前者失败而缺失）
-SKILLS = ("portfolio-news", "portfolio-announcements")
+# 严格按此顺序执行：公告清单先跑（新闻影响分析要把当天清单纳入新闻源），新闻分析后跑。
+# 上一个失败/超时也继续跑下一个，避免公告失败连带新闻分析缺失。
+SKILLS = ("portfolio-announcements", "portfolio-news")
 SKILL_TIMEOUT_SECONDS = 1200  # 每个 skill 20 分钟
 # 失败后按此间隔（秒）退避重试，最后一个间隔用完即收工。
 # 服务端偶发掐流（`The stream was terminated by the server`）实测十几分钟到半小时自愈——

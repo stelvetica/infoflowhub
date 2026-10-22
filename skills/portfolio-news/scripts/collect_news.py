@@ -5,6 +5,8 @@
   交易日由蓝宝书「晨会版 / 午间版」文件名日期反推，见 market_close_cutoff。
 - 校验（全局口径，不按源分别要求）：所选集合中文件名起始日期 = 今日的条数 ≥ TODAY_MIN_COUNT；
   全部源目录都空/缺失则报错停止；单个源目录缺失或为空只跳过，并在输出中标注。
+- 纳入当天《公告清单》（portfolio-announcements 已筛出的 P0 条目）作为补充新闻源：
+  只读清单表格、每行一条热点；清单缺失时跳过并标注。
 - 源格式自适应：含「单独一行纯数字」→ 蓝宝书编号条目模式；否则走文章模式（韭研公社等），
   按「段落块 + 标题行/正文块配对」切成多条热点（公社内容精选 / 学习笔记均按条分，不再整篇一条）。
 - 剥离新闻包装头（大标题/发布时间/来源/原始页/章节说明/免责声明/作者利益披露）。
@@ -37,6 +39,18 @@ BLUEBOOK_NAME_MARK = "蓝宝书"
 BLUEBOOK_NAME_HEAD = 60  # 版本词只出现在文件名标题段，正文混进文件名时不再向后找
 TODAY_MIN_COUNT = 1
 USED_NEWS_NAME = "used_news.json"
+ANNOUNCEMENTS_LABEL = "公告清单"
+ANNOUNCEMENTS_NAME = "公告清单_{today}.md"  # 当天清单，由 portfolio-announcements 产出并补完介绍
+# 分组标题形如 `## 圆通速递 600233.SH（权重 7.5% · …）`；只认带证券代码的行，避免误吃其它二级标题
+ANNOUNCEMENT_HEADING_RE = re.compile(
+    r"^##\s+(.+?)\s+([0-9]{4,6}\.(?:SH|SZ|BJ|HK))\s*(?:[（(].*)?$"
+)
+# 表格行：| 日期 | 类型 | [公告名](url) | 介绍 |
+ANNOUNCEMENT_ROW_RE = re.compile(
+    r"^\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*([^|]*?)\s*\|"
+    r"\s*\[(.+?)\]\((https?://[^)\s]+)\)\s*\|\s*(.*)\|\s*$"
+)
+ANNOUNCEMENT_TOTAL_RE = re.compile(r"共\s*(\d+)\s*条\s*P0")
 STALE_PROBE = 6  # 扫到窗口之前的日期后，最多再读几个文件头，用来认领「窗口内无内容」的来源
 PUBLISHED_LINE_RE = re.compile(r"^-\s*发布时间[:：]\s*(\d{4})/(\d{2})/(\d{2})\s+(\d{2}):(\d{2})")
 
@@ -116,6 +130,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "-o", "--output", type=Path, default=REPORTS_DIR / "今日新闻.md",
         help="输出 MD 路径",
+    )
+    ann = p.add_mutually_exclusive_group()
+    ann.add_argument(
+        "--announcements", type=Path, default=None,
+        help="公告清单 MD 路径（指定后必须存在）；默认取输出目录下当天的清单，缺失则跳过",
+    )
+    ann.add_argument(
+        "--no-announcements", action="store_true",
+        help="不把公告清单纳入新闻源",
     )
     p.add_argument(
         "--selftest", action="store_true",
@@ -328,6 +351,78 @@ def skipped_sources(dirs: list[Path]) -> list[Path]:
     return [d for d in dirs if not any(d.glob("*.md"))]
 
 
+def parse_announcement_list(
+    text: str,
+) -> list[tuple[str, str, str, list[tuple[str, str]]]]:
+    """解析《公告清单》表格 → (来源, 标题, 正文, 原文链接)。
+
+    清单本身已按「自上次运行以来」过滤并去重，故整表纳入（含补收的漏跑日公告）。
+    每行一条热点；标题去掉与分组名重复的「公司名:」前缀，正文带公告日期与类型，
+    介绍为「待补」时只留日期/类型（介绍由 portfolio-announcements 步骤 3 补齐）。
+    """
+    entries: list[tuple[str, str, str, list[tuple[str, str]]]] = []
+    name = code = ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("## "):
+            heading = ANNOUNCEMENT_HEADING_RE.match(line)
+            # 非公司小节（如「未取到」）必须清空状态，避免后续表格行挂到上一家
+            name, code = (
+                (heading.group(1).strip(), heading.group(2)) if heading else ("", "")
+            )
+            continue
+        row = ANNOUNCEMENT_ROW_RE.match(line)
+        if not row or not name:
+            continue
+        try:
+            day = datetime.strptime(row.group(1), "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        col_type = row.group(2).strip()
+        ann_title = row.group(3).strip().replace("\\|", "|")
+        url = row.group(4).strip()
+        intro = row.group(5).strip().replace("\\|", "|")
+        short = ann_title
+        prefix = re.match(r"^(.{1,20})[:：](.+)$", ann_title)
+        if prefix and prefix.group(1).strip() == name:
+            short = prefix.group(2).strip()
+        body = "\n".join(
+            [f"公告日期：{day}｜公告类型：{col_type}"]
+            + ([intro] if intro and intro != "待补" else [])
+        )
+        entries.append(
+            (ANNOUNCEMENTS_LABEL, f"{name}（{code}）{short}", body, [(ann_title, url)])
+        )
+    return entries
+
+
+def load_announcements(
+    args: argparse.Namespace, today: date, notes: list[str],
+) -> tuple[list[tuple[str, str, str, list[tuple[str, str]]]], list[Path]]:
+    """读当天《公告清单》并转成热点条目；缺失/无条目时只标注，不阻塞新闻流程。"""
+    if args.no_announcements:
+        return [], []
+    path = args.announcements or (args.output.parent / ANNOUNCEMENTS_NAME.format(today=today))
+    if not path.exists():
+        if args.announcements:
+            raise FileNotFoundError(f"指定的公告清单不存在：{path}")
+        notes.append(f"未找到今日公告清单（{path.name}），本次不含公告；需先跑 portfolio-announcements")
+        return [], []
+    text = path.read_text(encoding="utf-8")
+    entries = parse_announcement_list(text)
+    if not entries:
+        notes.append(f"公告清单 {path.name} 无公告条目，未纳入")
+        return [], []
+    total = ANNOUNCEMENT_TOTAL_RE.search(text)
+    if total and int(total.group(1)) != len(entries):
+        notes.append(
+            f"警告：公告清单声明 {total.group(1)} 条 P0，实际解析 {len(entries)} 条，"
+            "可能有换行/格式异常导致漏行"
+        )
+    notes.append(f"已纳入公告清单 {path.name}：{len(entries)} 条")
+    return entries, [path]
+
+
 def is_noise(line: str) -> bool:
     """包装行判定：章节标题/说明/免责声明/新闻头。"""
     return any(p.search(line) for p in NOISE_PATTERNS) or line.startswith(META_PREFIXES)
@@ -525,7 +620,7 @@ def build_output(entries: list[dict], labels: list[str], skipped: list[Path],
                  today: date, notes: list[str]) -> str:
     lines: list[str] = [f"# 今日热点 {today}", ""]
     src_names = list(dict.fromkeys(labels))  # 同名源去重，保留出现顺序
-    lines.append(f"> 合并自 {len(labels)} 条新闻：{' / '.join(src_names)}")
+    lines.append(f"> 合并自 {len(src_names)} 条来源：{' / '.join(src_names)}")
     for note in notes:
         lines.append(f"> {note}")
     if skipped:
@@ -537,7 +632,8 @@ def build_output(entries: list[dict], labels: list[str], skipped: list[Path],
     lines.append("| # | 热点 | 来源 |")
     lines.append("|---|---|---|")
     for i, e in enumerate(entries, start=1):
-        lines.append(f"| {i} | {e['title']} | {'+'.join(e['sources'])} |")
+        title_cell = e["title"].replace("|", "\\|")
+        lines.append(f"| {i} | {title_cell} | {'+'.join(e['sources'])} |")
     lines.append("")
 
     for i, e in enumerate(entries, start=1):
@@ -676,6 +772,29 @@ MLCC板块更新
 这部分内容在链接式尾部标记之后，不应出现。
 """
 
+SELFTEST_ANNOUNCEMENTS = """# 公告清单 2026-10-22
+
+> 数据源：东方财富 · 标的池 51 只 · 仅 P0
+
+## 圆通速递 600233.SH（权重 7.5% · 臻享1期）
+| 日期 | 类型 | 公告名 | 介绍 |
+|---|---|---|---|
+| 2026-10-22 | 三季度报告全文 | [圆通速递:圆通速递股份有限公司2026年第三季度报告](https://data.eastmoney.com/notices/detail/600233/AN1.html) | Q3 归母净利 14.5 亿元（+39.1%） |
+
+## 华勤技术 3296.HK（权重 0.5% · 进取二期）
+| 日期 | 类型 | 公告名 | 介绍 |
+|---|---|---|---|
+| 2026-10-21 | 业绩预告 | [华勤技术:2026年前三季度业绩预告](https://data.eastmoney.com/notices/detail/3296/AN2.html) | 待补 |
+| 2026-10-18 | 业绩预告 | [华勤技术:漏跑日补收公告](https://data.eastmoney.com/notices/detail/3296/AN3.html) | 补收也要纳入 |
+
+## 未取到（需排查）
+| 日期 | 类型 | 公告名 | 介绍 |
+|---|---|---|---|
+| 2026-10-22 | 其他 | [误挂到上一家的公告](https://data.eastmoney.com/notices/detail/999999/AN4.html) | 不应纳入 |
+
+共 3 条 P0，涉及 2 只标的。
+"""
+
 SELFTEST_META = """# 缺 meta 行
 
 - 发布时间: 2026/09/21 09:00
@@ -741,6 +860,21 @@ def run_selftest() -> int:
     meta = parse_article(SELFTEST_META)
     check("边界：meta 缺行时不泄漏成条目", len(meta) == 1 and "发布时间" not in meta[0][0])
 
+    # 公告清单：只吃清单内条目、按公告日过窗口、标题补公司名、介绍进正文、链接保留
+    ann = parse_announcement_list(SELFTEST_ANNOUNCEMENTS)
+    check("公告：整表纳入 3 条（含漏跑日补收）", len(ann) == 3)
+    check("公告：标题补公司名与代码",
+          ann[0][1] == "圆通速递（600233.SH）圆通速递股份有限公司2026年第三季度报告")
+    check("公告：介绍进正文", "归母净利" in ann[0][2])
+    check("公告：原文链接保留", ann[0][3] == [(
+        "圆通速递:圆通速递股份有限公司2026年第三季度报告",
+        "https://data.eastmoney.com/notices/detail/600233/AN1.html",
+    )])
+    check("公告：待补不写入正文", "待补" not in ann[1][2] and "业绩预告" in ann[1][2])
+    check("公告：非公司小节后的表格行不误挂到上一家",
+          all("误挂" not in t for _, t, _, _ in ann))
+    check("公告：来源标签统一", all(src == ANNOUNCEMENTS_LABEL for src, _, _, _ in ann))
+
     # 窗口起点（上个交易日收盘）：交易日由蓝宝书「晨会版/午间版」日期反推 → 最近一次已收盘交易日的 15:00
     # 夹具里 10/9（周五）是最近交易日，10/10、10/11 休市，10/12（周一）是当日交易日
     days = {date(2026, 10, 8), date(2026, 10, 9)}
@@ -794,6 +928,7 @@ def main() -> None:
     today = now.date()
     picked, notes = collect_recent_news(args.dir, today, now)
     skipped = skipped_sources(args.dir)
+    ann_entries, ann_files = load_announcements(args, today, notes)
 
     all_entries: list[tuple[str, str, str, list[tuple[str, str]]]] = []
     labels: list[str] = []
@@ -803,6 +938,9 @@ def main() -> None:
         labels.append(src)
         for title, body, links in parse_news(text):
             all_entries.append((src, title, body, links))
+    if ann_entries:
+        all_entries.extend(ann_entries)
+        labels.append(ANNOUNCEMENTS_LABEL)
     if not all_entries:
         raise ValueError(
             f"未能从 {len(picked)} 条新闻中解析出热点条目，停止流程（源格式可能变化）。"
@@ -813,7 +951,7 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(md, encoding="utf-8")
     used_path = args.output.parent / USED_NEWS_NAME
-    record_used(used_path, picked)
+    record_used(used_path, picked + ann_files)
 
     print(
         f"已生成：{args.output.resolve()}"

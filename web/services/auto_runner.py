@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import subprocess
+import sys
 import webbrowser
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -26,8 +27,30 @@ from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
 from web.services.skill_runner import SKILLS, run_skill
 
 BASE_DIR = Path(__file__).resolve().parents[2]
+PUBLISH_REPORTS = BASE_DIR / "scripts" / "publish_reports.py"
 
 logger = logging.getLogger(__name__)
+
+
+def publish_reports() -> None:
+    """skill 阶段结束后确定性回写观察目录；失败只记日志，不改变流程状态。"""
+    try:
+        result = subprocess.run(
+            [sys.executable, str(PUBLISH_REPORTS)],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("publish_reports 执行异常：%s", exc)
+        return
+    if result.returncode != 0:
+        logger.warning(
+            "publish_reports 失败（%s）：%s",
+            result.returncode,
+            (result.stderr or "").strip()[-500:],
+        )
 
 MORNING_START_HOUR = 8
 MORNING_START_MINUTE = 20
@@ -402,7 +425,11 @@ class AutoRunner:
         return started_at
 
     def _run_skill_stage(self) -> list[dict[str, Any]]:
-        """抓取成功后按 SKILLS 顺序跑 skill；第一个失败/超时也继续跑第二个（公告产物不能缺）。"""
+        """抓取成功后按 SKILLS 顺序跑 skill，结束后确定性回写观察目录。
+
+        第一个失败/超时也继续跑第二个（新闻分析不能因公告失败而缺失）；回写不依赖
+        最后一个 skill 是否跑完，避免 md 已落盘但观察目录仍是旧版本。
+        """
         if not self._skill_stage_enabled():
             return []
         skills: list[dict[str, Any]] = []
@@ -411,6 +438,7 @@ class AutoRunner:
             # 每跑完一个就落盘：运行期状态条从 state 读 skills，否则整个
             # 15~40 分钟运行期都误显示「阶段：抓取订阅与稍后处理」。
             self._persist_skills(skills)
+        publish_reports()
         return skills
 
     async def _finish_flow(
