@@ -40,7 +40,7 @@ description: 分析最新新闻对持仓池标的的利好/利空影响。触发
 2. **取新闻**（脚本）：运行 `scripts/collect_news.py` 生成 `今日新闻.md`（热点合并清单，含当天公告清单）。
 3. **维护信息库**（AI）：读 `references/info-template.md`，基于标的池增量更新 `标的信息库.json`。
 4. **产影响分析**（AI）：读 `references/impact-template.md`，基于新闻+信息库产出 `新闻影响分析_YYYY-MM-DD.md`。
-5. **事件排序**（脚本）：运行 `scripts/order_impact.py <该 md>`，有池内标的的事件排前、无的排后并连续重编号。
+5. **事件排序**（脚本）：运行 `scripts/order_impact.py <该 md>`，有池内标的的事件排前、无的排后并连续重编号；晨间编排在步骤 7 回写前还会幂等再跑一次，模型漏跑也不会错序。
 6. **输出框速览**（AI）：在对话回复里附「中强影响标的速览」（口径见"输出质量"，md 结构不因此改动）。
 7. **回写观察目录**（脚本）：运行 `<infoflowhub>\scripts\publish_reports.py`，把最新一套新闻/公告产物复制到观察目录。
 8. **打开产出**（AI）：完成后自动打开该 md，固定用 marktext、不走系统关联（`python -c "import subprocess; subprocess.Popen([r'C:\Users\ETT\AppData\Local\Programs\marktext\marktext.exe', r'<绝对路径>'])"`；marktext 缺失则报错停止，不回退 startfile）；**临时 HTML 一律不打开；若任何环节被迫打开了页面，必须立即关闭**。

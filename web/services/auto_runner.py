@@ -7,7 +7,7 @@ import subprocess
 import sys
 import webbrowser
 from contextlib import suppress
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -28,12 +28,39 @@ from web.services.skill_runner import SKILLS, run_skill
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 PUBLISH_REPORTS = BASE_DIR / "scripts" / "publish_reports.py"
+ORDER_IMPACT = BASE_DIR / "skills" / "portfolio-news" / "scripts" / "order_impact.py"
+NEWS_ANALYSIS_DIR = BASE_DIR / "data" / "reports"
 
 logger = logging.getLogger(__name__)
 
 
+def reorder_daily_analysis(today: date | None = None) -> None:
+    """确定性再排一次当天新闻分析（幂等）；模型漏跑 order_impact 时兜底。"""
+    target = NEWS_ANALYSIS_DIR / f"新闻影响分析_{today or date.today():%Y-%m-%d}.md"
+    if not target.exists() or not ORDER_IMPACT.exists():
+        return
+    try:
+        result = subprocess.run(
+            [sys.executable, str(ORDER_IMPACT), str(target)],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("order_impact 执行异常：%s", exc)
+        return
+    if result.returncode != 0:
+        logger.warning(
+            "order_impact 失败（%s）：%s",
+            result.returncode,
+            (result.stderr or "").strip()[-500:],
+        )
+
+
 def publish_reports() -> None:
-    """skill 阶段结束后确定性回写观察目录；失败只记日志，不改变流程状态。"""
+    """skill 阶段结束后先重排当天分析（幂等），再回写观察目录；失败只记日志。"""
+    reorder_daily_analysis()
     try:
         result = subprocess.run(
             [sys.executable, str(PUBLISH_REPORTS)],
