@@ -16,9 +16,10 @@ description: 拉取持仓池标的的 P0 上市公司公告，生成每日《公
 | 1 | 抽标的池 | 脚本 | 标的池过期时，按 news-portfolio-impact 的 `extract_pool.py` 重新生成 `标的池.json` |
 | 2 | 拉公告 | 脚本 | 运行 `scripts/collect_announcements.py` → `公告清单_YYYY-MM-DD.md`（介绍列为"待补"） |
 | 3 | 补介绍 | AI | 逐条读公告原文，一句话（含关键数字）填入"待补"格 |
-| 4 | 渲染图片 | AI 按需 | 清单转临时 HTML → 截图 `公告清单_YYYY-MM-DD.png` |
+| 4 | 渲染图片 | AI（有 P0 时必做） | 清单转临时 HTML → 截图 `公告清单_YYYY-MM-DD.png` |
 | 5 | 回写观察目录最新套 | 脚本 | 运行 `<infoflowhub>\scripts\publish_reports.py`，观察目录只保留最新一套 |
 | 6 | 影响解读 | AI 可选 | 结合 `标的信息库.json` 判利好/利空；晨间流程中默认由 portfolio-news 统一分析（本清单已纳入其新闻源），无需重复解读 |
+| 7 | 打开公告 | AI（有 P0 时必做） | 完成后打开 `公告清单_YYYY-MM-DD.png`；0 条 P0 不打开 |
 
 **运行命令**（无参数全默认；改脚本后必须先 `--selftest` 再实跑）：
 
@@ -47,8 +48,7 @@ python "C:\Users\ETT\Playground\infoflowhub\skills\portfolio-announcements\scrip
 
 1. 写临时 HTML → `python -m http.server 8741` 后台起服务
 2. playwright **必须 `headless=True`** 打开 `http://127.0.0.1:8741/<编码后文件名>` 全页截图存 PNG（**不弹浏览器窗口**）
-3. 截图后**必须 `browser.close()`**；再停 http 服务、**删临时 HTML**
-4. **只打开 PNG，绝不打开 HTML**：`python -c "import os; os.startfile(r'<PNG 绝对路径>')"`
+3. 截图后**必须 `browser.close()`**；再停 http 服务、**删临时 HTML**（打开动作在步骤 7）
 
 > playwright 禁 `file://` 协议，必须走 http。
 
@@ -69,6 +69,12 @@ python "C:\Users\ETT\Playground\infoflowhub\scripts\publish_reports.py"
 - 脚本归 infoflowhub 仓库（两个 skill 共用），只操作上述三类文件；`持仓标的.xlsx`、`自选股.xlsx`、`2025十大持仓\` 等一律不碰。
 - 先看将做什么：`--dry-run`；改动脚本后必须先 `--selftest`。
 - **与新闻流程的先后**：本步骤保证公告单独运行时产物也能落盘；晨间流程中 portfolio-news 会在末尾再跑一次 `publish_reports.py`，把当天新闻影响分析一并刷新进观察目录。
+
+## 步骤 7：打开公告
+
+- **有 P0 条目时必须执行**：`python -c "import os; os.startfile(r'<公告清单 PNG 绝对路径>')"`，打开当天的 `公告清单_YYYY-MM-DD.png`。
+- 当天 0 条 P0（清单为空）不生成 PNG，也不打开任何文件。
+- **只打开 PNG**：PNG 缺失时先排查渲染失败，不要回退打开 MD 或 HTML。
 
 ## 口径与约束（脚本已固化，勿在对话里临时改口径）
 
@@ -92,4 +98,4 @@ python "C:\Users\ETT\Playground\infoflowhub\scripts\publish_reports.py"
 
 ## 输出格式
 
-`公告清单_YYYY-MM-DD.md`：标的按 max_weight 降序分组，每组一张表 `| 日期 | 类型 | 公告名 | 介绍 |`，公告名带东财详情链接，介绍列为 AI 补的一句话；末尾统计 P0 条数与涉及标的数。按需另出同名 PNG（四列扁平单表）。
+`公告清单_YYYY-MM-DD.md`：标的按 max_weight 降序分组，每组一张表 `| 日期 | 类型 | 公告名 | 介绍 |`，公告名带东财详情链接，介绍列为 AI 补的一句话；末尾统计 P0 条数与涉及标的数。有 P0 时必出同名 PNG（四列扁平单表），并在步骤 7 打开。
