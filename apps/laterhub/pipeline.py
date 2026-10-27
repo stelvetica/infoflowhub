@@ -179,7 +179,15 @@ class _SourceFetchTimeout(RuntimeError):
 
 def _save_items(db: DBManager, items: list[dict[str, Any]]) -> None:
     for item in items:
-        db.upsert_link(LinkRecord(url=item["url"], title=item["title"], source=item["source"], tags=item.get("tags")))
+        db.upsert_link(
+            LinkRecord(
+                url=item["url"],
+                title=item["title"],
+                source=item["source"],
+                tags=item.get("tags"),
+                keep_finished=bool(item.get("keep_finished")),
+            )
+        )
 
 
 def _run_fetcher_with_timeout(

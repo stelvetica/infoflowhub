@@ -81,6 +81,7 @@ def test_normalize_keeps_reader_link_and_compresses_title():
         "source": "weread_shelf",
         "owner": "",
         "tags": None,
+        "keep_finished": True,
         "raw": item,
     }
 
@@ -90,6 +91,22 @@ def test_normalize_drops_finished_empty_title_and_non_reader_link():
     assert shelf.normalize_weread_item(_book(title="   \n\t ")) is None
     assert shelf.normalize_weread_item(_book(readerLink="https://weread.qq.com/web/bookDetail/x")) is None
     assert shelf.normalize_weread_item(_book(readerLink="")) is None
+
+
+def test_save_items_forwards_keep_finished():
+    """连接器 → pipeline → DB 的完成态豁免必须贯通，否则书每天复活。"""
+    from apps.laterhub import pipeline
+
+    captured: list = []
+
+    class SpyDB:
+        def upsert_link(self, record) -> None:
+            captured.append(record)
+
+    item = shelf.normalize_weread_item(_book())
+    pipeline._save_items(SpyDB(), [item])
+
+    assert captured[0].keep_finished is True
 
 
 def test_external_session_is_only_used_and_navigates_to_shelf():

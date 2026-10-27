@@ -34,6 +34,8 @@ def normalize_weread_item(item: dict[str, Any]) -> dict[str, Any] | None:
         "source": "weread_shelf",
         "owner": "",
         "tags": None,
+        # 书长期在书架上：抓取再命中不等于没读完，保留面板里的完成态。
+        "keep_finished": True,
         "raw": item,
     }
 

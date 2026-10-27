@@ -24,6 +24,9 @@ class LinkRecord:
     tag_status: str = "pending"
     tag_error_message: str | None = None
     error_message: str | None = None
+    # 稳定目录型源（如微信读书书架）的条目会长期留在源列表里，再次抓到不代表没处理完，
+    # 重命中时保留完成态；普通「消费即移出」的源保持默认 False（重命中即复活）。
+    keep_finished: bool = False
 
 
 class DBManager:
@@ -106,6 +109,7 @@ class DBManager:
 
     def upsert_link(self, record: LinkRecord) -> int:
         now = self._now_iso()
+        keep = 1 if record.keep_finished else 0
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT id FROM links WHERE url = ?",
@@ -127,12 +131,13 @@ class DBManager:
                             WHEN COALESCE(?, '') <> '' THEN NULL
                             ELSE tag_error_message
                         END,
-                        -- 抓取又抓到 = 源列表里还在 = 没处理完：完成态清零，读态（已打开）一起清，
+                        -- 普通源：抓取又抓到 = 源列表里还在 = 没处理完，完成态清零，读态一起清，
                         -- 回到未读样式的待办状态；CASE 读的是更新前的值，故只影响「本来就是完成」的行。
-                        is_opened = CASE WHEN is_finished = 1 THEN 0 ELSE is_opened END,
-                        opened_at = CASE WHEN is_finished = 1 THEN NULL ELSE opened_at END,
-                        is_finished = 0,
-                        finished_at = NULL,
+                        -- keep_finished 源（稳定目录）：条目长期在源里，完成态由用户决定，重命中不清。
+                        is_opened = CASE WHEN ? = 0 AND is_finished = 1 THEN 0 ELSE is_opened END,
+                        opened_at = CASE WHEN ? = 0 AND is_finished = 1 THEN NULL ELSE opened_at END,
+                        is_finished = CASE WHEN ? = 1 THEN is_finished ELSE 0 END,
+                        finished_at = CASE WHEN ? = 1 THEN finished_at ELSE NULL END,
                         updated_at = ?,
                         error_message = ?
                     WHERE url = ?
@@ -143,6 +148,10 @@ class DBManager:
                         record.tags,
                         record.tags,
                         record.tags,
+                        keep,
+                        keep,
+                        keep,
+                        keep,
                         now,
                         record.error_message,
                         record.url,

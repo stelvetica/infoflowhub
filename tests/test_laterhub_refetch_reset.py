@@ -68,3 +68,22 @@ def test_refetch_keeps_opened_flag_of_unfinished_item(tmp_path):
     _refetch(db, BILI)
 
     assert _state(db, BILI) == (0, None, 1, OPENED_AT)
+
+
+def test_refetch_keeps_finished_state_for_catalog_source(tmp_path):
+    """书架这类稳定目录源：条目长期在源里，重命中不得把用户标的完成态复活。"""
+    db = DBManager(tmp_path / "laterhub.sqlite3")
+    url = "https://weread.qq.com/web/reader/abc123"
+    record = LinkRecord(url=url, title="书", source="weread_shelf", keep_finished=True)
+    db.upsert_link(record)
+    _mark(db, url, is_finished=1, finished_at=FINISHED_AT, is_opened=1, opened_at=OPENED_AT)
+
+    db.upsert_link(LinkRecord(url=url, title="书（改名）", source="weread_shelf", keep_finished=True))
+
+    assert _state(db, url) == (1, FINISHED_AT, 1, OPENED_AT)
+    conn = sqlite3.connect(db.db_path)
+    try:
+        title = conn.execute("SELECT title FROM links WHERE url = ?", (url,)).fetchone()[0]
+    finally:
+        conn.close()
+    assert title == "书（改名）"
