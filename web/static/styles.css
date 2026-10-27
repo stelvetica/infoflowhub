@@ -315,6 +315,8 @@ button, input, select, textarea { font: inherit; }
 
 /* 工具栏按钮(搜索/筛选等,跟随输入框档) */
 .toolbar .btn, .filterbar .btn { font-size: var(--fs-sm); }
+/* 表格操作列:按钮并排,避免行高被纵向堆叠撑开 */
+.source-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 /* 小号按钮(表格内操作) */
 .source-actions .btn, .laterhub-action-cell .btn {
   font-size: var(--fs-xs);
@@ -385,10 +387,10 @@ td { font-size: var(--fs-sm); }
 .sources-table .col-provider { width: 9%; }
 .sources-table .col-login { width: 12%; }
 .sources-table .col-count { width: 5%; }
-.sources-table .col-error { width: 14%; }
+.sources-table .col-error { width: 12%; }
 .sources-table .col-success { width: 8%; }
 .sources-table .col-invalid { width: 6%; }
-.sources-table .col-action { width: 10%; }
+.sources-table .col-action { width: 12%; }
 .sources-table td { overflow: hidden; white-space: nowrap; }
 
 /* 稍后处理表 */
