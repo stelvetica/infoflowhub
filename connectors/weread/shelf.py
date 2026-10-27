@@ -24,9 +24,6 @@ def normalize_weread_item(item: dict[str, Any]) -> dict[str, Any] | None:
         return None
     if not title:
         return None
-    # 已标「读完」的书不进稍后处理队列。
-    if item.get("finishReading") == 1:
-        return None
 
     return {
         "url": reader_link,

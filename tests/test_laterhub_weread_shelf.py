@@ -86,8 +86,9 @@ def test_normalize_keeps_reader_link_and_compresses_title():
     }
 
 
-def test_normalize_drops_finished_empty_title_and_non_reader_link():
-    assert shelf.normalize_weread_item(_book(finishReading=1)) is None
+def test_normalize_keeps_finished_but_drops_empty_title_and_non_reader_link():
+    # 不按「读完」过滤：书架里的书全部入库。
+    assert shelf.normalize_weread_item(_book(finishReading=1)) is not None
     assert shelf.normalize_weread_item(_book(title="   \n\t ")) is None
     assert shelf.normalize_weread_item(_book(readerLink="https://weread.qq.com/web/bookDetail/x")) is None
     assert shelf.normalize_weread_item(_book(readerLink="")) is None
@@ -209,13 +210,13 @@ def test_non_dict_payload_raises():
 
 def test_debug_json_reflects_success():
     page = FakeBskPage(
-        payload={"ids": 2, "books": [_book(), _book(bookId="b2", finishReading=1)], "badIds": ["mpbook"]}
+        payload={"ids": 2, "books": [_book(), _book(bookId="b2", finishReading=1, readerLink=READER + "b2")], "badIds": ["mpbook"]}
     )
     shelf.fetch_weread_shelf(session=FakeExternalSession(page))
 
     debug = json.loads(shelf.DEBUG_JSON_PATH.read_text(encoding="utf-8"))
     assert debug["ok"] is True
-    assert debug["count"] == 1
+    assert debug["count"] == 2
     assert debug["raw_count"] == 2
     assert debug["bad_ids"] == ["mpbook"]
     assert "error" not in debug
