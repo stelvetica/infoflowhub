@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
+from apps.laterhub.health import load_health as load_laterhub_source_health
+from apps.laterhub.sources import SOURCE_BY_ID, SOURCES as LATERHUB_SOURCES, load_enabled_map
 from apps.laterhub.tagger import TAG_OPTIONS
 from apps.subscriptions.config import NEWS_SOURCE_PREFIX, load_settings, load_sources, save_sources
 from apps.subscriptions.rss_config import BSK_FAILURE_MARKER
@@ -493,10 +495,15 @@ def get_laterhub_summary() -> dict[str, int]:
 
 
 def laterhub_source_meta(source: str) -> dict[str, str]:
+    registered = SOURCE_BY_ID.get(source)
+    if registered:
+        return {
+            "label": registered.name,
+            "purpose": registered.purpose,
+            "fetch_mode": registered.fetch_mode,
+            "auth_key": registered.auth_key,
+        }
     mapping = {
-        "bilibili_watchlater": {"label": "B站稍后看", "purpose": "收藏/稍后处理", "fetch_mode": "统一复用 bilibili_main", "auth_key": "bilibili_main"},
-        "douyin_favorite": {"label": "抖音收藏", "purpose": "收藏/稍后处理", "fetch_mode": "统一复用 douyin_shared", "auth_key": "douyin_shared"},
-        "weread_shelf": {"label": "微信读书书架", "purpose": "待读/稍后处理", "fetch_mode": "统一复用日常 Chrome（bsk）", "auth_key": ""},
         "manual_verify": {"label": "人工补录", "purpose": "资料核实/待整理", "fetch_mode": "人工录入", "auth_key": ""},
     }
     return mapping.get(source, {"label": source, "purpose": "待分类", "fetch_mode": "待识别", "auth_key": ""})
@@ -526,6 +533,44 @@ def get_laterhub_source_stats() -> list[dict[str, Any]]:
         item.update(laterhub_source_meta(item["source"]))
         result.append(item)
     return result
+
+
+def get_laterhub_management_sources(auth_assets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """设置页「稍后处理源管理」行：只含注册表内 4 个抓取源。"""
+    counts = {row["source"]: row for row in get_laterhub_source_stats()}
+    health = load_laterhub_source_health()
+    enabled_map = load_enabled_map()
+    assets = {asset["auth_key"]: asset for asset in auth_assets if asset.get("auth_key")}
+    rows: list[dict[str, Any]] = []
+    for source in LATERHUB_SOURCES:
+        stat = counts.get(source.id, {})
+        source_health = health.get(source.id) or {}
+        failed_at = parse_published_datetime(str(source_health.get("last_failed_at") or ""))
+        success_at = parse_published_datetime(str(source_health.get("last_success_at") or ""))
+        invalid_days = ""
+        if failed_at and (not success_at or failed_at > success_at):
+            invalid_days = str(max((datetime.now() - failed_at).days, 0))
+        asset = assets.get(source.auth_key) if source.auth_key else None
+        enabled = bool(enabled_map.get(source.id, True))
+        rows.append(
+            {
+                "id": source.id,
+                "name": source.name,
+                "enabled": enabled,
+                "enabled_text": "生效" if enabled else "停用",
+                "channel_label": source.channel,
+                "provider_label": source.fetch_mode,
+                "auth_asset_name": asset["display_name"] if asset else "",
+                "auth_status_text": asset["status_text"] if asset else "",
+                "auth_status_level": asset["status_level"] if asset else "",
+                "auth_note": source.auth_note,
+                "entry_count": int(stat.get("total_count") or 0),
+                "last_error": normalize_text_lines(source_health.get("last_error") or ""),
+                "last_success_at": str(source_health.get("last_success_at") or ""),
+                "invalid_days": invalid_days,
+            }
+        )
+    return rows
 
 
 def _write_laterhub_finished(link_ids: list[int], finished: bool) -> int:
@@ -1083,6 +1128,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         "status": status,
         "summary": summary,
         "laterhub_sources": laterhub_sources,
+        "laterhub_management_sources": get_laterhub_management_sources(auth_assets),
         "sources": rows,
         "auth_assets": auth_assets,
         "laterhub_log_text": laterhub_log_text,

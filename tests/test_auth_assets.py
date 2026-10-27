@@ -27,7 +27,7 @@ from web.services import views
 ALPHAPAI_URL = "https://alphapai-web.rabyte.cn/reading/home/market-report/detail"
 SOCIAL_URL = "https://alphapai-web.rabyte.cn/reading/social-media/index"
 # 设置页不应出现的字样（微信系退役、内部名、bsk 凭据类表述）。
-FORBIDDEN_TEXT = ("微信", "alphapai_social", "ALPHAPAI_SOCIAL", "复制 profile", "bsk token")
+FORBIDDEN_TEXT = ("微信公众号", "微信读书扫码", "wechat_mp", "alphapai_social", "ALPHAPAI_SOCIAL", "复制 profile", "bsk token")
 
 # 走 bsk 后端的认证资产：登录方式统一为「日常 Chrome 登录会话」。
 BSK_AUTH_KEYS = (
@@ -108,6 +108,12 @@ def test_settings_page_has_no_forbidden_wording(client: TestClient) -> None:
 
     for text in FORBIDDEN_TEXT:
         assert text not in html
+
+
+def test_settings_page_shows_laterhub_source_management(client: TestClient) -> None:
+    html = client.get("/?view=settings").text
+    assert "稍后处理源管理" in html
+    assert "/actions/laterhub-source/weread_shelf/toggle-enabled" in html
 
 
 def test_both_alphapai_sources_depend_on_alpha_auth(client: TestClient) -> None:

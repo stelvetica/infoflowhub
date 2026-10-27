@@ -19,6 +19,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PIPELINE_PATH = REPO_ROOT / "apps" / "laterhub" / "pipeline.py"
 
 
+@pytest.fixture(autouse=True)
+def _isolate_laterhub_health(monkeypatch):
+    """pipeline 抓取后会写健康文件：打桩模块级名字，避免污染真实 runtime。"""
+    monkeypatch.setattr(pipeline, "record_result", lambda *args, **kwargs: None)
+
+
 class FakeDB:
     def __init__(self) -> None:
         self.saved: list = []
@@ -358,11 +364,13 @@ def test_external_session_not_started_or_shutdown(monkeypatch):
 
 def test_zero_items_logs_explicit_warn(monkeypatch):
     """抓取完成但 0 条：必须打明确 WARN，不能只记新增/更新 0 条。"""
+    from apps.laterhub.sources import SOURCE_BY_ID
+
     messages: list[str] = []
     monkeypatch.setattr(pipeline, "log_line", messages.append)
 
     pipeline._fetch_source(
-        label="抖音收藏",
+        source=SOURCE_BY_ID["douyin_favorite"],
         fetcher=lambda env_path, *, session=None: [],
         db=FakeDB(),
         session=None,

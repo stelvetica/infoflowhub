@@ -1,0 +1,20 @@
+{
+  "sources": [
+    {
+      "id": "bilibili_watchlater",
+      "enabled": true
+    },
+    {
+      "id": "douyin_favorite",
+      "enabled": true
+    },
+    {
+      "id": "xiaoheihe_favor",
+      "enabled": true
+    },
+    {
+      "id": "weread_shelf",
+      "enabled": true
+    }
+  ]
+}

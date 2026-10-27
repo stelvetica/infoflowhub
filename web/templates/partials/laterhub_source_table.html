@@ -1,0 +1,67 @@
+<section class="card">
+  <div class="panel-title">
+    <div class="panel-title-inline">
+      <h2>稍后处理源管理</h2>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="sources-table">
+      <colgroup>
+        <col class="col-index">
+        <col class="col-name">
+        <col class="col-enabled">
+        <col class="col-channel">
+        <col class="col-provider">
+        <col class="col-login">
+        <col class="col-count">
+        <col class="col-error">
+        <col class="col-success">
+        <col class="col-invalid">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>序号</th>
+          <th>名称</th>
+          <th>生效</th>
+          <th>渠道</th>
+          <th>来源类型</th>
+          <th>依赖认证资产</th>
+          <th>条目数</th>
+          <th>最近错误</th>
+          <th>最近成功</th>
+          <th>失效天数</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in settings.laterhub_management_sources %}
+        <tr>
+          <td class="cell-tight">{{ loop.index }}</td>
+          <td title="{{ item.name }}"><span class="cell-ellipsis">{{ item.name }}</span></td>
+          <td class="cell-tight">
+            <form hx-post="/actions/laterhub-source/{{ item.id }}/toggle-enabled" hx-target="#laterhub-sources-panel" hx-swap="innerHTML">
+              <input type="hidden" name="enabled" value="{{ 0 if item.enabled else 1 }}">
+              <button class="btn {% if item.enabled %}warn{% else %}success{% endif %}" type="submit">{{ '停用' if item.enabled else '启用' }}</button>
+            </form>
+          </td>
+          <td title="{{ item.channel_label }}"><span class="cell-ellipsis">{{ item.channel_label }}</span></td>
+          <td title="{{ item.provider_label }}"><span class="cell-ellipsis">{{ item.provider_label }}</span></td>
+          <td class="cell-login-requirement" title="{{ item.auth_note or '' }}">
+            {% if item.auth_asset_name %}
+            <span class="requirement-badge">{{ item.auth_asset_name }}</span>
+            {% if item.auth_status_text %}<span class="auth-status-badge {{ item.auth_status_level }}">{{ item.auth_status_text }}</span>{% endif %}
+            {% elif item.auth_note %}
+            <span class="requirement-badge">{{ item.auth_note }}</span>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td class="cell-tight">{{ item.entry_count }}</td>
+          <td class="cell-error-summary" title="{{ item.last_error or '' }}">{{ item.last_error or '-' }}</td>
+          <td class="cell-tight">{{ item.last_success_at[5:16] if item.last_success_at else '-' }}</td>
+          <td class="cell-tight">{{ item.invalid_days or '-' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>

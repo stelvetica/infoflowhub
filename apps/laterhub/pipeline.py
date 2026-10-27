@@ -11,9 +11,11 @@ from typing import Any
 
 import requests
 
+from apps.laterhub import sources as source_registry
 from apps.laterhub.config import DB_PATH, ENV_PATH, LOG_PATH, LOGS_DIR
 from apps.laterhub.db import DBManager, LinkRecord
 from apps.laterhub.feishu import FeishuBitableClient, FeishuConfig, load_project_env
+from apps.laterhub.health import record_result
 from apps.laterhub.tagger import (
     ContentTagger,
     DEFAULT_TAG,
@@ -236,21 +238,24 @@ def _run_fetcher_with_timeout(
     return payload  # type: ignore[return-value]
 
 
-def _fetch_source(*, label: str, fetcher, db: DBManager, session=None, owns_session: bool = False):
+def _fetch_source(*, source, fetcher, db: DBManager, session=None, owns_session: bool = False):
     """抓取单个源并落库；返回会话（超时置空，调用方据此让后续源自建会话）。"""
-    log_line(f"[3/6] 开始抓取{label}")
+    log_line(f"[3/6] 开始抓取{source.name}")
     try:
-        fetched = _run_fetcher_with_timeout(label, fetcher, session, owns_session=owns_session)
+        fetched = _run_fetcher_with_timeout(source.name, fetcher, session, owns_session=owns_session)
         _save_items(db, fetched)
+        record_result(source.id, ok=True)
         if fetched:
-            log_line(f"[3/6] {label}抓取完成，新增/更新 {len(fetched)} 条")
+            log_line(f"[3/6] {source.name}抓取完成，新增/更新 {len(fetched)} 条")
         else:
-            log_line(f"[3/6][WARN] {label}抓取完成但 0 条，可能是登录态失效或页面结构变更，请核对")
+            log_line(f"[3/6][WARN] {source.name}抓取完成但 0 条，可能是登录态失效或页面结构变更，请核对")
     except _SourceFetchTimeout as exc:
-        log_line(f"[3/6] {label}抓取失败: {exc}")
+        log_line(f"[3/6] {source.name}抓取失败: {exc}")
+        record_result(source.id, ok=False, error=str(exc))
         return None
     except Exception as exc:  # noqa: BLE001
-        log_line(f"[3/6] {label}抓取失败: {exc}")
+        log_line(f"[3/6] {source.name}抓取失败: {exc}")
+        record_result(source.id, ok=False, error=str(exc))
     return session
 
 
@@ -265,10 +270,10 @@ def _session_alive(session) -> bool:
 
 
 def _fetch_enabled_sources(*, args: argparse.Namespace, db: DBManager, session=None) -> bool:
-    """按启用顺序抓取四源，返回是否调度了任一源。
+    """按注册表顺序抓取四源（停用源跳过），返回是否调度了任一源。
 
     会话生命周期（bsk 语义）：外部传入 session 时只复用、绝不 shutdown；否则自建一个共享
-    BskRunnerSession 供四源复用（一次 start/stop），构造或 start 失败则四源各自记为失败并继续
+    BskRunnerSession 供四源复用（一次 start/stop），构造或 start 失败则浏览器源各自记为失败并继续
     走完流程。任一源超时后把会话置空，后续源各自新建会话继续（fetcher 支持 session=None 自建）。
     每源结束后还做一次存活判定：上游内部超时可能已自动 stop 该会话，此时也置空让后续源新建。
     """
@@ -286,24 +291,25 @@ def _fetch_enabled_sources(*, args: argparse.Namespace, db: DBManager, session=N
 
     scheduled = False
     try:
-        for enabled, label, fetcher, needs_browser in (
-            (args.fetch_bilibili, "B 站稍后看", fetch_bilibili_watchlater, False),
-            (args.fetch_douyin, "抖音收藏", fetch_douyin_favorites, True),
-            (args.fetch_xiaoheihe, "小黑盒收藏", fetch_xiaoheihe_favorites, True),
-            (args.fetch_weread, "微信读书书架", fetch_weread_shelf, True),
-        ):
-            if not enabled:
+        for source in source_registry.SOURCES:
+            if not getattr(args, source.flag, False):
+                continue
+            if not source_registry.is_enabled(source.id):
+                log_line(f"[3/6] {source.name}已停用，跳过抓取")
                 continue
             scheduled = True
-            if not needs_browser:
+            # globals() 解析保留单测 monkeypatch pipeline.<fetcher_name> 的打桩点
+            fetcher = globals()[source.fetcher_name]
+            if not source.needs_browser:
                 # HTTP 直连源（B站稍后看走官方 API）：不碰浏览器，bsk 会话起不起得来都照抓。
-                _fetch_source(label=label, fetcher=fetcher, db=db)
+                _fetch_source(source=source, fetcher=fetcher, db=db)
                 continue
             if start_failed:
-                log_line(f"[3/6] {label}抓取失败: bsk 会话启动失败，跳过抓取")
+                log_line(f"[3/6] {source.name}抓取失败: bsk 会话启动失败，跳过抓取")
+                record_result(source.id, ok=False, error="bsk 会话启动失败，跳过抓取")
                 continue
             bsk_session = _fetch_source(
-                label=label,
+                source=source,
                 fetcher=fetcher,
                 db=db,
                 session=bsk_session,
@@ -470,7 +476,11 @@ def run_main_flow(*, fetch_bilibili: bool = True, fetch_douyin: bool = True, fet
     )
     run(args, session=session)
     db = DBManager(DB_PATH)
-    fetched_sources = int(bool(fetch_bilibili)) + int(bool(fetch_douyin)) + int(bool(fetch_xiaoheihe)) + int(bool(fetch_weread))
+    fetched_sources = sum(
+        1
+        for source in source_registry.SOURCES
+        if getattr(args, source.flag, False) and source_registry.is_enabled(source.id)
+    )
     pending_total = len(db.list_by_status("pending"))
     return LaterhubRunSummary(
         fetched_sources=fetched_sources,

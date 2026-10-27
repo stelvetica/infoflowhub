@@ -24,6 +24,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # 全仓口径：凡触碰 laterhub 抓取链路的源码文件都在此登记，新增文件须补进来。
 GUARDED_FILES = {
     "apps/laterhub/pipeline.py": REPO_ROOT / "apps" / "laterhub" / "pipeline.py",
+    "apps/laterhub/sources.py": REPO_ROOT / "apps" / "laterhub" / "sources.py",
+    "apps/laterhub/health.py": REPO_ROOT / "apps" / "laterhub" / "health.py",
     "apps/laterhub/workflow.py": REPO_ROOT / "apps" / "laterhub" / "workflow.py",
     "connectors/douyin/favorites.py": REPO_ROOT / "connectors" / "douyin" / "favorites.py",
     "connectors/xiaoheihe/feed.py": REPO_ROOT / "connectors" / "xiaoheihe" / "feed.py",
@@ -126,12 +128,16 @@ def test_bilibili_watchlater_stays_on_http_api():
 
 
 def test_pipeline_treats_bilibili_as_non_browser_source():
-    """B 站稍后看必须在 pipeline 里标为非浏览器源：bsk 会话起不来时它仍要被抓。"""
+    """B 站稍后看必须在注册表里标为非浏览器源：bsk 会话起不来时它仍要被抓。"""
+    from apps.laterhub.sources import SOURCE_BY_ID
+
+    assert SOURCE_BY_ID["bilibili_watchlater"].needs_browser is False
+    for sid in ("douyin_favorite", "xiaoheihe_favor", "weread_shelf"):
+        assert SOURCE_BY_ID[sid].needs_browser is True
+    # pipeline 必须按注册表分派，且通过 globals() 保留单测 monkeypatch 打桩点。
     source = GUARDED_FILES["apps/laterhub/pipeline.py"].read_text(encoding="utf-8")
-    assert '"B 站稍后看", fetch_bilibili_watchlater, False' in source
-    assert '"抖音收藏", fetch_douyin_favorites, True' in source
-    assert '"小黑盒收藏", fetch_xiaoheihe_favorites, True' in source
-    assert '"微信读书书架", fetch_weread_shelf, True' in source
+    assert "globals()[source.fetcher_name]" in source
+    assert "source.needs_browser" in source
 
 
 def test_pipeline_uses_shared_bsk_session():

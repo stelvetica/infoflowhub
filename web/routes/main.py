@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 
 from apps.laterhub.config import DB_PATH
 from apps.laterhub.db import DBManager, LinkRecord
+from apps.laterhub.sources import set_enabled as set_laterhub_source_enabled
 from web.services import md_render
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
 from web.services.views import (
@@ -293,6 +294,20 @@ async def runtime_status_fragment(request: Request):
 async def sources_fragment(request: Request):
     params = query_dict(request)
     return templates.TemplateResponse(request, "partials/source_table.html", {"settings": get_settings_view(params), "params": params})
+
+
+@router.get("/fragments/laterhub-sources", response_class=HTMLResponse)
+async def laterhub_sources_fragment(request: Request):
+    params = query_dict(request)
+    return templates.TemplateResponse(request, "partials/laterhub_source_table.html", {"settings": get_settings_view(params), "params": params})
+
+
+@router.post("/actions/laterhub-source/{source_id}/toggle-enabled", response_class=HTMLResponse)
+async def toggle_laterhub_source_action(request: Request, source_id: str, enabled: int = Form(...)):
+    # 只改启停配置，不触发抓取。
+    set_laterhub_source_enabled(source_id, bool(enabled))
+    params = query_dict(request)
+    return templates.TemplateResponse(request, "partials/laterhub_source_table.html", {"settings": get_settings_view(params), "params": params})
 
 
 @router.get("/fragments/auth-assets", response_class=HTMLResponse)
