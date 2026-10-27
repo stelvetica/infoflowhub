@@ -47,7 +47,14 @@ def fetch_news_now(session=None) -> dict:
 
 
 def fetch_laterhub_now(session=None) -> dict[str, int]:
-    result = run_main_flow(fetch_bilibili=True, fetch_douyin=True, fetch_xiaoheihe=True, retry_failed=False, session=session)
+    result = run_main_flow(
+        fetch_bilibili=True,
+        fetch_douyin=True,
+        fetch_xiaoheihe=True,
+        fetch_weread=True,
+        retry_failed=False,
+        session=session,
+    )
     return {
         "fetched_sources": result.fetched_sources,
         "pending_total": result.pending_total,

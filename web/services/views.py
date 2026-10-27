@@ -496,6 +496,7 @@ def laterhub_source_meta(source: str) -> dict[str, str]:
     mapping = {
         "bilibili_watchlater": {"label": "B站稍后看", "purpose": "收藏/稍后处理", "fetch_mode": "统一复用 bilibili_main", "auth_key": "bilibili_main"},
         "douyin_favorite": {"label": "抖音收藏", "purpose": "收藏/稍后处理", "fetch_mode": "统一复用 douyin_shared", "auth_key": "douyin_shared"},
+        "weread_shelf": {"label": "微信读书书架", "purpose": "待读/稍后处理", "fetch_mode": "统一复用日常 Chrome（bsk）", "auth_key": ""},
         "manual_verify": {"label": "人工补录", "purpose": "资料核实/待整理", "fetch_mode": "人工录入", "auth_key": ""},
     }
     return mapping.get(source, {"label": source, "purpose": "待分类", "fetch_mode": "待识别", "auth_key": ""})

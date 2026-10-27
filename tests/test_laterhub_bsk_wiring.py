@@ -16,6 +16,7 @@ import pytest
 
 from connectors.bilibili import fetch_bilibili_watchlater
 from connectors.douyin import fetch_douyin_favorites
+from connectors.weread import fetch_weread_shelf
 from connectors.xiaoheihe import fetch_xiaoheihe_favorites
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +27,7 @@ GUARDED_FILES = {
     "apps/laterhub/workflow.py": REPO_ROOT / "apps" / "laterhub" / "workflow.py",
     "connectors/douyin/favorites.py": REPO_ROOT / "connectors" / "douyin" / "favorites.py",
     "connectors/xiaoheihe/feed.py": REPO_ROOT / "connectors" / "xiaoheihe" / "feed.py",
+    "connectors/weread/shelf.py": REPO_ROOT / "connectors" / "weread" / "shelf.py",
     "connectors/bilibili/api.py": REPO_ROOT / "connectors" / "bilibili" / "api.py",
 }
 
@@ -44,12 +46,14 @@ LATERHUB_FETCHERS = {
     "B 站稍后看": fetch_bilibili_watchlater,
     "抖音收藏": fetch_douyin_favorites,
     "小黑盒收藏": fetch_xiaoheihe_favorites,
+    "微信读书书架": fetch_weread_shelf,
 }
 
 # 走 bsk（需要浏览器会话）的源；B 站稍后看走官方 API 直连，不需要也不接受 session。
 BROWSER_FETCHERS = {
     "抖音收藏": fetch_douyin_favorites,
     "小黑盒收藏": fetch_xiaoheihe_favorites,
+    "微信读书书架": fetch_weread_shelf,
 }
 
 
@@ -127,6 +131,7 @@ def test_pipeline_treats_bilibili_as_non_browser_source():
     assert '"B 站稍后看", fetch_bilibili_watchlater, False' in source
     assert '"抖音收藏", fetch_douyin_favorites, True' in source
     assert '"小黑盒收藏", fetch_xiaoheihe_favorites, True' in source
+    assert '"微信读书书架", fetch_weread_shelf, True' in source
 
 
 def test_pipeline_uses_shared_bsk_session():
@@ -134,3 +139,10 @@ def test_pipeline_uses_shared_bsk_session():
     source = GUARDED_FILES["apps/laterhub/pipeline.py"].read_text(encoding="utf-8")
     assert "BskRunnerSession" in source
     assert find_forbidden_tokens(source) == []
+
+
+def test_manual_fetch_explicitly_enables_every_source():
+    """页面「立即抓取」必须逐源显式开启：不能靠默认值，否则改默认时会静默丢源。"""
+    source = (REPO_ROOT / "web" / "services" / "fetch_runtime.py").read_text(encoding="utf-8")
+    for token in ("fetch_bilibili=True", "fetch_douyin=True", "fetch_xiaoheihe=True", "fetch_weread=True"):
+        assert token in source

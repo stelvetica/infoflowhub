@@ -16,6 +16,7 @@ import sys
 SITES = {
     "douyin": "https://www.douyin.com/",
     "xiaoheihe": "https://www.xiaoheihe.cn/",
+    "weread": "https://weread.qq.com/web/shelf",
     "x": "https://x.com/",
     "youtube": "https://www.youtube.com/",
     "bilibili": "https://www.bilibili.com/",

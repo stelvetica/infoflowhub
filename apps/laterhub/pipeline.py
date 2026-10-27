@@ -26,6 +26,7 @@ from apps.laterhub.tagger import (
 from connectors._shared.bsk_session import BskRunnerSession
 from connectors.bilibili import fetch_bilibili_watchlater
 from connectors.douyin import fetch_douyin_favorites
+from connectors.weread import fetch_weread_shelf
 from connectors.xiaoheihe import fetch_xiaoheihe_favorites
 
 
@@ -134,6 +135,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--fetch-bilibili", action="store_true", help="抓取 B 站稍后看")
     parser.add_argument("--fetch-douyin", action="store_true", help="抓取抖音收藏")
     parser.add_argument("--fetch-xiaoheihe", action="store_true", help="抓取小黑盒收藏")
+    parser.add_argument("--fetch-weread", action="store_true", help="抓取微信读书书架")
     return parser.parse_args(argv)
 
 
@@ -255,10 +257,10 @@ def _session_alive(session) -> bool:
 
 
 def _fetch_enabled_sources(*, args: argparse.Namespace, db: DBManager, session=None) -> bool:
-    """按启用顺序抓取三源，返回是否调度了任一源。
+    """按启用顺序抓取四源，返回是否调度了任一源。
 
     会话生命周期（bsk 语义）：外部传入 session 时只复用、绝不 shutdown；否则自建一个共享
-    BskRunnerSession 供三源复用（一次 start/stop），构造或 start 失败则三源各自记为失败并继续
+    BskRunnerSession 供四源复用（一次 start/stop），构造或 start 失败则四源各自记为失败并继续
     走完流程。任一源超时后把会话置空，后续源各自新建会话继续（fetcher 支持 session=None 自建）。
     每源结束后还做一次存活判定：上游内部超时可能已自动 stop 该会话，此时也置空让后续源新建。
     """
@@ -280,6 +282,7 @@ def _fetch_enabled_sources(*, args: argparse.Namespace, db: DBManager, session=N
             (args.fetch_bilibili, "B 站稍后看", fetch_bilibili_watchlater, False),
             (args.fetch_douyin, "抖音收藏", fetch_douyin_favorites, True),
             (args.fetch_xiaoheihe, "小黑盒收藏", fetch_xiaoheihe_favorites, True),
+            (args.fetch_weread, "微信读书书架", fetch_weread_shelf, True),
         ):
             if not enabled:
                 continue
@@ -449,16 +452,17 @@ def run(args: argparse.Namespace, session=None) -> int:
     return _push_pending_rows(db)
 
 
-def run_main_flow(*, fetch_bilibili: bool = True, fetch_douyin: bool = True, fetch_xiaoheihe: bool = True, retry_failed: bool = False, session=None) -> LaterhubRunSummary:
+def run_main_flow(*, fetch_bilibili: bool = True, fetch_douyin: bool = True, fetch_xiaoheihe: bool = True, fetch_weread: bool = True, retry_failed: bool = False, session=None) -> LaterhubRunSummary:
     args = argparse.Namespace(
         retry_failed=retry_failed,
         fetch_bilibili=fetch_bilibili,
         fetch_douyin=fetch_douyin,
         fetch_xiaoheihe=fetch_xiaoheihe,
+        fetch_weread=fetch_weread,
     )
     run(args, session=session)
     db = DBManager(DB_PATH)
-    fetched_sources = int(bool(fetch_bilibili)) + int(bool(fetch_douyin)) + int(bool(fetch_xiaoheihe))
+    fetched_sources = int(bool(fetch_bilibili)) + int(bool(fetch_douyin)) + int(bool(fetch_xiaoheihe)) + int(bool(fetch_weread))
     pending_total = len(db.list_by_status("pending"))
     return LaterhubRunSummary(
         fetched_sources=fetched_sources,

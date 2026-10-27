@@ -45,6 +45,7 @@ def _args(**overrides) -> argparse.Namespace:
         fetch_bilibili=False,
         fetch_douyin=False,
         fetch_xiaoheihe=False,
+        fetch_weread=False,
     )
     base.update(overrides)
     return argparse.Namespace(**base)

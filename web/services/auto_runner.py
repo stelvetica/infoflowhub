@@ -116,7 +116,7 @@ def _env_flag_enabled(name: str, default: str = "1") -> bool:
 
 
 def _fetch_all() -> dict[str, Any]:
-    """7:10 前置槽：全量订阅 + 稍后读，供早读使用（稍后读三源共用 bsk 会话）。
+    """7:10 前置槽：全量订阅 + 稍后读，供早读使用（稍后读四源，其中浏览器源共用 bsk 会话）。
 
     同步阻塞，调用方用 asyncio.to_thread 包。
     """
