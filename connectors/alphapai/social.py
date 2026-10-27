@@ -12,7 +12,11 @@
         .summary .source-paipai + 兄弟 span      -> @PaiPai AI 摘要（可多行）
         .footer-info .category / .category.industry-name / .date
                                                  -> 内容分类 / 行业标签(多个) / 相对时间
-卡片本身无独立链接，link 统一回落社媒默认页。
+
+卡片 DOM 里没有 href，但卡片 root 就是 ListItemCard 组件的 $el：Vue 2 生产包会写
+el.__vue__，vm.item 上带着 id / supplierId——App 自己点标题时正是用
+`{articleId: item.id, supplierId: item.supplierId}` 解析详情页路由。因此一次
+page.evaluate 就能把这些值反查出来拼深链；查不到时 link 回退社媒默认页。
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import List
+from urllib.parse import urlencode
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
 from connectors._shared.common import clean_line, normalize_relative_date, normalize_title_key, now_text
@@ -31,8 +36,24 @@ from connectors.alphapai.feed import looks_like_login_page
 
 
 SOCIAL_URL = "https://alphapai-web.rabyte.cn/reading/social-media/index"
+DETAIL_URL = "https://alphapai-web.rabyte.cn/reading/social-media/detail"
 CARD_CLASS = "list-item-card-container"
 LIST_SELECTORS = (".list-wrapper", ".scroll-box")
+
+# 从卡片 root 的 Vue 实例反查 App 自己用的详情页参数；返回 [{title, articleId, supplierId}]。
+_CARD_LINK_REFS_JS = """
+() => Array.from(document.querySelectorAll('.list-item-card-container')).map((el) => {
+  const vm = el.__vue__;
+  const item = (vm && (vm.item || (vm.$props && vm.$props.item) || (vm._props && vm._props.item))) || null;
+  const titleEl = el.querySelector('.title');
+  const title = titleEl ? (titleEl.textContent || '').replace(/\\s+/g, ' ').trim() : '';
+  return {
+    title,
+    articleId: item && item.id != null ? String(item.id) : '',
+    supplierId: item && item.supplierId != null ? String(item.supplierId) : '',
+  };
+}).filter((ref) => ref.title && ref.articleId && ref.supplierId)
+"""
 SOCIAL_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "subscriptions.sqlite3"
 
 _VOID_TAGS = frozenset(
@@ -212,15 +233,52 @@ def entry_summary(card: dict) -> str:
     return "\n".join(lines)
 
 
-def build_entries(source: dict, cards: List[dict], *, limit: int = 0) -> List[FeedEntry]:
+def detail_link(article_id: str, supplier_id: str) -> str:
+    """文章详情页 URL（与 App 点标题时 router.resolve 的 query 口径一致）。"""
+    if not article_id or not supplier_id:
+        return ""
+    return f"{DETAIL_URL}?{urlencode({'articleId': article_id, 'supplierId': supplier_id})}"
+
+
+def link_refs_by_title(refs) -> dict[str, str]:
+    """浏览器侧 [{title, articleId, supplierId}] -> {归一化标题: 详情页 URL}。"""
+    mapping: dict[str, str] = {}
+    for ref in refs or []:
+        if not isinstance(ref, dict):
+            continue
+        title_key = normalize_title_key(str(ref.get("title") or ""))
+        link = detail_link(str(ref.get("articleId") or "").strip(), str(ref.get("supplierId") or "").strip())
+        if title_key and link:
+            mapping[title_key] = link
+    return mapping
+
+
+def _page_link_refs(page) -> dict[str, str]:
+    """从已渲染卡片反查 App 的 item.id / supplierId；任何失败都退回默认页链接。"""
+    try:
+        refs = page.evaluate(_CARD_LINK_REFS_JS)
+    except Exception:
+        return {}
+    return link_refs_by_title(refs)
+
+
+def build_entries(
+    source: dict,
+    cards: List[dict],
+    *,
+    limit: int = 0,
+    link_refs: dict[str, str] | None = None,
+) -> List[FeedEntry]:
     sid = source.get("id", "alphapai-social-media")
     sname = source.get("name", "资讯 Alpha派公众号")
-    link = source.get("feed_url") or SOCIAL_URL
+    default_link = source.get("feed_url") or SOCIAL_URL
+    refs = link_refs or {}
     entries: List[FeedEntry] = []
     for card in cards[: limit or None]:
         title = entry_title(card)
         if not title:
             continue
+        link = refs.get(normalize_title_key(card.get("title", ""))) or default_link
         entries.append(
             FeedEntry(
                 source_id=sid,
@@ -303,7 +361,8 @@ def fetch_alphapai_social_with_page(page, source: dict, timeout_ms: int = 120000
 
     existing = _get_existing_keys(sid)
     fresh = [card for card in cards if normalize_title_key(entry_title(card)) not in existing]
-    entries = build_entries(source, fresh, limit=limit)
+    link_refs = _page_link_refs(page) if fresh else {}
+    entries = build_entries(source, fresh, limit=limit, link_refs=link_refs)
 
     return FeedFetchResult(
         source_id=sid,

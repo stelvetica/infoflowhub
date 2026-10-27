@@ -56,13 +56,17 @@ class FakeLocator:
 
 
 class FakePage:
-    def __init__(self, html: str, url: str = SOCIAL_URL) -> None:
+    def __init__(self, html: str, url: str = SOCIAL_URL, refs: list | None = None) -> None:
         self._html = html
+        self._refs = refs or []
         self.url = url
         self.closed = False
 
     def locator(self, selector: str) -> FakeLocator:
         return FakeLocator(self._html)
+
+    def evaluate(self, js: str, arg=None):
+        return self._refs
 
     def goto(self, url: str, wait_until: str | None = None, timeout: float | None = None) -> None:
         self.url = url
@@ -224,6 +228,65 @@ def test_edge_entries_use_source_link_and_structured_summary():
 def test_build_entries_respects_limit():
     cards = social.parse_social_cards(REAL_HTML)
     assert len(social.build_entries(SOURCE, cards, limit=3)) == 3
+
+
+# ---- 详情页深链：卡片 Vue 状态 -> articleId / supplierId ----
+
+
+DETAIL_URL = "https://alphapai-web.rabyte.cn/reading/social-media/detail"
+CARD_REFS = [
+    {
+        "title": "多行摘要卡片标题",
+        "articleId": "RAR000008086993",
+        "supplierId": "3096cc3808a9dfa77bf3b9bd5bfee310",
+    },
+    # 浏览器侧标题可能带多余空白，匹配必须按归一化标题
+    {"title": "  缺作者与标签的卡片  ", "articleId": "RAR000000000001", "supplierId": "sup-1"},
+]
+
+
+def test_detail_link_matches_app_query_shape():
+    assert social.detail_link("RAR000008086993", "3096cc") == (
+        f"{DETAIL_URL}?articleId=RAR000008086993&supplierId=3096cc"
+    )
+    assert social.detail_link("", "sup") == ""
+
+
+def test_entries_use_detail_link_and_fall_back_per_card():
+    cards = social.parse_social_cards(EDGE_HTML)
+    entries = social.build_entries(SOURCE, cards, link_refs=social.link_refs_by_title(CARD_REFS))
+
+    assert entries[0].link == (
+        f"{DETAIL_URL}?articleId=RAR000008086993&supplierId=3096cc3808a9dfa77bf3b9bd5bfee310"
+    )
+    assert entries[1].link == f"{DETAIL_URL}?articleId=RAR000000000001&supplierId=sup-1"
+    # 浏览器侧没给出的卡片退回默认页，不能整批丢链接
+    assert entries[2].link == SOCIAL_URL
+
+
+def test_fetch_reads_detail_ids_from_page_vue_state(monkeypatch, tmp_path):
+    db_path = tmp_path / "subscriptions.sqlite3"
+    monkeypatch.setattr(social, "SOCIAL_DB_PATH", db_path)
+
+    result = social.fetch_alphapai_social_with_page(FakePage(EDGE_HTML, refs=CARD_REFS), SOURCE, limit=10)
+
+    assert result.ok
+    assert result.entries[0].link.startswith(f"{DETAIL_URL}?articleId=RAR000008086993")
+    assert result.entries[2].link == SOCIAL_URL
+
+
+def test_fetch_falls_back_to_social_url_when_vue_state_unreadable(monkeypatch, tmp_path):
+    db_path = tmp_path / "subscriptions.sqlite3"
+    monkeypatch.setattr(social, "SOCIAL_DB_PATH", db_path)
+
+    class BrokenPage(FakePage):
+        def evaluate(self, js: str, arg=None):
+            raise RuntimeError("__vue__ unavailable")
+
+    result = social.fetch_alphapai_social_with_page(BrokenPage(EDGE_HTML), SOURCE, limit=10)
+
+    assert result.ok
+    assert all(entry.link == SOCIAL_URL for entry in result.entries)
 
 
 # ---- 接线 ----
