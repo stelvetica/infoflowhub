@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
 from apps.laterhub.tagger import TAG_OPTIONS
-from apps.subscriptions.config import load_settings, load_sources, save_sources
+from apps.subscriptions.config import NEWS_SOURCE_PREFIX, load_settings, load_sources, save_sources
 from apps.subscriptions.rss_config import BSK_FAILURE_MARKER
 from apps.subscriptions.rss_db import (
     delete_entries_by_source,
@@ -78,7 +78,7 @@ LATERHUB_BATCH_SIZE = 30  # 同 ENTRIES_BATCH_SIZE:首批必须盖过可见行�
 ENTRIES_READ_CUTOFF = datetime(2026, 5, 1).timestamp()
 # 资讯类来源（名字前缀即列表「来源」列里显示的分类标签）条目量大、属汇总型资讯，默认按已读处理：
 # 不进未读列表，标题也按已读样式渲染。来源改名去掉前缀即恢复未读，故不另设字段。
-DEFAULT_READ_SOURCE_PREFIXES = ("资讯",)
+DEFAULT_READ_SOURCE_PREFIXES = (NEWS_SOURCE_PREFIX,)
 ABSOLUTE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 BILIBILI_DYNAMIC_PATH_RE = re.compile(r"^/(\d+)$")
 

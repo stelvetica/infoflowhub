@@ -23,7 +23,7 @@ from infra.market_calendar import (
 )
 from infra.text_normalizer import normalize_utf8_text
 from web.services import views
-from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
+from web.services.fetch_runtime import fetch_laterhub_now, fetch_news_now, fetch_now
 from web.services.skill_runner import SKILLS, run_skill
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -116,11 +116,19 @@ def _env_flag_enabled(name: str, default: str = "1") -> bool:
 
 
 def _fetch_all() -> dict[str, Any]:
-    """抓订阅 + 稍后读（稍后读三源共用 bsk 会话，复用用户 Chrome 实时登录态，不复制 profile）。
+    """7:10 前置槽：全量订阅 + 稍后读，供早读使用（稍后读三源共用 bsk 会话）。
 
-    同步阻塞，调用方用 asyncio.to_thread 包；前置槽与晨间流程共用这一处取数（SSOT）。
+    同步阻塞，调用方用 asyncio.to_thread 包。
     """
     return {"subscriptions": fetch_now(), "laterhub": fetch_laterhub_now()}
+
+
+def _fetch_news() -> dict[str, Any]:
+    """8:10 晨间流程：只补抓 skill 的新闻输入源（「资讯」前缀），不碰稍后读与其余订阅。
+
+    其余内容以 7:10 那趟为准；8:10 再全量重抓只会白跑一轮浏览器。
+    """
+    return {"subscriptions": fetch_news_now()}
 
 
 def _flow_products(started_at: str) -> list[dict[str, Any]]:
@@ -274,12 +282,13 @@ class AutoRunner:
     async def _maybe_run_prefetch(self) -> None:
         """7:10 前置抓取槽：只抓订阅与稍后读，不跑 skill（新闻/公告仍归 8:10 晨间流程）。
 
-        窗口 [7:10, 8:10) 内当天跑一次；过 8:10 不补跑（晨间流程自己会抓）。状态只写
-        slots.prefetch，不碰 flow / last_run_date——那是晨间流程的槽位语义，前置槽不得占用
+        窗口 [7:10, 8:10) 内当天跑一次；过 8:10 不补跑（晨间流程只补抓资讯源，其余不再补）。
+        状态只写 slots.prefetch，不碰 flow / last_run_date——那是晨间流程的槽位语义，前置槽不得占用
         （占用会让 8:10 的新闻流程被 last_run_date 判为「今天已跑」而整天不跑）。
 
         开工即落 last_attempt_date，失败当天不重试：窗口内每 60 秒 tick 一次，重试会变成
-        最多 65 次的白抓；失败只降级成「今天没有前置槽」，8:10 晨间流程照常兜底。
+        最多 65 次的白抓；失败只降级成「今天没有前置槽」：8:10 晨间流程仍会补抓资讯源，
+        其余订阅与稍后读要手动「立即获取」。
 
         本槽**不过交易日门禁**（与晨间流程不同）：它是给早读备料的，周末与节假日照样要看
         蓝宝书全球版/晚间版与韭研（两者周末照发），拦下来只会让人早上无料可读。
@@ -307,7 +316,7 @@ class AutoRunner:
 
     async def _do_run_prefetch(self, today: str) -> None:
         async with self._lock:
-            # 双检：等锁期间可能已抓过（另一 tick 抢先），或晨间流程已跑完（它自己会抓）
+            # 双检：等锁期间可能已抓过（另一 tick 抢先），或晨间流程已跑完（当天不再补抓全量）
             if str(self._slot("prefetch").get("last_attempt_date") or "") == today:
                 return
             if str(self._load_state().get("last_run_date") or "") == today:
@@ -418,7 +427,7 @@ class AutoRunner:
             started_at = self._begin_flow(refreshed)
 
             try:
-                result = await asyncio.to_thread(_fetch_all)
+                result = await asyncio.to_thread(_fetch_news)
             except Exception as exc:
                 state = self._load_state()
                 error = normalize_utf8_text(str(exc))

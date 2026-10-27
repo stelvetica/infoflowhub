@@ -11,6 +11,9 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 CONFIG_DIR = BASE_DIR / "config"
 SOURCES_PATH = CONFIG_DIR / "subscription_sources.json"
 SETTINGS_PATH = CONFIG_DIR / "rss_settings.json"
+# 「资讯」前缀 = 汇总型资讯源（蓝宝书 / 韭研）。既用于条目默认已读判定，也用于
+# 8:10 晨间流程只补抓 skill 的新闻输入源——两处语义必须同源，故只在这里定义。
+NEWS_SOURCE_PREFIX = "资讯"
 REQUIRED_SOURCE_FIELDS = (
     "id",
     "name",

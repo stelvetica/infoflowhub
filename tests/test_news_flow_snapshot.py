@@ -159,13 +159,17 @@ def test_open_panel_swallows_browser_failure(opened: list[str], monkeypatch: pyt
 def _run_morning_once(env: dict[str, Path], monkeypatch: pytest.MonkeyPatch, *, fetch_error: Exception | None = None) -> None:
     """把 _do_run_morning 的抓取与 skill 全部换掉，只观察收尾行为。"""
 
-    def fake_fetch_now(*_args, **_kwargs):
+    def fake_fetch_news(*_args, **_kwargs):
         if fetch_error:
             raise fetch_error
         return {"success_sources": 1}
 
-    monkeypatch.setattr(auto_runner, "fetch_now", fake_fetch_now)
-    monkeypatch.setattr(auto_runner, "fetch_laterhub_now", lambda *a, **k: {"fetched_sources": 1})
+    monkeypatch.setattr(auto_runner, "fetch_news_now", fake_fetch_news)
+    monkeypatch.setattr(
+        auto_runner,
+        "fetch_laterhub_now",
+        lambda *a, **k: pytest.fail("8:10 晨间流程不应再抓稍后读"),
+    )
     monkeypatch.setattr(auto_runner, "run_skill", lambda name, *, cwd, timeout=None: {"name": name, "status": "success", "started_at": "", "finished_at": "", "error": ""})
     runner = auto_runner.AutoRunner()
     now = datetime.now()
@@ -195,7 +199,7 @@ def test_morning_flow_records_run_date_and_result(env: dict[str, Path], temp_db:
 
     state = views.read_json(env["runtime"], {})
     assert state["last_run_date"] == datetime.now().date().isoformat()
-    assert state["last_result"] == {"subscriptions": {"success_sources": 1}, "laterhub": {"fetched_sources": 1}}
+    assert state["last_result"] == {"subscriptions": {"success_sources": 1}}
     assert state["flow"]["status"] == "success"
 
 
@@ -261,8 +265,12 @@ def test_skills_persisted_after_each_skill(env: dict[str, Path], temp_db: Path, 
         return {"name": name, "status": "success", "started_at": "", "finished_at": "", "error": ""}
 
     monkeypatch.setattr(auto_runner, "run_skill", fake_run_skill)
-    monkeypatch.setattr(auto_runner, "fetch_now", lambda *a, **k: {"success_sources": 1})
-    monkeypatch.setattr(auto_runner, "fetch_laterhub_now", lambda *a, **k: {"fetched_sources": 1})
+    monkeypatch.setattr(auto_runner, "fetch_news_now", lambda *a, **k: {"success_sources": 1})
+    monkeypatch.setattr(
+        auto_runner,
+        "fetch_laterhub_now",
+        lambda *a, **k: pytest.fail("8:10 晨间流程不应再抓稍后读"),
+    )
     runner = auto_runner.AutoRunner()
     now = datetime.now()
     asyncio.run(runner._do_run_morning(now, now.date().isoformat()))

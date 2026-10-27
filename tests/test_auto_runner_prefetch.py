@@ -46,6 +46,12 @@ def runner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[AutoRunner,
         "_fetch_all",
         lambda: calls.append("fetch") or {"subscriptions": {}, "laterhub": {}},
     )
+    # 晨间流程只补抓资讯源；打桩防止未来用例误打真实网络
+    monkeypatch.setattr(
+        auto_runner,
+        "_fetch_news",
+        lambda: calls.append("news") or {"subscriptions": {}},
+    )
     # 默认「今天是交易日」：既有用例的行为不变式不该依赖真实日历语料。
     monkeypatch.setattr(
         auto_runner, "market_gate", lambda *a, **kw: TRADING, raising=True
@@ -260,7 +266,7 @@ def test_trading_day_keeps_current_behaviour(runner: tuple[AutoRunner, list[str]
 
     _set_now(8, 30)
     _morning(bot)
-    assert calls == ["fetch", "fetch"]  # 晨间流程自己再抓一次
+    assert calls == ["fetch", "news"]  # 晨间流程只补抓资讯源
     state = bot._load_state()
     assert state["last_run_date"] == "2026-10-07"
     assert state["flow"]["status"] in ("success", "partial")
@@ -281,7 +287,7 @@ def test_gate_flag_off_restores_old_behaviour(
     _tick(bot)
     _set_now(8, 30)
     _morning(bot)
-    assert calls == ["fetch", "fetch"]
+    assert calls == ["fetch", "news"]
     assert "market_gate" not in bot._load_state()  # 关闭时也不落盘
 
 
