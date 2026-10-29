@@ -392,3 +392,116 @@ def test_run_skill_injects_provider_config_env(cli_ready: None, runtime_cache: P
     monkeypatch.setattr(skill_runner.subprocess, "Popen", fake_popen)
     skill_runner.run_skill("portfolio-news", cwd=tmp_path)
     assert captured["kwargs"]["env"][skill_runner.BUILTIN_PROVIDER_CONFIG_ENV] == str(config)
+
+
+def _write_provider_aware_config(
+    personal: Path, rules: list[dict], order: list[str], model_rules: list[dict] | None = None
+) -> None:
+    """造一份带 providerRules 的源配置：用于验证钉死目标失效时的回退。"""
+    data = {
+        "config": {
+            "providerOrder": order,
+            "providerConfigRules": {"providerRules": rules},
+            "modelConfigRules": {"providerModelRules": model_rules or []},
+            "defaultModelSelection": {"providerId": "custom:r4", "modelId": "glm-5.3-flash"},
+            "note": "保留",
+        },
+        "secret": "sk-fake",
+    }
+    personal.parent.mkdir(parents=True, exist_ok=True)
+    personal.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def _model_rule(provider_id: str, model_id: str, levels: list[str]) -> dict:
+    """造一条带推理档位规格的模型规则（CLI 要求选中时必须显式给档）。"""
+    return {
+        "providerId": provider_id,
+        "modelId": model_id,
+        "config": {"optionSpecs": {"reasoningLevel": {"values": levels}}},
+    }
+
+
+def test_pinned_personal_config_falls_back_to_same_model_on_enabled_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """钉死的 provider 被禁用：跨 provider 找同名模型，而不是 CLI 默认的首个模型。
+
+    2026-10-29 晨间流程的实际故障：custom:r4 被禁用后 CLI 静默回退到 magpie 的首个模型
+    （慢一个数量级的推理模型），portfolio-news 因此超时。
+    """
+    personal, pinned = _pin_paths(tmp_path, monkeypatch)
+    _write_provider_aware_config(
+        personal,
+        rules=[
+            {"providerId": "magpie", "enabled": True, "config": {"modelOrder": ["group/slow-reasoner", "r4coder/glm-5.3-flash"]}},
+            {"providerId": "custom:r4", "enabled": False, "config": {"modelOrder": ["glm-5.3-flash"]}},
+        ],
+        order=["magpie", "custom:r4"],
+        model_rules=[_model_rule("magpie", "r4coder/glm-5.3-flash", ["low", "high", "max"])],
+    )
+    assert skill_runner.pinned_personal_config() == pinned
+    written = json.loads(pinned.read_text(encoding="utf-8"))
+    assert written["config"]["defaultModelSelection"] == {
+        "providerId": "magpie",
+        "modelId": "r4coder/glm-5.3-flash",
+        "options": {"reasoningLevel": "low"},
+    }
+    assert written["config"]["note"] == "保留"
+    assert written["secret"] == "sk-fake"
+
+
+def test_pinned_personal_config_falls_back_to_first_enabled_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """没有同名模型时，退到 providerOrder 里首个可用 provider 的首个模型。"""
+    personal, pinned = _pin_paths(tmp_path, monkeypatch)
+    _write_provider_aware_config(
+        personal,
+        rules=[
+            {"providerId": "magpie", "enabled": True, "config": {"modelOrder": ["group/slow-reasoner"]}},
+            {"providerId": "custom:r4", "enabled": False, "config": {"modelOrder": ["glm-5.3-flash"]}},
+        ],
+        order=["magpie", "custom:r4"],
+        model_rules=[_model_rule("magpie", "group/slow-reasoner", ["low", "high", "xhigh"])],
+    )
+    skill_runner.pinned_personal_config()
+    assert json.loads(pinned.read_text(encoding="utf-8"))["config"]["defaultModelSelection"] == {
+        "providerId": "magpie",
+        "modelId": "group/slow-reasoner",
+        "options": {"reasoningLevel": "low"},
+    }
+
+
+def test_pinned_personal_config_replaces_removed_model_on_same_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """provider 还在、钉死的模型已被移除：同 provider 内换首个可用模型，不让 CLI 静默漂走。"""
+    personal, pinned = _pin_paths(tmp_path, monkeypatch)
+    _write_provider_aware_config(
+        personal,
+        rules=[{"providerId": "custom:r4", "enabled": True, "config": {"modelOrder": ["deepseek-v4.1-flash"]}}],
+        order=["custom:r4"],
+    )
+    skill_runner.pinned_personal_config()
+    assert json.loads(pinned.read_text(encoding="utf-8"))["config"]["defaultModelSelection"] == {
+        "providerId": "custom:r4",
+        "modelId": "deepseek-v4.1-flash",
+    }
+
+
+def test_pinned_personal_config_keeps_enabled_provider_without_reasoning_levels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """钉死的 provider 仍可用、模型也没有推理档位时原样保留，不额外加 options。"""
+    personal, pinned = _pin_paths(tmp_path, monkeypatch)
+    _write_provider_aware_config(
+        personal,
+        rules=[
+            {"providerId": "magpie", "enabled": True, "config": {"modelOrder": ["group/slow-reasoner"]}},
+            {"providerId": "custom:r4", "enabled": True, "config": {"modelOrder": ["glm-5.3-flash"]}},
+        ],
+        order=["magpie", "custom:r4"],
+    )
+    skill_runner.pinned_personal_config()
+    assert json.loads(pinned.read_text(encoding="utf-8"))["config"]["defaultModelSelection"] == {
+        "providerId": "custom:r4",
+        "modelId": "glm-5.3-flash",
+    }

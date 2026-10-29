@@ -6,6 +6,7 @@ ponytail: 天花板——只判退出码，不解析 token 用量、不看产物
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess
@@ -17,11 +18,14 @@ from pathlib import Path
 from infra.utf8_json import dump_json_utf8, load_json_utf8
 
 BASE_DIR = Path(__file__).resolve().parents[2]
+logger = logging.getLogger(__name__)
 
 # 严格按此顺序执行：公告清单先跑（新闻影响分析要把当天清单纳入新闻源），新闻分析后跑。
 # 上一个失败/超时也继续跑下一个，避免公告失败连带新闻分析缺失。
 SKILLS = ("portfolio-announcements", "portfolio-news")
-SKILL_TIMEOUT_SECONDS = 1200  # 每个 skill 20 分钟
+# 每个 skill 30 分钟：75 个事件的新闻分析实测要 17~20 分钟，20 分钟上限会周期性擦线
+# （2026-10-29 就是收尾时超出 6 秒被判 timeout，产物其实已全部落盘）。
+SKILL_TIMEOUT_SECONDS = 1800
 # 失败后按此间隔（秒）退避重试，最后一个间隔用完即收工。
 # 服务端偶发掐流（`The stream was terminated by the server`）实测十几分钟到半小时自愈——
 # 2026-10-09/10-10 连续两天晨间流程撞上，失败即放弃只能等次日调度或人工补跑；
@@ -74,6 +78,94 @@ def _parse_skill_model() -> tuple[str, str] | None:
     return provider_id, model_id
 
 
+def _enabled_provider_rules(section: dict) -> list[tuple[str, dict]]:
+    """按 providerOrder 列出仍在用的 provider 规则（enabled 缺省视为启用）。"""
+    block = section.get("providerConfigRules")
+    rules = block.get("providerRules") if isinstance(block, dict) else None
+    if not isinstance(rules, list):
+        return []
+    by_id = {rule.get("providerId"): rule for rule in rules if isinstance(rule, dict)}
+    order = [pid for pid in (section.get("providerOrder") or []) if pid in by_id]
+    ordered = [by_id[pid] for pid in order]
+    ordered += [
+        rule for rule in rules
+        if isinstance(rule, dict) and rule.get("providerId") not in order
+    ]
+    return [(rule.get("providerId"), rule) for rule in ordered if rule.get("enabled") is not False]
+
+
+def _provider_model_ids(rule: dict) -> list[str]:
+    """provider 内按偏好排列的模型 id（modelOrder 优先，缺失用 personalModelIds）。"""
+    conf = rule.get("config") if isinstance(rule.get("config"), dict) else {}
+    ids = conf.get("modelOrder") or conf.get("personalModelIds") or []
+    return [str(item) for item in ids]
+
+
+def _effective_selection(section: dict, provider_id: str, model_id: str) -> dict[str, str]:
+    """把钉死目标映射到配置里真正可用的 provider/model。
+
+    用户在 App 里关掉某个 provider（或被 App 重写配置）时，CLI 会静默回退到 providerOrder
+    里第一个可用 provider 的首个模型——2026-10-29 晨间流程实测跑成了慢一个数量级的推理模型，
+    把 portfolio-news 拖过超时。这里显式回退：先按原意跨 provider 找同名模型，
+    找不到再用首个可用 provider 的首个模型，回退打日志便于事后核对。
+    """
+    enabled = _enabled_provider_rules(section)
+    if not enabled:
+        return {"providerId": provider_id, "modelId": model_id}
+    for pid, rule in enabled:
+        if pid != provider_id:
+            continue
+        models = _provider_model_ids(rule)
+        if not models or model_id in models or any(item.endswith("/" + model_id) for item in models):
+            return {"providerId": provider_id, "modelId": model_id}
+        logger.warning("钉死模型 %s/%s 已不在该 provider，改用 %s", model_id, provider_id, pid + "/" + models[0])
+        return {"providerId": pid, "modelId": models[0]}
+    for pid, rule in enabled:
+        for candidate in _provider_model_ids(rule):
+            if candidate == model_id or candidate.endswith("/" + model_id):
+                logger.warning("钉死 provider %s 已禁用，改用 %s/%s", provider_id, pid, candidate)
+                return {"providerId": pid, "modelId": candidate}
+    pid, rule = enabled[0]
+    candidates = _provider_model_ids(rule)
+    if not candidates:
+        return {"providerId": provider_id, "modelId": model_id}
+    logger.warning("钉死模型 %s/%s 不可用，回退 %s/%s", provider_id, model_id, pid, candidates[0])
+    return {"providerId": pid, "modelId": candidates[0]}
+
+
+def _reasoning_levels(section: dict, provider_id: str, model_id: str) -> list[str]:
+    """模型声明的可选推理档位（modelConfigRules 里没有该模型时返回空）。"""
+    block = section.get("modelConfigRules")
+    rules = block.get("providerModelRules") if isinstance(block, dict) else None
+    if not isinstance(rules, list):
+        return []
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        if rule.get("providerId") != provider_id or rule.get("modelId") != model_id:
+            continue
+        conf = rule.get("config") if isinstance(rule.get("config"), dict) else {}
+        specs = conf.get("optionSpecs") if isinstance(conf.get("optionSpecs"), dict) else {}
+        level = specs.get("reasoningLevel") if isinstance(specs.get("reasoningLevel"), dict) else {}
+        values = level.get("values")
+        return [str(value) for value in values] if isinstance(values, list) else []
+    return []
+
+
+def _complete_selection(section: dict, selection: dict[str, str]) -> dict[str, object]:
+    """给声明了推理档位的模型补一个档位。
+
+    CLI 把「模型有 reasoningLevel 规格却没选档」判定为不可选，随后静默回退到注册表里
+    第一个模型——2026-10-29 实测就是这样从 glm-5.3-flash 掉到 deepseek-v4.1-flash-max(xhigh)。
+    技能是机械长文生成，旧 pin（custom:r4 的 flash 模型）没有推理档，故取最低档最接近原意。
+    """
+    levels = _reasoning_levels(section, selection["providerId"], selection["modelId"])
+    if not levels:
+        return selection
+    level = "low" if "low" in levels else levels[0]
+    return {**selection, "options": {"reasoningLevel": level}}
+
+
 def pinned_personal_config() -> Path | None:
     """把 personal provider 配置的 defaultModelSelection 改成钉死模型，写一份副本并回其路径。
 
@@ -81,6 +173,8 @@ def pinned_personal_config() -> Path | None:
     如 "custom:r4/glm-5.3-flash" → providerId="custom:r4"、modelId="glm-5.3-flash"）。
 
     未设 SKILL_MODEL_ENV 时用 DEFAULT_SKILL_MODEL；置空串或解析失败则不钉死（返回 None）。
+    钉死目标不可用（provider 被禁用）时按 _effective_selection 回退到可用模型，并给带推理档位的
+    模型补档（_complete_selection）——否则 CLI 会静默忽略整条 pin，绝不留下一个死 pin。
     副本经 infra.utf8_json 原子写入 PINNED_PROVIDER_CONFIG（先临时文件再 os.replace）。
     任何异常（源读不到、JSON 坏、写失败）一律返回 None，绝不抛出、绝不阻断 skill 执行。
     副本含 personal 配置里的密钥，只落在 runtime/ 下，禁止入库或进日志。
@@ -96,7 +190,9 @@ def pinned_personal_config() -> Path | None:
         section = config.setdefault("config", {})
         if not isinstance(section, dict):
             return None
-        section["defaultModelSelection"] = {"providerId": provider_id, "modelId": model_id}
+        section["defaultModelSelection"] = _complete_selection(
+            section, _effective_selection(section, provider_id, model_id)
+        )
         dump_json_utf8(PINNED_PROVIDER_CONFIG, config)
     except Exception:
         return None
