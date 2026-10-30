@@ -529,26 +529,42 @@ def test_pinned_personal_config_keeps_enabled_provider_without_reasoning_levels(
     }
 
 
-def test_model_candidates_orders_same_provider_then_others(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """候选顺序：主模型 → 同 provider 其他模型 → 其他 provider，且带上推理档位。"""
+def test_model_candidates_orders_same_vendor_then_others(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """候选顺序：主模型 → 同厂商其他模型 → 其他厂商，且带上推理档位。
+
+    真实场景：glm-5.3-flash 间歇 400 时，同厂商的 deepseek-v4.1-flash 应排在
+    group/freedsf4.1（换上游、慢）之前，避免每次失败都落到最慢的备选。
+    """
     personal, _pinned = _pin_paths(tmp_path, monkeypatch)
     _write_provider_aware_config(
         personal,
         rules=[
-            {"providerId": "magpie", "enabled": True, "config": {"modelOrder": ["glm-5.3-flash", "deepseek-v4.1-flash", "gpt-6.1-sol"]}},
+            {
+                "providerId": "magpie",
+                "enabled": True,
+                "config": {
+                    "modelOrder": [
+                        "group/freedsf4.1",
+                        "r4coder/deepseek-v4.1-flash",
+                        "r4coder/glm-5.3-flash",
+                        "coderapi-oai/gpt-6.1-sol",
+                    ]
+                },
+            },
             {"providerId": "custom:r4", "enabled": False, "config": {"modelOrder": ["glm-5.3-flash"]}},
         ],
         order=["magpie", "custom:r4"],
         model_rules=[
-            _model_rule("magpie", "glm-5.3-flash", ["low", "high", "max"]),
-            _model_rule("magpie", "deepseek-v4.1-flash", ["low", "high"]),
+            _model_rule("magpie", "r4coder/glm-5.3-flash", ["low", "high", "max"]),
+            _model_rule("magpie", "r4coder/deepseek-v4.1-flash", ["low", "high"]),
+            _model_rule("magpie", "group/freedsf4.1", ["low", "high", "xhigh"]),
         ],
     )
     candidates = skill_runner._model_candidates()
     assert [(item["providerId"], item["modelId"]) for item in candidates] == [
-        ("magpie", "glm-5.3-flash"),
-        ("magpie", "deepseek-v4.1-flash"),
-        ("magpie", "gpt-6.1-sol"),
+        ("magpie", "r4coder/glm-5.3-flash"),
+        ("magpie", "r4coder/deepseek-v4.1-flash"),
+        ("magpie", "group/freedsf4.1"),
     ]
     assert candidates[0]["options"] == {"reasoningLevel": "low"}
     assert candidates[1]["options"] == {"reasoningLevel": "low"}

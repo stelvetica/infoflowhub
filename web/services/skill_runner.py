@@ -23,9 +23,10 @@ logger = logging.getLogger(__name__)
 # 严格按此顺序执行：公告清单先跑（新闻影响分析要把当天清单纳入新闻源），新闻分析后跑。
 # 上一个失败/超时也继续跑下一个，避免公告失败连带新闻分析缺失。
 SKILLS = ("portfolio-announcements", "portfolio-news")
-# 每个 skill 的总时间预算（跨模型尝试）：75 个事件的新闻分析实测要 17~20 分钟，
-# 20 分钟上限会周期性擦线（2026-10-29 收尾时超出 6 秒被判 timeout，产物其实已落盘）。
-SKILL_TIMEOUT_SECONDS = 1800
+# 每个 skill 的总时间预算（跨模型尝试）：75 个事件的新闻分析实测要 17~25 分钟。
+# 2026-10-29 收尾超出 20 分钟被判 timeout；2026-10-30 主模型 400 后换备选，只剩 27 分钟、
+# 产物 09:38 已落盘却在 09:46 被掐——45 分钟才覆盖「主模型失败 + 备选从头重跑」。
+SKILL_TIMEOUT_SECONDS = 2700
 # 模型/provider 硬失败（如上游 400 "The request could not be processed"）时换下一个候选，
 # 最多试这么多个：2026-10-30 晨间流程同一模型连试 3 次、白等 13 分钟退避，仍然全部 400。
 SKILL_MODEL_ATTEMPTS = 3
@@ -164,11 +165,19 @@ def _complete_selection(section: dict, selection: dict[str, str]) -> dict[str, o
     return {**selection, "options": {"reasoningLevel": level}}
 
 
-def _model_candidates() -> list[dict[str, object]]:
-    """主模型 + 备用模型（先同 provider 其他模型，再其他 provider），最多 SKILL_MODEL_ATTEMPTS 个。
+def _model_vendor(model_id: str) -> str:
+    """模型 id 的厂商/上游前缀（"r4coder/glm-5.3-flash" → "r4coder"；无前缀返回空串）。"""
+    return model_id.split("/", 1)[0] if "/" in model_id else ""
 
-    候选只来自 personal 配置里仍启用的 provider/model；钉死被关闭（INFOFLOW_SKILL_MODEL 置空）
-    时返回空列表，调用方沿用 App 默认模型且不做切换。
+
+def _model_candidates() -> list[dict[str, object]]:
+    """主模型 + 备用模型（先同厂商其他模型，再其他厂商），最多 SKILL_MODEL_ATTEMPTS 个。
+
+    "同厂商"按 modelId 前缀判定（如 r4coder/* 走同一个上游账号）：2026-10-30 实测
+    glm-5.3-flash 间歇 400 时，同账号的 deepseek-v4.1-flash 全通，而排在它前面的
+    group/freedsf4.1（换上游）跑满 27 分钟仍未收尾——先试同厂商又快又省时间。
+    候选只来自 personal 配置里仍启用的 provider/model；钉死被关闭（INFOFLOW_SKILL_MODEL
+    置空）时返回空列表，调用方沿用 App 默认模型且不做切换。
     """
     parsed = _parse_skill_model()
     if parsed is None:
@@ -184,17 +193,21 @@ def _model_candidates() -> list[dict[str, object]]:
     primary = _complete_selection(section, _effective_selection(section, provider_id, model_id))
     candidates: list[dict[str, object]] = [primary]
     seen = {(primary["providerId"], primary["modelId"])}
-    enabled = _enabled_provider_rules(section)
-    same = [item for item in enabled if item[0] == primary["providerId"]]
-    others = [item for item in enabled if item[0] != primary["providerId"]]
-    for pid, rule in [*same, *others]:
-        for candidate in _provider_model_ids(rule):
-            if len(candidates) >= SKILL_MODEL_ATTEMPTS:
-                return candidates
-            if (pid, candidate) in seen:
-                continue
-            seen.add((pid, candidate))
-            candidates.append(_complete_selection(section, {"providerId": pid, "modelId": candidate}))
+    flat = [
+        (pid, model)
+        for pid, rule in _enabled_provider_rules(section)
+        for model in _provider_model_ids(rule)
+    ]
+    vendor = _model_vendor(primary["modelId"])
+    ordered = [item for item in flat if _model_vendor(item[1]) == vendor]
+    ordered += [item for item in flat if _model_vendor(item[1]) != vendor]
+    for pid, model in ordered:
+        if len(candidates) >= SKILL_MODEL_ATTEMPTS:
+            break
+        if (pid, model) in seen:
+            continue
+        seen.add((pid, model))
+        candidates.append(_complete_selection(section, {"providerId": pid, "modelId": model}))
     return candidates
 
 
