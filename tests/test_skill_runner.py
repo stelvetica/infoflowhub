@@ -30,9 +30,29 @@ class _FakePopen:
 
 
 @pytest.fixture(autouse=True)
-def _no_retry_wait(monkeypatch: pytest.MonkeyPatch) -> None:
-    """单测不该为退避真睡几分钟：默认清空重试间隔；验证重试的用例自行覆盖。"""
-    monkeypatch.setattr(skill_runner, "SKILL_RETRY_DELAYS_SECONDS", ())
+def _isolated_models(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """单测不读真实 provider 配置：候选固定为 p1/m1 → p1/m1b → p2/m2，钉死副本也只写 tmp。"""
+    personal = tmp_path / "autouse_provider_config.json"
+    personal.write_text(
+        json.dumps(
+            {
+                "config": {
+                    "providerOrder": ["p1", "p2"],
+                    "providerConfigRules": {
+                        "providerRules": [
+                            {"providerId": "p1", "enabled": True, "config": {"modelOrder": ["m1", "m1b"]}},
+                            {"providerId": "p2", "enabled": True, "config": {"modelOrder": ["m2"]}},
+                        ]
+                    },
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(skill_runner, "PERSONAL_PROVIDER_CONFIG", personal)
+    monkeypatch.setattr(skill_runner, "PINNED_PROVIDER_CONFIG", tmp_path / "pinned.json")
+    monkeypatch.delenv(skill_runner.SKILL_MODEL_ENV, raising=False)
 
 
 @pytest.fixture()
@@ -104,6 +124,7 @@ def test_kill_process_tree_invokes_taskkill_on_windows(monkeypatch: pytest.Monke
 
 
 def test_run_skill_error_uses_stderr_tail(cli_ready: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setattr(skill_runner, "SKILL_MODEL_ATTEMPTS", 1)
     fake = _FakePopen(returncode=1, stderr="x" * 800 + "尾部错误")
     monkeypatch.setattr(skill_runner.subprocess, "Popen", lambda *a, **k: fake)
     result = skill_runner.run_skill("portfolio-news", cwd=tmp_path)
@@ -160,24 +181,28 @@ def test_run_skill_returns_error_when_popen_fails(cli_ready: None, monkeypatch: 
     assert result["finished_at"]
 
 
-def test_run_skill_retries_once_then_succeeds(cli_ready: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    """首次非零退出、重试后成功：返回 success（服务端掐流正是这种瞬时失败）。"""
+def test_run_skill_fails_over_to_next_model(cli_ready: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """首次模型硬失败，换下一个候选模型后成功：返回 success，且钉死副本已切到备选。"""
     attempts: list[int] = []
 
     def fake_popen(command, **kwargs):
         attempts.append(1)
-        return _FakePopen(returncode=1 if len(attempts) == 1 else 0, stderr="The stream was terminated by the server.")
+        return _FakePopen(
+            returncode=1 if len(attempts) == 1 else 0,
+            stderr="R4 Coder: The request could not be processed.\nError: Turn execution failed",
+        )
 
     monkeypatch.setattr(skill_runner.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(skill_runner, "SKILL_RETRY_DELAYS_SECONDS", (0,))
     result = skill_runner.run_skill("portfolio-news", cwd=tmp_path)
     assert result["status"] == "success"
     assert len(attempts) == 2
     assert result["error"] == ""
+    pinned = json.loads(skill_runner.PINNED_PROVIDER_CONFIG.read_text(encoding="utf-8"))
+    assert pinned["config"]["defaultModelSelection"] == {"providerId": "p1", "modelId": "m1b"}
 
 
-def test_run_skill_exhausts_retries_and_reports_attempts(cli_ready: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    """全部尝试都失败：返回 error，并在文案里注明实际尝试次数，便于面板定位。"""
+def test_run_skill_exhausts_model_candidates(cli_ready: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """候选全部失败：返回 error，并在文案里点名试过的模型，便于面板定位。"""
     attempts: list[int] = []
 
     def fake_popen(command, **kwargs):
@@ -185,15 +210,14 @@ def test_run_skill_exhausts_retries_and_reports_attempts(cli_ready: None, monkey
         return _FakePopen(returncode=1, stderr="The stream was terminated by the server.")
 
     monkeypatch.setattr(skill_runner.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(skill_runner, "SKILL_RETRY_DELAYS_SECONDS", (0, 0))
     result = skill_runner.run_skill("portfolio-news", cwd=tmp_path)
     assert result["status"] == "error"
     assert len(attempts) == 3
-    assert "重试 2 次仍失败" in result["error"]
+    assert "p1/m1" in result["error"] and "p2/m2" in result["error"] and "均失败" in result["error"]
 
 
-def test_run_skill_timeout_is_not_retried(cli_ready: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    """超时不重试：单次已耗满 timeout，重试只会把整条流程拖得更长。"""
+def test_run_skill_timeout_is_not_retried_across_models(cli_ready: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """超时不换模型：单次已耗满整个 skill 的时间预算，再试只会拖长整条流程。"""
     attempts: list[int] = []
 
     def fake_popen(command, **kwargs):
@@ -202,13 +226,12 @@ def test_run_skill_timeout_is_not_retried(cli_ready: None, monkeypatch: pytest.M
 
     monkeypatch.setattr(skill_runner.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(skill_runner, "_kill_process_tree", lambda process: None)
-    monkeypatch.setattr(skill_runner, "SKILL_RETRY_DELAYS_SECONDS", (0, 0))
     assert skill_runner.run_skill("portfolio-news", cwd=tmp_path, timeout=5)["status"] == "timeout"
     assert len(attempts) == 1
 
 
 def test_run_skill_unavailable_is_not_retried(cli_ready: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    """CLI 缺失不重试：重试解决不了环境问题。"""
+    """CLI 缺失不换模型：换模型解决不了环境问题。"""
     attempts: list[int] = []
 
     def fake_popen(command, **kwargs):
@@ -217,7 +240,6 @@ def test_run_skill_unavailable_is_not_retried(cli_ready: None, monkeypatch: pyte
 
     monkeypatch.setattr(skill_runner, "find_zcode_cli", lambda: None)
     monkeypatch.setattr(skill_runner.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(skill_runner, "SKILL_RETRY_DELAYS_SECONDS", (0, 0))
     assert skill_runner.run_skill("portfolio-news", cwd=tmp_path)["status"] == "unavailable"
     assert attempts == []
 
@@ -505,3 +527,36 @@ def test_pinned_personal_config_keeps_enabled_provider_without_reasoning_levels(
         "providerId": "custom:r4",
         "modelId": "glm-5.3-flash",
     }
+
+
+def test_model_candidates_orders_same_provider_then_others(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """候选顺序：主模型 → 同 provider 其他模型 → 其他 provider，且带上推理档位。"""
+    personal, _pinned = _pin_paths(tmp_path, monkeypatch)
+    _write_provider_aware_config(
+        personal,
+        rules=[
+            {"providerId": "magpie", "enabled": True, "config": {"modelOrder": ["glm-5.3-flash", "deepseek-v4.1-flash", "gpt-6.1-sol"]}},
+            {"providerId": "custom:r4", "enabled": False, "config": {"modelOrder": ["glm-5.3-flash"]}},
+        ],
+        order=["magpie", "custom:r4"],
+        model_rules=[
+            _model_rule("magpie", "glm-5.3-flash", ["low", "high", "max"]),
+            _model_rule("magpie", "deepseek-v4.1-flash", ["low", "high"]),
+        ],
+    )
+    candidates = skill_runner._model_candidates()
+    assert [(item["providerId"], item["modelId"]) for item in candidates] == [
+        ("magpie", "glm-5.3-flash"),
+        ("magpie", "deepseek-v4.1-flash"),
+        ("magpie", "gpt-6.1-sol"),
+    ]
+    assert candidates[0]["options"] == {"reasoningLevel": "low"}
+    assert candidates[1]["options"] == {"reasoningLevel": "low"}
+
+
+def test_model_candidates_empty_when_pin_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """钉死关闭（INFOFLOW_SKILL_MODEL 置空）时不生成候选，调用方沿用 App 默认模型。"""
+    personal, _pinned = _pin_paths(tmp_path, monkeypatch)
+    _write_source_config(personal)
+    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, "")
+    assert skill_runner._model_candidates() == []

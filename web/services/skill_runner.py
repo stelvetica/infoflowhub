@@ -1,4 +1,4 @@
-"""无头执行 ZCode skill 的薄封装：发现 CLI、跑子进程、超时控制、失败退避重试。
+"""无头执行 ZCode skill 的薄封装：发现 CLI、跑子进程、超时控制、模型故障切换。
 
 职责单一：只负责「跑一次 skill 并回传结果」，不碰状态文件、不碰视图。
 ponytail: 天花板——只判退出码，不解析 token 用量、不看产物是否其实已生成；升级路径是接入 CLI 返回的 usage 做成本统计。
@@ -23,14 +23,12 @@ logger = logging.getLogger(__name__)
 # 严格按此顺序执行：公告清单先跑（新闻影响分析要把当天清单纳入新闻源），新闻分析后跑。
 # 上一个失败/超时也继续跑下一个，避免公告失败连带新闻分析缺失。
 SKILLS = ("portfolio-announcements", "portfolio-news")
-# 每个 skill 30 分钟：75 个事件的新闻分析实测要 17~20 分钟，20 分钟上限会周期性擦线
-# （2026-10-29 就是收尾时超出 6 秒被判 timeout，产物其实已全部落盘）。
+# 每个 skill 的总时间预算（跨模型尝试）：75 个事件的新闻分析实测要 17~20 分钟，
+# 20 分钟上限会周期性擦线（2026-10-29 收尾时超出 6 秒被判 timeout，产物其实已落盘）。
 SKILL_TIMEOUT_SECONDS = 1800
-# 失败后按此间隔（秒）退避重试，最后一个间隔用完即收工。
-# 服务端偶发掐流（`The stream was terminated by the server`）实测十几分钟到半小时自愈——
-# 2026-10-09/10-10 连续两天晨间流程撞上，失败即放弃只能等次日调度或人工补跑；
-# 第二次等待拉长是为跨过更长的故障窗口。只重试非零退出码，timeout/unavailable 见 run_skill。
-SKILL_RETRY_DELAYS_SECONDS = (180, 600)
+# 模型/provider 硬失败（如上游 400 "The request could not be processed"）时换下一个候选，
+# 最多试这么多个：2026-10-30 晨间流程同一模型连试 3 次、白等 13 分钟退避，仍然全部 400。
+SKILL_MODEL_ATTEMPTS = 3
 SKILL_PROMPT_TEMPLATE = "/skill {name} 按 SKILL.md 完整执行本流程"
 # 相对 %LOCALAPPDATA% 的 CLI 位置；不硬编码用户名
 CLI_RELATIVE_PATH = Path("Programs") / "ZCode" / "resources" / "glm" / "zcode.cjs"
@@ -166,11 +164,47 @@ def _complete_selection(section: dict, selection: dict[str, str]) -> dict[str, o
     return {**selection, "options": {"reasoningLevel": level}}
 
 
-def pinned_personal_config() -> Path | None:
+def _model_candidates() -> list[dict[str, object]]:
+    """主模型 + 备用模型（先同 provider 其他模型，再其他 provider），最多 SKILL_MODEL_ATTEMPTS 个。
+
+    候选只来自 personal 配置里仍启用的 provider/model；钉死被关闭（INFOFLOW_SKILL_MODEL 置空）
+    时返回空列表，调用方沿用 App 默认模型且不做切换。
+    """
+    parsed = _parse_skill_model()
+    if parsed is None:
+        return []
+    try:
+        config = load_json_utf8(PERSONAL_PROVIDER_CONFIG)
+    except Exception:
+        return []
+    section = config.get("config") if isinstance(config, dict) else None
+    if not isinstance(section, dict):
+        return []
+    provider_id, model_id = parsed
+    primary = _complete_selection(section, _effective_selection(section, provider_id, model_id))
+    candidates: list[dict[str, object]] = [primary]
+    seen = {(primary["providerId"], primary["modelId"])}
+    enabled = _enabled_provider_rules(section)
+    same = [item for item in enabled if item[0] == primary["providerId"]]
+    others = [item for item in enabled if item[0] != primary["providerId"]]
+    for pid, rule in [*same, *others]:
+        for candidate in _provider_model_ids(rule):
+            if len(candidates) >= SKILL_MODEL_ATTEMPTS:
+                return candidates
+            if (pid, candidate) in seen:
+                continue
+            seen.add((pid, candidate))
+            candidates.append(_complete_selection(section, {"providerId": pid, "modelId": candidate}))
+    return candidates
+
+
+def pinned_personal_config(selection: dict[str, object] | None = None) -> Path | None:
     """把 personal provider 配置的 defaultModelSelection 改成钉死模型，写一份副本并回其路径。
 
     模型串约定 `providerId/modelId`，按**最后一个** "/" 切分（providerId 自身含 ":" 但不含 "/"，
     如 "custom:r4/glm-5.3-flash" → providerId="custom:r4"、modelId="glm-5.3-flash"）。
+    `selection` 为 None 时按 SKILL_MODEL_ENV / DEFAULT_SKILL_MODEL 解析主模型；换模型重试时由
+    调用方传入备选 selection。
 
     未设 SKILL_MODEL_ENV 时用 DEFAULT_SKILL_MODEL；置空串或解析失败则不钉死（返回 None）。
     钉死目标不可用（provider 被禁用）时按 _effective_selection 回退到可用模型，并给带推理档位的
@@ -190,7 +224,7 @@ def pinned_personal_config() -> Path | None:
         section = config.setdefault("config", {})
         if not isinstance(section, dict):
             return None
-        section["defaultModelSelection"] = _complete_selection(
+        section["defaultModelSelection"] = selection or _complete_selection(
             section, _effective_selection(section, provider_id, model_id)
         )
         dump_json_utf8(PINNED_PROVIDER_CONFIG, config)
@@ -199,7 +233,7 @@ def pinned_personal_config() -> Path | None:
     return PINNED_PROVIDER_CONFIG
 
 
-def _provider_config_env() -> dict[str, str]:
+def _provider_config_env(selection: dict[str, object] | None = None) -> dict[str, str]:
     """回传需要给 CLI 子进程补的 provider 配置环境变量；无需补时返回空 dict。
 
     桌面 App 启动 CLI 时会把 ZCODE_BUILTIN_PROVIDER_CONFIG_FILE 指向 App 运行时缓存里那份
@@ -212,8 +246,8 @@ def _provider_config_env() -> dict[str, str]:
     与 App 环境完全对齐：只补 builtin 时 CLI 会多跑一次 CDN 刷新检查（实测 stderr 多一行
     「ZCode Built-in skipped (not-due)」），而那行噪声会混进失败时的 error 尾巴。
 
-    personal 优先取 pinned_personal_config()（钉死了执行模型），拿不到时回退用户原件——降级开关是
-    `INFOFLOW_SKILL_MODEL=` 置空，此时行为与钉死引入前完全一致。
+    personal 优先取 pinned_personal_config(selection)（钉死了本次尝试的模型），拿不到时回退用户
+    原件——降级开关是 `INFOFLOW_SKILL_MODEL=` 置空，此时行为与钉死引入前完全一致。
 
     ponytail: 天花板——按 mtime 取最新一份，不校验它属于哪个 App 版本或 endpoint。已知可被自己
     污染：不带该变量裸跑 CLI（排查时的常见动作）会让 CLI 以 bundle 的占位版本 `0.0.0-dev` 物化
@@ -221,7 +255,7 @@ def _provider_config_env() -> dict[str, str]:
     消除，得按 App 版本精确匹配（版本号无处可读）或读 ZCODE_BASE_URL 反查 endpointKey（见同目录
     zcode-builtin-refresh.json）。
     """
-    pinned = pinned_personal_config()
+    pinned = pinned_personal_config(selection)
     personal = pinned or (PERSONAL_PROVIDER_CONFIG if PERSONAL_PROVIDER_CONFIG.is_file() else None)
     if os.environ.get(BUILTIN_PROVIDER_CONFIG_ENV, "").strip():
         # 已由 App 注入 builtin（本服务被 App 拉起的场景）→ 不覆盖 builtin，但仍补上钉死后的
@@ -255,8 +289,10 @@ def _kill_process_tree(process: subprocess.Popen) -> None:
         process.kill()
 
 
-def _run_skill_once(name: str, *, cwd: Path, timeout: int) -> dict:
-    """跑一次 skill 子进程，返回 {"status", "error"}；不抛异常。"""
+def _run_skill_once(
+    name: str, *, cwd: Path, timeout: int, selection: dict[str, object] | None = None
+) -> dict:
+    """按指定模型跑一次 skill 子进程，返回 {"status", "error"}；不抛异常。"""
     node = shutil.which("node")
     cli = find_zcode_cli()
     if not node or not cli:
@@ -283,7 +319,7 @@ def _run_skill_once(name: str, *, cwd: Path, timeout: int) -> dict:
             text=True,
             encoding="utf-8",
             errors="replace",
-            env={**os.environ, **_provider_config_env()},
+            env={**os.environ, **_provider_config_env(selection)},
         )
     except OSError as exc:
         return {"status": "error", "error": f"启动 skill {name} 子进程失败：{_tail(str(exc))}"}
@@ -302,25 +338,39 @@ def _run_skill_once(name: str, *, cwd: Path, timeout: int) -> dict:
 
 
 def run_skill(name: str, *, cwd: Path, timeout: int = SKILL_TIMEOUT_SECONDS) -> dict:
-    """同步执行一个 skill（调用方放进 asyncio.to_thread）：失败按 SKILL_RETRY_DELAYS_SECONDS 退避重试。
+    """同步执行一个 skill（调用方放进 asyncio.to_thread），timeout 是这个 skill 的总时间预算。
 
-    只重试非零退出码——服务端掐流走这条；timeout 单次已耗满 20 分钟、unavailable 是 CLI 缺失，
-    重试都不会变好，直接返回。started_at 记首次尝试时刻，finished_at 记最终返回时刻。
+    每次尝试钉一个候选模型；模型/provider 硬失败（上游 400、掐流）立即换下一个候选，
+    不再原地退避——同一个坏上游等几分钟不会变好（2026-10-30 连试 3 次同一模型全 400）。
+    timeout 用掉预算、unavailable 是环境缺失，都直接收工。
     """
     started_at = _now()
-    attempts = 0
-    outcome = {"status": "error", "error": ""}
-    # 末尾的 None 是哨兵：最后一次尝试跑完即收工，不再等待
-    for delay in (*SKILL_RETRY_DELAYS_SECONDS, None):
-        attempts += 1
-        outcome = _run_skill_once(name, cwd=cwd, timeout=timeout)
-        if outcome["status"] != "error" or delay is None:
+    deadline = time.monotonic() + timeout
+    candidates: list[dict[str, object] | None] = list(_model_candidates()) or [None]
+    failed: list[str] = []
+    outcome = {"status": "error", "error": "没有可用的候选模型"}
+    for selection in candidates:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
             break
-        time.sleep(delay)
-
+        outcome = _run_skill_once(
+            name, cwd=cwd, timeout=max(1, int(remaining)), selection=selection
+        )
+        if outcome["status"] == "success":
+            return {
+                "name": name,
+                "status": "success",
+                "started_at": started_at,
+                "finished_at": _now(),
+                "error": "",
+            }
+        model = f"{selection['providerId']}/{selection['modelId']}" if selection else "App 默认模型"
+        failed.append(f"{model}（{outcome['status']}）")
+        if outcome["status"] in ("timeout", "unavailable"):
+            break
     error = outcome["error"]
-    if outcome["status"] == "error" and attempts > 1:
-        error = f"重试 {attempts - 1} 次仍失败：{error}"
+    if len(failed) > 1:
+        error = f"{'、'.join(failed)} 均失败：{error}"
     return {
         "name": name,
         "status": outcome["status"],
