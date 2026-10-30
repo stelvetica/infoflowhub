@@ -52,7 +52,8 @@ def _isolated_models(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     )
     monkeypatch.setattr(skill_runner, "PERSONAL_PROVIDER_CONFIG", personal)
     monkeypatch.setattr(skill_runner, "PINNED_PROVIDER_CONFIG", tmp_path / "pinned.json")
-    monkeypatch.delenv(skill_runner.SKILL_MODEL_ENV, raising=False)
+    # 明确钉死候选链：既不读真实配置，也不依赖 DEFAULT_SKILL_MODELS 的内容
+    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, "p1/m1,p1/m1b,p2/m2")
 
 
 @pytest.fixture()
@@ -112,7 +113,8 @@ def test_run_skill_timeout_kills_process_tree(cli_ready: None, monkeypatch: pyte
     result = skill_runner.run_skill("portfolio-news", cwd=tmp_path, timeout=5)
     assert result["status"] == "timeout"
     assert killed == [fake.pid]
-    assert "5" in result["error"]
+    # 剩余预算按秒取整，实际传给子进程的可能比 5 少 1 秒，只断言语义不锁死数字
+    assert "未完成，已终止进程树" in result["error"]
 
 
 def test_kill_process_tree_invokes_taskkill_on_windows(monkeypatch: pytest.MonkeyPatch):
@@ -312,18 +314,21 @@ def _write_source_config(personal: Path) -> dict:
 
 
 def test_pinned_personal_config_repins_default_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """源配置指向别的模型时，副本被掰回默认钉死模型，且其余键与源逐一致。"""
+    """源配置指向别的模型时，副本被掰回默认链首模型，且其余键与源逐一致。"""
     personal, pinned = _pin_paths(tmp_path, monkeypatch)
     source = _write_source_config(personal)
     assert skill_runner.pinned_personal_config() == pinned
     written = json.loads(pinned.read_text(encoding="utf-8"))
-    assert written["config"]["defaultModelSelection"] == {"providerId": "custom:r4", "modelId": "glm-5.3-flash"}
+    assert written["config"]["defaultModelSelection"] == {
+        "providerId": "magpie",
+        "modelId": "r4coder/deepseek-v4.1-flash",
+    }
     assert written["config"]["note"] == source["config"]["note"]
     assert written["secret"] == source["secret"]
 
 
 def test_pinned_personal_config_honors_env_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """环境变量覆盖默认值，并按最后一个 "/" 切分 providerId/modelId。"""
+    """环境变量覆盖默认值，并按第一个 "/" 切分 providerId/modelId。"""
     personal, pinned = _pin_paths(tmp_path, monkeypatch)
     _write_source_config(personal)
     monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, "custom:agnes/agnes-3.0-flash")
@@ -384,11 +389,11 @@ def test_provider_config_env_app_injected_keeps_builtin_but_adds_pinned_personal
     monkeypatch.setattr(skill_runner, "PROVIDER_RUNTIME_ROOT", tmp_path / "runtime_cache")
     personal, pinned = _pin_paths(tmp_path, monkeypatch)
     _write_source_config(personal)
-    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, skill_runner.DEFAULT_SKILL_MODEL)
+    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, skill_runner.DEFAULT_SKILL_MODELS)
     env = skill_runner._provider_config_env()
     assert skill_runner.BUILTIN_PROVIDER_CONFIG_ENV not in env  # 不覆盖 App 注入值
     assert env[skill_runner.PERSONAL_PROVIDER_CONFIG_ENV] == str(pinned)
-    assert json.loads(pinned.read_text(encoding="utf-8"))["config"]["defaultModelSelection"]["modelId"] == "glm-5.3-flash"
+    assert json.loads(pinned.read_text(encoding="utf-8"))["config"]["defaultModelSelection"]["modelId"] == "r4coder/deepseek-v4.1-flash"
 
 
 def test_provider_config_env_app_injected_without_pin_returns_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -396,7 +401,7 @@ def test_provider_config_env_app_injected_without_pin_returns_empty(tmp_path: Pa
     monkeypatch.setenv(skill_runner.BUILTIN_PROVIDER_CONFIG_ENV, "C:/app/injected.json")
     monkeypatch.setattr(skill_runner, "PROVIDER_RUNTIME_ROOT", tmp_path / "runtime_cache")
     personal, _pinned = _pin_paths(tmp_path, monkeypatch)
-    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, skill_runner.DEFAULT_SKILL_MODEL)
+    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, skill_runner.DEFAULT_SKILL_MODELS)
     assert not personal.exists()
     assert skill_runner._provider_config_env() == {}
 
@@ -452,6 +457,7 @@ def test_pinned_personal_config_falls_back_to_same_model_on_enabled_provider(
     （慢一个数量级的推理模型），portfolio-news 因此超时。
     """
     personal, pinned = _pin_paths(tmp_path, monkeypatch)
+    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, "custom:r4/glm-5.3-flash")
     _write_provider_aware_config(
         personal,
         rules=[
@@ -475,6 +481,7 @@ def test_pinned_personal_config_falls_back_to_same_model_on_enabled_provider(
 def test_pinned_personal_config_falls_back_to_first_enabled_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """没有同名模型时，退到 providerOrder 里首个可用 provider 的首个模型。"""
     personal, pinned = _pin_paths(tmp_path, monkeypatch)
+    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, "custom:r4/glm-5.3-flash")
     _write_provider_aware_config(
         personal,
         rules=[
@@ -497,6 +504,7 @@ def test_pinned_personal_config_replaces_removed_model_on_same_provider(
 ):
     """provider 还在、钉死的模型已被移除：同 provider 内换首个可用模型，不让 CLI 静默漂走。"""
     personal, pinned = _pin_paths(tmp_path, monkeypatch)
+    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, "custom:r4/glm-5.3-flash")
     _write_provider_aware_config(
         personal,
         rules=[{"providerId": "custom:r4", "enabled": True, "config": {"modelOrder": ["deepseek-v4.1-flash"]}}],
@@ -514,6 +522,7 @@ def test_pinned_personal_config_keeps_enabled_provider_without_reasoning_levels(
 ):
     """钉死的 provider 仍可用、模型也没有推理档位时原样保留，不额外加 options。"""
     personal, pinned = _pin_paths(tmp_path, monkeypatch)
+    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, "custom:r4/glm-5.3-flash")
     _write_provider_aware_config(
         personal,
         rules=[
@@ -529,13 +538,13 @@ def test_pinned_personal_config_keeps_enabled_provider_without_reasoning_levels(
     }
 
 
-def test_model_candidates_orders_same_vendor_then_others(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """候选顺序：主模型 → 同厂商其他模型 → 其他厂商，且带上推理档位。
-
-    真实场景：glm-5.3-flash 间歇 400 时，同厂商的 deepseek-v4.1-flash 应排在
-    group/freedsf4.1（换上游、慢）之前，避免每次失败都落到最慢的备选。
-    """
+def test_model_candidates_uses_declared_chain_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """候选链严格按声明的顺序解析：不自动补同厂商/其他 provider 的模型。"""
     personal, _pinned = _pin_paths(tmp_path, monkeypatch)
+    monkeypatch.setenv(
+        skill_runner.SKILL_MODEL_ENV,
+        "magpie/r4coder/deepseek-v4.1-flash,magpie/group/freedsf4.1",
+    )
     _write_provider_aware_config(
         personal,
         rules=[
@@ -562,12 +571,48 @@ def test_model_candidates_orders_same_vendor_then_others(tmp_path: Path, monkeyp
     )
     candidates = skill_runner._model_candidates()
     assert [(item["providerId"], item["modelId"]) for item in candidates] == [
-        ("magpie", "r4coder/glm-5.3-flash"),
         ("magpie", "r4coder/deepseek-v4.1-flash"),
         ("magpie", "group/freedsf4.1"),
     ]
     assert candidates[0]["options"] == {"reasoningLevel": "low"}
     assert candidates[1]["options"] == {"reasoningLevel": "low"}
+
+
+def test_model_candidates_default_chain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """默认链：deepseek-v4.1-flash 主用，group/freedsf4.1 备选（2026-10-30 故障后定）。"""
+    personal, _pinned = _pin_paths(tmp_path, monkeypatch)
+    _write_provider_aware_config(
+        personal,
+        rules=[
+            {
+                "providerId": "magpie",
+                "enabled": True,
+                "config": {
+                    "modelOrder": [
+                        "group/freedsf4.1",
+                        "r4coder/deepseek-v4.1-flash",
+                        "r4coder/glm-5.3-flash",
+                    ]
+                },
+            }
+        ],
+        order=["magpie"],
+    )
+    candidates = skill_runner._model_candidates()
+    assert [(item["providerId"], item["modelId"]) for item in candidates] == [
+        ("magpie", "r4coder/deepseek-v4.1-flash"),
+        ("magpie", "group/freedsf4.1"),
+    ]
+
+
+def test_model_candidates_dedupes_resolved_selections(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """链里两项被回退解析成同一个模型时只保留一个（ENV 里重复写也不放大尝试次数）。"""
+    personal, _pinned = _pin_paths(tmp_path, monkeypatch)
+    monkeypatch.setenv(skill_runner.SKILL_MODEL_ENV, "custom:r4/glm-5.3-flash,custom:r4/glm-5.3-flash")
+    _write_provider_aware_config(personal, rules=[], order=[], model_rules=[])
+    assert skill_runner._model_candidates() == [
+        {"providerId": "custom:r4", "modelId": "glm-5.3-flash"}
+    ]
 
 
 def test_model_candidates_empty_when_pin_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

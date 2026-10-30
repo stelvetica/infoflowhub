@@ -45,8 +45,10 @@ PERSONAL_PROVIDER_CONFIG = Path.home() / ".zcode" / "v2" / "provider_config.json
 # CLI v0.16.9 的 headless 模式没有 --model 参数（传了只打帮助），执行模型只能由 personal
 # provider 配置里的 config.defaultModelSelection 决定；桌面 App 可能被用户切成别的模型，
 # 故本服务派生一份只改该字段的副本喂给子进程，把 skill 执行模型钉死。
-SKILL_MODEL_ENV = "INFOFLOW_SKILL_MODEL"  # "providerId/modelId"；置空串 = 关闭钉死，回退现状
-DEFAULT_SKILL_MODEL = "custom:r4/glm-5.3-flash"
+# 主模型 + 备用模型的默认链（逗号分隔，按顺序尝试）：2026-10-30 glm-5.3-flash 上游间歇 400，
+# 主用验证过全通的 deepseek-v4.1-flash，失败再换上游 group/freedsf4.1。
+SKILL_MODEL_ENV = "INFOFLOW_SKILL_MODEL"  # 覆盖模型链（逗号分隔 providerId/modelId）；置空 = 关闭钉死
+DEFAULT_SKILL_MODELS = "magpie/r4coder/deepseek-v4.1-flash,magpie/group/freedsf4.1"
 # 副本落在 runtime/（已被 .gitignore 忽略）：它含 personal 配置里的密钥，绝不能入库进日志
 PINNED_PROVIDER_CONFIG = BASE_DIR / "runtime" / "skill_provider_config.json"
 
@@ -64,17 +66,21 @@ def find_zcode_cli() -> Path | None:
     return path if path.is_file() else None
 
 
-def _parse_skill_model() -> tuple[str, str] | None:
-    """把 SKILL_MODEL_ENV 解析成 (providerId, modelId)；未设用默认，置空/格式非法返回 None。"""
+def _parse_skill_models() -> list[tuple[str, str]]:
+    """把 SKILL_MODEL_ENV / DEFAULT_SKILL_MODELS 解析成 (providerId, modelId) 链。
+
+    逗号分隔（中英文逗号都认），每项按**第一个** "/" 切分：providerId 不含 "/"，modelId 可以含
+    （如 "magpie/r4coder/deepseek-v4.1-flash" → providerId="magpie"、modelId="r4coder/deepseek-v4.1-flash"）。
+    未设用默认链；置空或全部条目格式非法返回空列表（= 关闭钉死，回退 App 默认模型）。
+    """
     raw = os.environ.get(SKILL_MODEL_ENV)
-    value = (DEFAULT_SKILL_MODEL if raw is None else raw).strip()
-    if not value:
-        return None  # 显式置空 = 关闭钉死
-    # 按最后一个 "/" 切分：providerId 自身含 ":" 但不含 "/"（如 "custom:r4/glm-5.3-flash"）。
-    provider_id, sep, model_id = value.rpartition("/")
-    if not sep or not provider_id or not model_id:
-        return None  # 解析失败 → 不钉死
-    return provider_id, model_id
+    value = (DEFAULT_SKILL_MODELS if raw is None else raw).strip()
+    entries: list[tuple[str, str]] = []
+    for chunk in value.replace("，", ",").split(","):
+        provider_id, sep, model_id = chunk.strip().partition("/")
+        if sep and provider_id and model_id:
+            entries.append((provider_id, model_id))
+    return entries
 
 
 def _enabled_provider_rules(section: dict) -> list[tuple[str, dict]]:
@@ -165,22 +171,15 @@ def _complete_selection(section: dict, selection: dict[str, str]) -> dict[str, o
     return {**selection, "options": {"reasoningLevel": level}}
 
 
-def _model_vendor(model_id: str) -> str:
-    """模型 id 的厂商/上游前缀（"r4coder/glm-5.3-flash" → "r4coder"；无前缀返回空串）。"""
-    return model_id.split("/", 1)[0] if "/" in model_id else ""
-
-
 def _model_candidates() -> list[dict[str, object]]:
-    """主模型 + 备用模型（先同厂商其他模型，再其他厂商），最多 SKILL_MODEL_ATTEMPTS 个。
+    """把声明的模型链解析成实际可用的 (provider, model) 候选，最多 SKILL_MODEL_ATTEMPTS 个。
 
-    "同厂商"按 modelId 前缀判定（如 r4coder/* 走同一个上游账号）：2026-10-30 实测
-    glm-5.3-flash 间歇 400 时，同账号的 deepseek-v4.1-flash 全通，而排在它前面的
-    group/freedsf4.1（换上游）跑满 27 分钟仍未收尾——先试同厂商又快又省时间。
-    候选只来自 personal 配置里仍启用的 provider/model；钉死被关闭（INFOFLOW_SKILL_MODEL
-    置空）时返回空列表，调用方沿用 App 默认模型且不做切换。
+    每个条目都过 _effective_selection（provider 被禁用/模型被移除时显式回退）和
+    _complete_selection（补推理档位），并去重；链为空 = 钉死关闭，返回空列表，
+    调用方沿用 App 默认模型且不做切换。
     """
-    parsed = _parse_skill_model()
-    if parsed is None:
+    entries = _parse_skill_models()
+    if not entries:
         return []
     try:
         config = load_json_utf8(PERSONAL_PROVIDER_CONFIG)
@@ -189,47 +188,37 @@ def _model_candidates() -> list[dict[str, object]]:
     section = config.get("config") if isinstance(config, dict) else None
     if not isinstance(section, dict):
         return []
-    provider_id, model_id = parsed
-    primary = _complete_selection(section, _effective_selection(section, provider_id, model_id))
-    candidates: list[dict[str, object]] = [primary]
-    seen = {(primary["providerId"], primary["modelId"])}
-    flat = [
-        (pid, model)
-        for pid, rule in _enabled_provider_rules(section)
-        for model in _provider_model_ids(rule)
-    ]
-    vendor = _model_vendor(primary["modelId"])
-    ordered = [item for item in flat if _model_vendor(item[1]) == vendor]
-    ordered += [item for item in flat if _model_vendor(item[1]) != vendor]
-    for pid, model in ordered:
+    candidates: list[dict[str, object]] = []
+    seen: set[tuple[object, object]] = set()
+    for provider_id, model_id in entries:
+        selection = _complete_selection(section, _effective_selection(section, provider_id, model_id))
+        key = (selection["providerId"], selection["modelId"])
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(selection)
         if len(candidates) >= SKILL_MODEL_ATTEMPTS:
             break
-        if (pid, model) in seen:
-            continue
-        seen.add((pid, model))
-        candidates.append(_complete_selection(section, {"providerId": pid, "modelId": model}))
     return candidates
 
 
 def pinned_personal_config(selection: dict[str, object] | None = None) -> Path | None:
     """把 personal provider 配置的 defaultModelSelection 改成钉死模型，写一份副本并回其路径。
 
-    模型串约定 `providerId/modelId`，按**最后一个** "/" 切分（providerId 自身含 ":" 但不含 "/"，
-    如 "custom:r4/glm-5.3-flash" → providerId="custom:r4"、modelId="glm-5.3-flash"）。
-    `selection` 为 None 时按 SKILL_MODEL_ENV / DEFAULT_SKILL_MODEL 解析主模型；换模型重试时由
-    调用方传入备选 selection。
+    模型链约定逗号分隔的 `providerId/modelId`，每项按**第一个** "/" 切分（providerId 不含 "/"，
+    modelId 可含 "/"）。`selection` 为 None 时取链首（主模型）；换模型尝试时由调用方传入候选。
 
-    未设 SKILL_MODEL_ENV 时用 DEFAULT_SKILL_MODEL；置空串或解析失败则不钉死（返回 None）。
+    未设 SKILL_MODEL_ENV 时用 DEFAULT_SKILL_MODELS；置空或全部条目非法则不钉死（返回 None）。
     钉死目标不可用（provider 被禁用）时按 _effective_selection 回退到可用模型，并给带推理档位的
     模型补档（_complete_selection）——否则 CLI 会静默忽略整条 pin，绝不留下一个死 pin。
     副本经 infra.utf8_json 原子写入 PINNED_PROVIDER_CONFIG（先临时文件再 os.replace）。
     任何异常（源读不到、JSON 坏、写失败）一律返回 None，绝不抛出、绝不阻断 skill 执行。
     副本含 personal 配置里的密钥，只落在 runtime/ 下，禁止入库或进日志。
     """
-    parsed = _parse_skill_model()
-    if parsed is None:
+    entries = _parse_skill_models()
+    if not entries:
         return None
-    provider_id, model_id = parsed
+    provider_id, model_id = entries[0]
     try:
         config = load_json_utf8(PERSONAL_PROVIDER_CONFIG)
         if not isinstance(config, dict):
