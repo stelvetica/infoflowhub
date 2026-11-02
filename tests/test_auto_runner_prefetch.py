@@ -63,7 +63,15 @@ def runner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[AutoRunner,
     # 交易日历刷新会真起 node 子进程（跨仓、带网络）：默认打桩成「不动作」，
     # 否则测试行为会随「今天几号 / 本机日历是否可用」漂移。专门用例再各自覆盖。
     monkeypatch.setattr(auto_runner, "refresh_local_calendar", lambda now=None: "")
-    return AutoRunner(), calls
+    bot = AutoRunner()
+    # bsk 版本检查会真起 PowerShell + 联网：打桩成「记一笔」，顺带记录与抓取的先后顺序。
+    bot.bsk_checks = []  # type: ignore[attr-defined]
+    monkeypatch.setattr(
+        AutoRunner,
+        "_maybe_check_bsk_update",
+        lambda self, *, force=False: self.bsk_checks.append("force" if force else "daily"),
+    )
+    return bot, calls
 
 
 def _tick(runner: AutoRunner) -> None:
@@ -97,6 +105,20 @@ def test_runs_once_inside_window(runner: tuple[AutoRunner, list[str]]) -> None:
     _set_now(7, 40)  # 同一天再 tick 不得重复抓
     _tick(bot)
     assert calls == ["fetch"]
+
+
+def test_prefetch_checks_bsk_version_before_fetch(runner: tuple[AutoRunner, list[str]], monkeypatch) -> None:
+    """7:10 是当天第一个用 bsk 的时点：先追平 CLI，再抓取。
+
+    扩展昨夜静默升级时，本槽不追平会整批浏览器源失败；而 8:10 晨间流程只补抓「资讯」源，
+    其余源（公众号 17 个 + 稍后读 3 个）当天再没机会。
+    """
+    bot, _calls = runner
+    order: list[str] = bot.bsk_checks
+    monkeypatch.setattr(auto_runner, "_fetch_all", lambda: order.append("fetch") or {})
+    _set_now(7, 10)
+    _tick(bot)
+    assert order == ["force", "fetch"]
 
 
 def test_does_not_consume_morning_slot(runner: tuple[AutoRunner, list[str]]) -> None:
@@ -267,6 +289,7 @@ def test_trading_day_keeps_current_behaviour(runner: tuple[AutoRunner, list[str]
     _set_now(8, 30)
     _morning(bot)
     assert calls == ["fetch", "news"]  # 晨间流程只补抓资讯源
+    assert bot.bsk_checks == ["force", "force"]  # 7:10 前置槽与 8:10 晨间流程各强制复检一次
     state = bot._load_state()
     assert state["last_run_date"] == "2026-10-07"
     assert state["flow"]["status"] in ("success", "partial")

@@ -332,6 +332,9 @@ class AutoRunner:
             }
             self._write_slot("prefetch", dict(payload))
             try:
+                # 7:10 是当天第一个用 bsk 的时点。这里不追平 CLI，扩展升级后本槽会整批浏览器源
+                # 失败，而 8:10 晨间流程只补抓「资讯」源，其余源当天再没机会——故开工前强制复检。
+                await asyncio.to_thread(self._maybe_check_bsk_update, force=True)
                 payload["result"] = await asyncio.to_thread(_fetch_all)
                 payload["status"] = "success"
             except Exception as exc:
@@ -412,6 +415,9 @@ class AutoRunner:
             )
             if result.returncode != 0:
                 logger.warning("bsk 更新检查退出码 %s，详情见 runtime\\bsk_update_check.log", result.returncode)
+        except Exception as exc:  # noqa: BLE001
+            # 检查是尽力而为：脚本超时/拉起失败绝不能连坐抓取（调用方在抓取槽内部）。
+            logger.warning("bsk 更新检查执行异常：%s", exc)
         finally:
             BSK_UPDATE_STAMP.parent.mkdir(parents=True, exist_ok=True)
             BSK_UPDATE_STAMP.write_text(datetime.now().strftime(DT_FORMAT), encoding="utf-8")
