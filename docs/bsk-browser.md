@@ -1,6 +1,6 @@
 # bsk（BrowserSkill）浏览器抓取
 
-> 2026-09-24：**源表驱动的订阅流**已全部迁到 bsk。2026-09-28：**稍后处理（laterhub）的两个收藏源**（抖音收藏、小黑盒收藏）也已迁到 bsk，复用日常 Chrome 登录态；B 站稍后看不进 bsk——它走官方 API 直连（HTTP + `.env` cookie）更快更稳，且不依赖浏览器在场。旧「复制 profile」路径已整体删除（copy 后端禁用，浏览器抓取只走 bsk）。
+> 2026-09-24：**源表驱动的订阅流**已全部迁到 bsk。2026-09-28：**稍后处理（laterhub）的两个收藏源**（抖音收藏、小黑盒收藏）迁到 bsk。2026-11-02：**B 站稍后看也迁到 bsk**（页内 fetch 官方接口），laterhub 四源与订阅流全部只走 bsk；copy 后端与 `bilibili_main.json` 的稍后看依赖均已删除。
 
 ## 一句话定位
 
@@ -8,11 +8,12 @@ bsk 是一个通过浏览器扩展驱动**本机日常 Chrome** 的抓取工具�
 
 ## 稍后处理（laterhub）四源
 
-- 抖音收藏、小黑盒收藏已从「复制 Chrome profile」迁到 bsk，复用日常 Chrome 实时登录会话；B 站稍后看不走 bsk。
-- 三个 bsk 源共用一个 bsk 会话；某源超时只停该 bsk 会话，**不会关闭或重开你的日常 Chrome**。
+- 抖音收藏、小黑盒收藏、B站稍后看、微信读书书架：**全部走 bsk**，复用日常 Chrome 实时登录会话。
+- 四个 bsk 源共用一个 bsk 会话；某源超时只停该 bsk 会话，**不会关闭或重开你的日常 Chrome**。
 - 小黑盒收藏：bsk 无请求/响应拦截能力，改为在页内借前端 `$hbRequest` 拿签名后直接取数（不再用 `page.on("request")`）。
 - 微信读书书架：走 bsk 复用日常 Chrome 登录态；页内直接调同源接口 `/web/shelf/bookIds` + `/web/book/publicinfos`（页内 fetch 自动带登录 cookie，无需导出 token）。书架内可解析的书全部入库（不按「读完」标记过滤），坏 `bookId` 单条跳过、不拖垮整批。
-- B 站稍后看：官方 API 直连（`x/v2/history/toview/web`，`Referer` 为 watchlater 页）。登录态按 SSOT 取本地认证文件 `runtime/auth/bilibili_main.json`（设置页「同步登录态」维护），回退 `.env` 的 `BILIBILI_COOKIE`/`BILIBILI_SESSDATA`；报 `-101 账号未登录` 时去设置页点一次「同步登录态」。不启浏览器、不用 session——bsk 会话起不来时它照样能抓。
+- B 站稍后看：与订阅动态同一姿势——先导航到 watchlater 页，再页内 fetch 官方接口 `x/v2/history/toview/web`（`credentials: include` 自动带日常 Chrome cookie）。不再读 `bilibili_main.json`、不再需要手动「同步登录态」；报 `-101 账号未登录` 时在日常 Chrome 登录 B站即可。
+
 
 ## 版本与更新
 

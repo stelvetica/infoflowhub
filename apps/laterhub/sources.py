@@ -31,7 +31,7 @@ class LaterhubSource:
 
 
 SOURCES: tuple[LaterhubSource, ...] = (
-    LaterhubSource("bilibili_watchlater", "B站稍后看", "收藏/稍后处理", "Bilibili", "官方 API 直连", "bilibili_main", "", "fetch_bilibili", "fetch_bilibili_watchlater", False),
+    LaterhubSource("bilibili_watchlater", "B站稍后看", "收藏/稍后处理", "Bilibili", "网页抓取（bsk）", "", "日常 Chrome 登录", "fetch_bilibili", "fetch_bilibili_watchlater", True),
     LaterhubSource("douyin_favorite", "抖音收藏", "收藏/稍后处理", "抖音", "网页抓取（bsk）", "douyin_shared", "", "fetch_douyin", "fetch_douyin_favorites", True),
     LaterhubSource("xiaoheihe_favor", "小黑盒收藏", "收藏/稍后处理", "小黑盒", "网页抓取（bsk）", "xiaoheihe_shared", "", "fetch_xiaoheihe", "fetch_xiaoheihe_favorites", True),
     LaterhubSource("weread_shelf", "微信读书书架", "待读/稍后处理", "微信读书", "网页抓取（bsk）", "", "日常 Chrome 登录", "fetch_weread", "fetch_weread_shelf", True),

@@ -1,4 +1,4 @@
-"""laterhub 抓取链路的**全仓口径**结构守卫（两个收藏源走 bsk，B站稍后看走官方 API）。
+"""laterhub 抓取链路的**全仓口径**结构守卫（四源全部走 bsk）。
 
 现有 tests/test_bsk_backend_wiring.py::test_no_enabled_source_falls_through_to_copy 只遍历
 「源表」，看不见 laterhub 这条平行抓取路径——抖音收藏曾静默 15 天没被拦住。本文件按源码
@@ -51,12 +51,8 @@ LATERHUB_FETCHERS = {
     "微信读书书架": fetch_weread_shelf,
 }
 
-# 走 bsk（需要浏览器会话）的源；B 站稍后看走官方 API 直连，不需要也不接受 session。
-BROWSER_FETCHERS = {
-    "抖音收藏": fetch_douyin_favorites,
-    "小黑盒收藏": fetch_xiaoheihe_favorites,
-    "微信读书书架": fetch_weread_shelf,
-}
+# laterhub 四源全部走 bsk（需要浏览器会话）。
+BROWSER_FETCHERS = LATERHUB_FETCHERS
 
 
 def find_forbidden_tokens(source: str, tokens: tuple[str, ...] = FORBIDDEN_TOKENS) -> list[str]:
@@ -113,28 +109,30 @@ def test_laterhub_browser_fetcher_session_is_bsk_runner(label):
     assert "BskRunnerSession" in source, f"{label} 未使用 BskRunnerSession"
 
 
-def test_bilibili_watchlater_stays_on_http_api():
-    """B 站稍后看走官方 API 直连：不接 session、不拉浏览器（比 bsk 更快更稳）。"""
+def test_bilibili_watchlater_uses_bsk_page():
+    """B 站稍后看与订阅动态同姿势：bsk 页内 fetch，不读 cookie 文件。"""
     signature = inspect.signature(fetch_bilibili_watchlater)
-    assert "session" not in signature.parameters, "B 站稍后看不该要 session——它走 HTTP 直连"
+    assert "session" in signature.parameters, "B 站稍后看需要 bsk 会话"
+    assert signature.parameters["session"].kind is inspect.Parameter.KEYWORD_ONLY
     module_path = Path(inspect.getsourcefile(fetch_bilibili_watchlater))
     source = module_path.read_text(encoding="utf-8")
-    assert "BilibiliWatchLaterFetcher" in source
-    assert "BILIBILI_API_CANDIDATES" in source
-    # 该文件仍服务订阅流 B站动态的 bsk 页内取数，故只断言「稍后看函数体内」不含浏览器取数痕迹。
-    watchlater_body = source.split("class BilibiliWatchLaterFetcher")[1].split("class BilibiliApiSession")[0]
-    for token in ("BskRunnerSession", "acquire_page", "evaluate("):
-        assert token not in watchlater_body, f"稍后看 HTTP 路径不该出现 {token}"
+    assert "fetch_bilibili_watchlater_with_page" in source
+    assert "BskRunnerSession" in source
+    assert "BILIBILI_WATCHLATER_API" in source
+    # 不得再回到「读本地 cookie 文件 + requests 直连」的老路。
+    assert "BilibiliWatchLaterFetcher" not in source
+    assert "BILIBILI_API_CANDIDATES" not in source
+    watchlater_body = source.split("def fetch_bilibili_watchlater_with_page")[1].split("class BilibiliApiSession")[0]
+    assert "credentials" in source  # 页内 fetch 带 cookie
+    assert "Cookie" not in watchlater_body
 
 
-def test_pipeline_treats_bilibili_as_non_browser_source():
-    """B 站稍后看必须在注册表里标为非浏览器源：bsk 会话起不来时它仍要被抓。"""
+def test_pipeline_treats_all_four_laterhub_sources_as_browser():
+    """四源都走 bsk：pipeline 必须按注册表给它们同一个会话。"""
     from apps.laterhub.sources import SOURCE_BY_ID
 
-    assert SOURCE_BY_ID["bilibili_watchlater"].needs_browser is False
-    for sid in ("douyin_favorite", "xiaoheihe_favor", "weread_shelf"):
-        assert SOURCE_BY_ID[sid].needs_browser is True
-    # pipeline 必须按注册表分派，且通过 globals() 保留单测 monkeypatch 打桩点。
+    for sid in ("bilibili_watchlater", "douyin_favorite", "xiaoheihe_favor", "weread_shelf"):
+        assert SOURCE_BY_ID[sid].needs_browser is True, sid
     source = GUARDED_FILES["apps/laterhub/pipeline.py"].read_text(encoding="utf-8")
     assert "globals()[source.fetcher_name]" in source
     assert "source.needs_browser" in source

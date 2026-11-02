@@ -85,17 +85,17 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         login_method="日常 Chrome 登录会话",
         renew_label="请在日常 Chrome 登录 Alpha派",
     ),
-    # 方式3：B站——订阅动态与稍后看均走 bsk 页内调 API（复用日常 Chrome 登录态，不走 HTTP）。
-    # 本地认证文件 bilibili_main.json（SESSDATA/bili_jct/DedeUserID）供 laterhub 稍后看的
-    # 官方 API 直连使用，也供「同步登录态」面板校验；copy 后端已整体禁用。
+    # 方式3：B站——订阅动态与稍后看均走 bsk 页内调 API（复用日常 Chrome 登录态）。
+    # 本地认证文件 bilibili_main.json（SESSDATA/bili_jct/DedeUserID）只剩视频摘要
+    # （video_digest → connectors/bilibili/video.py）在用，也供「同步登录态」面板校验。
     "bilibili_main": AuthRegistration(
         auth_key="bilibili_main",
         platform="bilibili",
         auth_mode="browser_profile",
-        storage_ref="本地认证文件 bilibili_main.json（laterhub 稍后看官方 API）",
+        storage_ref="本地认证文件 bilibili_main.json（仅供视频摘要下载/字幕）",
         renew_strategy="scan_qr_sync",
         display_name="B站",
-        description="订阅 B站动态走 bsk 页内调 API（复用日常 Chrome 登录态）；稍后看走官方 API 直连。",
+        description="订阅动态与稍后看均走 bsk 页内调 API（复用日常 Chrome 登录态）；本地认证文件仅服务视频摘要。",
         login_method="日常 Chrome 登录会话",
         renew_label="在常用 Chrome 登录 B站后点「同步登录态」",
     ),

@@ -1,64 +1,52 @@
-"""laterhub「B 站稍后看」= 官方 API 直连（HTTP + .env cookie）。
+"""laterhub「B 站稍后看」= bsk 页内 fetch（与订阅动态同一姿势）。
 
-它不进 bsk：不拉浏览器、不需要 session，bsk 会话起不来时也能抓。本文件把这条口径钉住。
-不触真实网络：requests.Session 被替换成假实现。
+本文件把「稍后看不读 cookie 文件、不需要手动同步登录态」钉住。
+不触真实网络/浏览器：page facade 与 bsk 会话均用假实现。
 """
 
 from __future__ import annotations
+
+import json
 
 import pytest
 
 from connectors.bilibili import api as bili
 
 
-class FakeResponse:
-    def __init__(self, payload, status_code=200) -> None:
+class FakePage:
+    def __init__(self, payload=..., payload_error: Exception | None = None) -> None:
         self.payload = payload
-        self.status_code = status_code
+        self.payload_error = payload_error
+        self.gotos: list[str] = []
+        self.evaluate_calls: list[tuple] = []
 
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise RuntimeError(f"HTTP {self.status_code}")
+    def goto(self, url, wait_until=None):
+        self.gotos.append(url)
 
-    def json(self):
-        if isinstance(self.payload, Exception):
-            raise self.payload
+    def evaluate(self, js, arg=None, timeout=None):
+        self.evaluate_calls.append((js, arg, timeout))
+        if self.payload_error is not None:
+            raise self.payload_error
         return self.payload
 
 
-class FakeRequestsSession:
-    """记录请求；按 URL 返回预设载荷（未预设则用 default）。"""
+class FakeBskSession:
+    def __init__(self, page: FakePage) -> None:
+        self.page = page
+        self.shutdown_calls = 0
 
-    def __init__(self, responses: dict[str, FakeResponse] | None = None, default: FakeResponse | None = None) -> None:
-        self.headers: dict[str, str] = {}
-        self.trust_env = True
-        self.responses = responses or {}
-        self.default = default
-        self.get_calls: list[tuple[str, dict, int]] = []
+    def acquire_page(self):
+        return self.page
 
-    def get(self, url, params=None, timeout=None):
-        self.get_calls.append((url, dict(params or {}), timeout))
-        response = self.responses.get(url, self.default)
-        if response is None:
-            raise AssertionError(f"测试未预设该 URL 的响应: {url}")
-        return response
+    def shutdown(self) -> None:
+        self.shutdown_calls += 1
 
+    def __enter__(self):
+        return self
 
-@pytest.fixture
-def wired(monkeypatch):
-    """把 requests.Session 换成假实现，并让 BilibiliConfig 无需 .env。"""
-
-    def _wire(responses=None, default=None):
-        fake = FakeRequestsSession(responses=responses, default=default)
-        monkeypatch.setattr(bili.requests, "Session", lambda: fake)
-        monkeypatch.setattr(
-            bili.BilibiliConfig,
-            "from_env",
-            classmethod(lambda cls, env_path=None: cls(cookie="SESSDATA=test")),
-        )
-        return fake
-
-    return _wire
+    def __exit__(self, exc_type, exc, tb):
+        self.shutdown()
+        return False
 
 
 def _ok_payload(*items: dict) -> dict:
@@ -68,10 +56,11 @@ def _ok_payload(*items: dict) -> dict:
 SAMPLE_ITEM = {"bvid": "BV1xx411c7mD", "title": "投资思路分享", "owner": {"name": "Br7uce"}, "aid": 12345}
 
 
-def test_uses_official_api_with_ps_and_watchlater_referer(wired):
-    fake = wired(default=FakeResponse(_ok_payload(SAMPLE_ITEM)))
+def test_watchlater_uses_bsk_page_and_official_api():
+    page = FakePage(_ok_payload(SAMPLE_ITEM))
+    session = FakeBskSession(page)
 
-    items = bili.fetch_bilibili_watchlater("ignored.env")
+    items = bili.fetch_bilibili_watchlater("ignored.env", session=session)
 
     assert items == [
         {
@@ -83,72 +72,70 @@ def test_uses_official_api_with_ps_and_watchlater_referer(wired):
             "raw": SAMPLE_ITEM,
         }
     ]
-    url, params, timeout = fake.get_calls[0]
-    assert url == bili.BILIBILI_API_CANDIDATES[0]
-    assert params == {"ps": 20}
-    assert timeout == 20
-    assert fake.headers["Referer"] == "https://www.bilibili.com/watchlater/list"
-    assert fake.headers["Cookie"] == "SESSDATA=test"
-    # 国内站点绕过系统代理
-    assert fake.trust_env is False
+    # 先导航到 watchlater 页拿同域上下文/Referer
+    assert page.gotos == [bili.BILIBILI_WATCHLATER_PAGE_URL]
+    js, arg, timeout = page.evaluate_calls[0]
+    assert "credentials" in js and "include" in js
+    args = json.loads(arg)
+    assert args["url"].startswith(bili.BILIBILI_WATCHLATER_API)
+    assert "ps=20" in args["url"]
+    assert timeout >= 120  # 页内 fetch 预算要大于 30s 看门狗
+    assert session.shutdown_calls == 0  # 外部会话归调用方所有
 
 
-def test_falls_back_to_second_api_candidate(wired):
-    """首选接口不可用时按候选顺序退到第二个（迁移前既有行为）。"""
-    first, second = bili.BILIBILI_API_CANDIDATES
-    fake = wired(
-        responses={
-            first: FakeResponse({"code": -101, "message": "账号未登录"}),
-            second: FakeResponse(_ok_payload(SAMPLE_ITEM)),
-        }
-    )
-
-    items = bili.fetch_bilibili_watchlater()
-
-    assert len(items) == 1
-    assert [call[0] for call in fake.get_calls] == [first, second]
-
-
-def test_all_candidates_failed_raises_readable_error(wired):
-    fake = wired(default=FakeResponse({"code": -101, "message": "账号未登录"}))
+def test_login_expired_raises_readable_error():
+    page = FakePage({"code": -101, "message": "账号未登录"})
 
     with pytest.raises(RuntimeError) as excinfo:
-        bili.fetch_bilibili_watchlater()
+        bili.fetch_bilibili_watchlater(session=FakeBskSession(page))
 
-    assert "获取 B 站稍后看失败" in str(excinfo.value)
-    assert len(fake.get_calls) == len(bili.BILIBILI_API_CANDIDATES)
-
-
-def test_non_json_response_raises_readable_error(wired):
-    wired(default=FakeResponse(ValueError("Expecting value: line 1 column 1")))
-
-    with pytest.raises(RuntimeError) as excinfo:
-        bili.fetch_bilibili_watchlater()
-
-    assert "获取 B 站稍后看失败" in str(excinfo.value)
+    assert "登录态失效" in str(excinfo.value)
+    assert "-101" in str(excinfo.value)
 
 
-def test_unrecognized_structure_raises_readable_error(wired):
-    wired(default=FakeResponse({"code": 0, "data": {"unexpected": 1}}))
+def test_page_fetch_error_envelope_raises():
+    page = FakePage({"error": "接口返回非 JSON（可能登录态失效）"})
 
     with pytest.raises(RuntimeError) as excinfo:
-        bili.fetch_bilibili_watchlater()
+        bili.fetch_bilibili_watchlater(session=FakeBskSession(page))
+
+    assert "非 JSON" in str(excinfo.value)
+
+
+def test_unrecognized_structure_raises_readable_error():
+    page = FakePage({"code": 0, "data": {"unexpected": 1}})
+
+    with pytest.raises(RuntimeError) as excinfo:
+        bili.fetch_bilibili_watchlater(session=FakeBskSession(page))
 
     assert "无法识别" in str(excinfo.value)
 
 
-def test_empty_watchlater_returns_empty_list_not_error(wired):
+def test_non_object_payload_raises():
+    page = FakePage(["not", "an", "object"])
+
+    with pytest.raises(RuntimeError) as excinfo:
+        bili.fetch_bilibili_watchlater(session=FakeBskSession(page))
+
+    assert "非对象" in str(excinfo.value)
+
+
+def test_empty_watchlater_returns_empty_list_not_error():
     """用户把稍后看清空是合法结果：返回 []，可见性由 pipeline 的「0 条」WARN 承担。"""
-    wired(default=FakeResponse(_ok_payload()))
+    page = FakePage(_ok_payload())
 
-    assert bili.fetch_bilibili_watchlater() == []
+    assert bili.fetch_bilibili_watchlater(session=FakeBskSession(page)) == []
 
 
-def test_missing_cookie_fails_loudly(monkeypatch):
-    """没有 .env 登录态时必须明确报错，而不是静默返回空列表。"""
-    monkeypatch.setattr(bili, "get_bilibili_cookie", lambda: "")
+def test_without_session_builds_and_closes_own_bsk_session(monkeypatch):
+    page = FakePage(_ok_payload(SAMPLE_ITEM))
+    session = FakeBskSession(page)
+    import connectors._shared.bsk_session as bsk_session_mod
 
-    with pytest.raises(ValueError) as excinfo:
-        bili.BilibiliConfig.from_env()
+    monkeypatch.setattr(bsk_session_mod, "BskRunnerSession", lambda **kwargs: session)
 
-    assert "B 站登录态" in str(excinfo.value)
+    items = bili.fetch_bilibili_watchlater()
+
+    assert len(items) == 1
+    assert session.shutdown_calls == 1
+    assert page.gotos == [bili.BILIBILI_WATCHLATER_PAGE_URL]

@@ -22,7 +22,7 @@
 | `connectors/xiaoheihe/feed.py` 页内 `$hbRequest` 取数 | 依赖小黑盒前端内部结构（`#app.__vue_app__`、`$hbRequest`、签名 query 语义）；前端封装变更时会以可见失败文案报错（不静默），需人工更新页内 JS | 等 bsk 支持响应体读取后改回接口直取 |
 | `connectors/douyin/favorites.py` bsk 路径 | 收藏页懒加载：逐轮下滚取数（最多 `DOUYIN_SCROLL_ROUNDS=4` 轮，条数不再增长即提前停），**有意不做全量**——页面显示收藏总数 63 条，滚越多越慢也越易触发风控。另外提取到的条目中标题落到 `视频_<id>` 兜底者会被 `normalize_douyin_item` 丢弃（实测原始 36 → 归一后 29） | 需要更多条目时调大滚动轮数或改成「滚到底再提取」（注意风控节奏），或借页面签名器调官方收藏接口拿全量 |
 | `apps/laterhub/pipeline.py` 源级看门狗 | 守护线程无法强杀卡死的 Python worker，超时只能停 bsk 会话并把后续源隔离到新会话 | 源级进程隔离，或改为可取消任务 |
-| B 站 12 源（订阅流）健康校验对象与实际取数不一致 | 面板 `bilibili_main` 校验 `runtime/auth/bilibili_main.json`，而 12 个动态源只走 bsk 实时会话；该文件的消费方只剩 laterhub 稍后看（`connectors/bilibili/video.py` → `get_bilibili_cookie`）。问题只是「面板校验对象与 12 源取数对象不一致」 | 把 12 源纳入 bsk 会话级校验，或改为按源最近错误判定 |
+| B 站 12 源（订阅流）健康校验对象与实际取数不一致 | 面板 `bilibili_main` 校验 `runtime/auth/bilibili_main.json`，而 12 个动态源与稍后看都只走 bsk 实时会话；该文件的消费方只剩视频摘要（`video_digest` → `connectors/bilibili/video.py` → `get_bilibili_cookie`）。问题只是「面板校验对象与实际取数对象不一致」 | 把视频摘要纳入单独校验，或改为按源最近错误判定 |
 | 认证资产表在 Chrome 运行中时对 X/抖音/小黑盒/Alpha派 直接降级为「可用」（`connectors/auth/providers/browser_profiles.py`） | 等于不校验 | 改为在抓取失败时回写「最近错误」并以此驱动状态 |
 | `web/services/fetch_runtime.py` / `apps/laterhub/pipeline.py` 的 `LaterhubRunSummary.fetched_sources` | 恒等于启用源数，不反映实际成功源数；状态文件里也没有 laterhub 错误字段 | 改为成功/失败分列并写入 `runtime/health/automation_runtime.json` |
 | `connectors/douyin/video.py`（抖音视频直链解析） | 依赖 bsk 页内 `performance` entries 捕获播放器已发的 douyinvod 直链：需要用户 Chrome 在场且已登录抖音；直链时效仅几分钟（拿到即下载）；只拿到「当前播放清晰度」（通常 540p-720p，ASR 取音轨足够）；detail 接口页内 fetch 重放会被风控页接管（实测返回 HTML），拿不到完整 aweme JSON | 抖音开放平台 API，或实现 a_bogus 签名（参考 `wechat-mp-tools/backend/douyin.py`）直调 detail 接口拿全清晰度与作者元数据 |
