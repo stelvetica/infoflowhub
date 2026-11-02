@@ -54,13 +54,19 @@ BROWSER_LAUNCH_COOLDOWN_SECONDS = 3600.0
 # 上次拉起用户 Chrome 的时刻（time.monotonic）；0 表示从未拉起。模块级：一轮抓取里每个源
 # 各建一个 BskBrowser，冷却必须跨实例共享，否则同一轮抓取会反复拉起 Chrome。
 _last_browser_launch_at: float = 0.0
-# bsk 0.4+（协议 1.6+）起，evaluate / wheel 这类「动作」不再直接执行：必须先 cooperate sync
-# 拿控制上下文，一次 context 只授权一次动作（2026-10-31 扩展静默升级到 0.4.x 后全量浏览器源
-# 报 permission_denied / cooperation_sync_required 的根因）。sync 期间页面有变化会回
-# 「Page changed while synchronizing」，等页面落定后重试即可。--policy 固定 strict：它对
-# 扩展 1.7 / 1.8 都可用，而 target 策略要求双方 1.8，用它会在旧扩展上直接 unsupported。
-COOPERATE_SYNC_ATTEMPTS = 3
-COOPERATE_SYNC_RETRY_DELAY_SECONDS = 0.4
+# bsk 0.4+（协议 1.6+）起，evaluate / wheel / navigate 这类「动作」不再直接执行：必须先
+# cooperate sync 拿控制上下文，一次 context 只授权一次动作（2026-10-31 扩展静默升级到 0.4.x
+# 后全量浏览器源报 permission_denied / cooperation_sync_required 的根因）。sync 期间页面有
+# 变化会回「Page changed while synchronizing」，等页面落定后重试即可。--policy 固定 strict：
+# 它对扩展 1.7 / 1.8 都可用，而 target 策略要求双方 1.8，用它会在旧扩展上直接 unsupported。
+#
+# 导航刚完成时扩展的内容脚本还没注入新文档，此时 sync 会回
+# 「Could not establish connection. Receiving end does not exist.」（实测约 1~2s 后才恢复）。
+# 故重试窗口按秒级给足：否则「navigate → evaluate」的每个源都会在同一秒内耗尽 3 次重试。
+COOPERATE_SYNC_ATTEMPTS = 6
+COOPERATE_SYNC_RETRY_DELAY_SECONDS = 0.6
+# 动作本身的重试次数（页面在 sync 之后又变化，重新 sync 再执行即可）。
+ACTION_RETRY_ATTEMPTS = 3
 
 
 class BskError(Exception):
@@ -522,10 +528,7 @@ class BskBrowser:
             + (f" err={code}" if result.returncode != 0 else "")
         )
         if result.returncode != 0 and check:
-            # bsk 内部超时（退出码 4）归一到 BskTimeout，便于上层统一回退判断。
-            if code == "timeout":
-                raise BskTimeout(f"{label} 超时（bsk 内部超时）")
-            raise BskCommandError(f"{label} 失败 (exit={result.returncode}, code={code or 'unknown'})")
+            raise _command_error(result, label)
         return result
 
     # ---- 原语 ----
@@ -583,7 +586,7 @@ class BskBrowser:
         页面在 sync 之后又变了会走到这里，重新 sync 即可；已经执行过的动作绝不重放。
         """
         last_error = "未知错误"
-        for attempt in range(COOPERATE_SYNC_ATTEMPTS):
+        for attempt in range(ACTION_RETRY_ATTEMPTS):
             context_id, observation_id = self._sync_context()
             result = self._run(
                 build_args(context_id, observation_id),
@@ -604,7 +607,7 @@ class BskBrowser:
             effect_state = str(data.get("effect_state") or "") if isinstance(data, dict) else ""
             last_error = str(payload.get("message") or code or f"exit={result.returncode}")
             if (
-                attempt + 1 < COOPERATE_SYNC_ATTEMPTS
+                attempt + 1 < ACTION_RETRY_ATTEMPTS
                 and code == "permission_denied"
                 and effect_state == "none"
             ):
@@ -693,19 +696,40 @@ class BskBrowser:
         # 导航是唯一真正慢的阶段（冷启动 SPA 首屏），显式给 bsk 一个远大于看门狗的 --timeout，
         # 并关掉看门狗：慢加载超时定性为普通超时，而不是「疑似登录阻塞」。
         budget = self._slow_budget(timeout)
-        args = [
+        base = [
             "navigate",
             url,
             "--session",
             self._require_session(),
+            "--json",
             "--timeout",
             f"{budget:.0f}s",
         ]
         if wait_until:
-            args += ["--wait-until", wait_until]
-        self._run(
-            args,
-            label=f"navigate url={url}",
+            base += ["--wait-until", wait_until]
+        label = f"navigate url={url}"
+        # 协议 1.6+ 起，一个会话里只有第一次动作可以不带上下文（新会话的 tab 上内容脚本
+        # 还没注入，sync 也拿不到上下文）；之后的导航必须带 cooperate sync 的 --context，
+        # 否则 daemon 立即回 permission_denied/cooperation_sync_required——共享会话下表现
+        # 为「第一个源成功、其余源全灭」。先按无上下文尝试，被拒后再走带上下文的动作路径。
+        result = self._run(
+            base,
+            label=label,
+            timeout=max(budget, self._timeout),
+            check=False,
+            help_watchdog=False,
+        )
+        if result.returncode == 0:
+            return
+        if not _requires_cooperate_context(result.stdout):
+            raise _command_error(result, label)
+
+        def build(context_id: str, observation_id: str) -> list[str]:
+            return [*base, "--context", context_id]
+
+        self._run_action(
+            build,
+            label=label,
             timeout=max(budget, self._timeout),
             help_watchdog=False,
         )
@@ -929,6 +953,29 @@ def _read_error_code(stdout: str) -> str:
     if isinstance(payload, dict):
         return str(payload.get("code") or "")
     return ""
+
+
+def _command_error(result: BskResult, label: str) -> BskError:
+    """把 bsk 非零退出码归一成适配层异常；check=True 与显式判错两条路径共用。"""
+    # bsk 内部超时（退出码 4 / code=timeout）归一到 BskTimeout，便于上层统一回退判断。
+    code = _read_error_code(result.stdout)
+    if code == "timeout":
+        return BskTimeout(f"{label} 超时（bsk 内部超时）")
+    return BskCommandError(f"{label} 失败 (exit={result.returncode}, code={code or 'unknown'})")
+
+
+def _requires_cooperate_context(stdout: str) -> bool:
+    """导航被拒是否因为「缺少 cooperate sync 上下文」。
+
+    只看 daemon 的结构化原因，不猜错误文案；拿不到信封一律按普通失败处理。
+    """
+    try:
+        payload = _read_json_object(stdout, "navigate")
+    except BskCommandError:
+        return False
+    data = payload.get("data")
+    reason = str(data.get("reason") or "") if isinstance(data, dict) else ""
+    return reason == "cooperation_sync_required"
 
 
 def _read_orphan_session_ids(stdout: str, started_at_ms: int) -> list[str]:

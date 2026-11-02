@@ -104,6 +104,20 @@ if cmd == "evaluate":
     sys.exit(scenario.get("evaluate_exit", 0))
 
 if cmd == "navigate":
+    if "--context" not in argv and scenario.get("navigate_requires_context"):
+        # 复刻 bsk 0.4+：会话里已执行过动作后，无上下文的导航被立即拒绝（effect_state=none）。
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "code": "permission_denied",
+                    "message": "This action requires the context returned by the latest cooperate sync",
+                    "exit_code": 1,
+                    "data": {"effect_state": "none", "reason": "cooperation_sync_required"},
+                },
+                ensure_ascii=False,
+            )
+        )
+        sys.exit(1)
     sys.stdout.write(scenario.get("navigate_stdout", "tab=1 reached=load\\nurl=" + argv[1]))
     sys.exit(scenario.get("navigate_exit", 0))
 
@@ -440,6 +454,58 @@ def test_goto_passes_wait_until_and_ignores_ms_timeout(fake_bsk):
     assert "--wait-until" in nav["argv"]
     assert nav["argv"][nav["argv"].index("--wait-until") + 1] == "domcontentloaded"
     assert "--session" in nav["argv"]
+
+
+def test_goto_retries_with_context_when_daemon_requires_it(fake_bsk):
+    """共享会话里第二次导航必须带 cooperate sync 的上下文，否则整批只有第一个源能抓。"""
+    browser, _ = fake_bsk.build(navigate_requires_context=True)
+    browser.start()
+    browser.page().goto("https://example.com/a")
+    browser.page().goto("https://example.com/b")
+    syncs = _subcommand_calls(fake_bsk, "cooperate")
+    navs = _subcommand_calls(fake_bsk, "navigate")
+    assert len(navs) == 4  # 两个源各一次无上下文尝试 + 一次带上下文重试
+    assert "--context" not in navs[0]["argv"]
+    assert navs[1]["argv"][navs[1]["argv"].index("--context") + 1] == "ctx-fake"
+    assert len(syncs) == 2
+
+
+def test_navigate_failure_other_than_missing_context_is_not_retried(fake_bsk):
+    browser, _ = fake_bsk.build(
+        navigate_exit=1,
+        navigate_stdout='{"code": "not_found", "message": "session not registered", "exit_code": 1}',
+    )
+    browser.start()
+    with pytest.raises(BskCommandError) as excinfo:
+        browser.page().goto("https://example.com")
+    assert "not_found" in str(excinfo.value)
+    assert _subcommand_calls(fake_bsk, "cooperate") == []
+
+
+def test_acquire_page_by_url_navigates_when_current_url_unreadable():
+    """新会话 tab 上内容脚本未注入时读不到 URL，必须直接导航（首动作允许无上下文）。"""
+    from connectors._shared.bsk_session import BskRunnerSession
+
+    class FakePage:
+        gotos: list[str] = []
+
+        @property
+        def url(self):
+            raise BskCommandError("cooperate sync 失败: Could not establish connection")
+
+        def goto(self, url, wait_until=None):
+            self.gotos.append(url)
+
+    page = FakePage()
+
+    class FakeBrowser:
+        def page(self):
+            return page
+
+    session = BskRunnerSession()
+    session._browser = FakeBrowser()
+    assert session.acquire_page_by_url("https://example.com/x") is page
+    assert page.gotos == ["https://example.com/x"]
 
 
 def test_log_lines_carry_label_url_exit_and_duration(fake_bsk):

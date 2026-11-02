@@ -18,7 +18,7 @@ from apps.subscriptions.rss_config import (
     browser_request_help_timeout,
     bsk_attempts,
 )
-from connectors._shared.bsk_browser import BskBrowser
+from connectors._shared.bsk_browser import BskBrowser, BskError
 from connectors._shared.common import result_error
 
 # 子进程硬超时必须比 bsk 自身 --timeout 更宽：让 bsk 先返回并给出错误码，
@@ -87,7 +87,14 @@ class BskRunnerSession:
         # timeout_ms 是 CopyRunnerSession 的毫秒语义，这里有意忽略：bsk 导航的硬超时统一由
         # slow_command_timeout 控制（30s 对冷启动 SPA 太紧，正是要放宽的那一类）。
         page = self._browser.page()
-        if not _same_host(page.url, url):
+        try:
+            current_url = page.url
+        except BskError:
+            # 新会话的 tab 上扩展内容脚本还没注入，读 URL 走 evaluate → cooperate sync 会失败
+            # （Could not establish connection）。读不到就当「不在目标页」，直接导航——导航是
+            # 会话的第一个动作，允许不带控制上下文；若会话真的坏了，随后的导航会给出真错误。
+            current_url = ""
+        if not _same_host(current_url, url):
             page.goto(url, wait_until=wait_until)
         return page
 
