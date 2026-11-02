@@ -4,6 +4,11 @@
    页面在流程开始前就已打开且停在终态时，需手动刷新才能看到运行态。升级路径=把流程开始也做成事件源。 #}
 {% set status = flow.get('status') or '' %}
 {% set skills = flow.get('skills') or [] %}
+{# 状态条要和标题、范围 chip 挤在同一行，时间戳只留时分秒，完整日期压进 title #}
+{% set started = flow.get('started_at') or '' %}
+{% set finished = flow.get('finished_at') or '' %}
+{% set started_short = started[11:19] if started|length >= 19 else started %}
+{% set finished_short = finished[11:19] if finished|length >= 19 else finished %}
 <div id="news-flow-status"
      class="news-flow-status{% if status %} is-{{ status }}{% endif %}"
      data-flow-status="{{ status }}"
@@ -15,17 +20,17 @@
   <span class="subtle">暂无自动化流程记录</span>
   {% elif status == 'running' %}
   <span class="news-flow-dot" aria-hidden="true"></span>
-  <span class="news-flow-text"><strong>流程运行中</strong>
+  <span class="news-flow-text"{% if started %} title="开始于 {{ started }}"{% endif %}><strong>流程运行中</strong>
     {# 计数只算 success：skills|length 会把正在跑的那项也当成已完成 #}
-    {%- if skills %} · 阶段：技能 {{ skills[-1].get('name') }}（已完成 {{ skills|selectattr('status', 'eq', 'success')|list|length }} 项）
-    {%- else %} · 阶段：抓取订阅与稍后处理{% endif %}
-    {%- if flow.get('started_at') %} · 开始于 {{ flow.get('started_at') }}{% endif %}
+    {%- if skills %} · 技能 {{ skills[-1].get('name') }}（已完成 {{ skills|selectattr('status', 'eq', 'success')|list|length }} 项）
+    {%- else %} · 抓取订阅与稍后处理{% endif %}
+    {%- if started_short %} · {{ started_short }}{% endif %}
   </span>
   {% else %}
   {% set status_text = {'success': '成功', 'partial': '部分失败', 'error': '失败'}.get(status, status) %}
-  <span class="news-flow-text">最近流程 <strong>{{ status_text }}</strong>
-    {%- if flow.get('finished_at') %} · 完成于 {{ flow.get('finished_at') }}{% endif %}
-    · 新增产物 {{ (flow.get('products') or [])|length }} 个
+  <span class="news-flow-text"{% if finished %} title="完成于 {{ finished }}"{% endif %}>流程 <strong>{{ status_text }}</strong>
+    {%- if finished_short %} · {{ finished_short }}{% endif %}
+    · +{{ (flow.get('products') or [])|length }} 项
   </span>
   {% set failed = skills|selectattr('status', 'ne', 'success')|list %}
   {% if failed %}
@@ -38,12 +43,11 @@
   {% set gate = market_gate or {} %}
   {% set gate_verdict = gate.get('verdict') or '' %}
   {% if gate_verdict %}
-  {% set gate_text = {'trading': '交易日', 'closed': '非交易日', 'unknown': '未经日历确认（保守放行）'}.get(gate_verdict, gate_verdict) %}
-  {% set gate_source = {'local-calendar': '本地交易日历', 'weekend': '周末', 'bluebook': '蓝宝书已刊', 'eastmoney-kline': '东财指数日K', 'assumed': '保守假定'}.get(gate.get('source') or '', gate.get('source') or '') %}
-  <span class="news-flow-text">今日门禁 <strong>{{ gate_text }}</strong>
-    {%- if gate_source %} · 来源 {{ gate_source }}{% endif %}
-    {%- if gate.get('checked_at') %} · 判定于 {{ gate.get('checked_at') }}{% endif %}
-    {%- if gate_verdict == 'closed' %} · 今日已跳过{% endif %}
+  {% set gate_text = {'trading': '交易日', 'closed': '非交易日', 'unknown': '未确认（保守放行）'}.get(gate_verdict, gate_verdict) %}
+  {% set gate_source = {'local-calendar': '本地日历', 'weekend': '周末', 'bluebook': '蓝宝书', 'eastmoney-kline': '东财日K', 'assumed': '保守假定'}.get(gate.get('source') or '', gate.get('source') or '') %}
+  <span class="news-flow-text"{% if gate.get('checked_at') %} title="判定于 {{ gate.get('checked_at') }}"{% endif %}>门禁 <strong>{{ gate_text }}</strong>
+    {%- if gate_source %} · {{ gate_source }}{% endif %}
+    {%- if gate_verdict == 'closed' %} · 已跳过{% endif %}
   </span>
   {% else %}
   <span class="subtle">暂无门禁结论</span>

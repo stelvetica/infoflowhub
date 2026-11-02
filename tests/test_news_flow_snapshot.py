@@ -393,11 +393,11 @@ def test_market_gate_closed_renders_skip_hint(env: dict[str, Path], temp_db: Pat
         {"date": "2026-10-19", "market": "A", "verdict": "closed", "source": "weekend", "note": "", "checked_at": "2026-10-19 08:20:03"},
     )
     text = client.get("/fragments/news-flow-status").text
-    assert "今日门禁" in text
+    assert "门禁" in text
     assert "非交易日" in text
-    assert "来源 周末" in text
-    assert "判定于 2026-10-19 08:20:03" in text
-    assert "今日已跳过" in text  # 只有 closed 才有这句
+    assert "· 周末" in text
+    assert 'title="判定于 2026-10-19 08:20:03"' in text
+    assert "已跳过" in text  # 只有 closed 才有这句
 
 
 def test_market_gate_trading_has_no_skip_hint(env: dict[str, Path], temp_db: Path, client: TestClient):
@@ -407,8 +407,8 @@ def test_market_gate_trading_has_no_skip_hint(env: dict[str, Path], temp_db: Pat
     )
     text = client.get("/fragments/news-flow-status").text
     assert "交易日" in text
-    assert "来源 蓝宝书已刊" in text
-    assert "今日已跳过" not in text
+    assert "· 蓝宝书" in text
+    assert "已跳过" not in text
 
 
 def test_market_gate_local_calendar_source_label(env: dict[str, Path], temp_db: Path, client: TestClient):
@@ -418,15 +418,15 @@ def test_market_gate_local_calendar_source_label(env: dict[str, Path], temp_db: 
         {"date": "2026-10-19", "market": "A", "verdict": "closed", "source": "local-calendar", "note": "本地交易日历覆盖至 2026-12-31 且不含今日 → 休市", "checked_at": "2026-10-19 08:20:03"},
     )
     text = client.get("/fragments/news-flow-status").text
-    assert "来源 本地交易日历" in text
-    assert "今日已跳过" in text
+    assert "· 本地日历" in text
+    assert "已跳过" in text
 
 
 def test_market_gate_unknown_renders_conservative_pass(env: dict[str, Path], temp_db: Path, client: TestClient):
     _write_gate(env["runtime"], {"date": "2026-10-19", "verdict": "unknown", "source": "assumed", "checked_at": "2026-10-19 08:20:03"})
     text = client.get("/fragments/news-flow-status").text
-    assert "未经日历确认（保守放行）" in text
-    assert "今日已跳过" not in text
+    assert "未确认（保守放行）" in text
+    assert "已跳过" not in text
     # 未知 verdict 也不能把模板带崩（兜底原样展示）
     _write_gate(env["runtime"], {"verdict": "bogus", "source": "weird", "checked_at": ""})
     text = client.get("/fragments/news-flow-status").text
@@ -440,7 +440,7 @@ def test_market_gate_missing_or_malformed_degrades_gracefully(env: dict[str, Pat
         assert views.get_market_gate() == {}  # 缺失/非 dict 一律回空
         response = client.get("/fragments/news-flow-status")
         assert response.status_code == 200
-        assert "今日已跳过" not in response.text
+        assert "已跳过" not in response.text
         assert "暂无门禁结论" in response.text
 
 

@@ -181,7 +181,9 @@ button, input, select, textarea { font: inherit; }
    +3px 让第 4 行完整露出并留一线提示下方还有内容,抵消子像素边框取整;
    露 4 行 < 每批 NEWS_BATCH_SIZE=5,首屏必留一条在滚动区,续载才有的可滚) */
 .news-card { --news-row-h: 24px; --news-head-h: 30px; width: 100%; padding-bottom: var(--sp-3); }
-.news-panel-title { margin-bottom: var(--sp-2); }
+.news-panel-title { margin-bottom: var(--sp-2); flex-wrap: wrap; }
+/* 标题不被右侧状态条挤成竖排两行 */
+.news-panel-title > h2 { flex: none; white-space: nowrap; }
 .news-header-form { justify-content: flex-end; }
 /* 状态条与范围切换横排在标题右侧(.panel-title 已是两端对齐 flex),两者原本各自带的下边距在此归零 */
 .news-header-meta { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex-wrap: wrap; }

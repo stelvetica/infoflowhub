@@ -11,8 +11,8 @@
       {% include "partials/news_flow_status.html" %}
       {# 范围切换：与表头排序同款纯 HTMX 链接，不做 JS 状态机。base_params 不含 scope，各处显式拼一次，避免重复参数 #}
       <div class="news-scope-bar" role="group" aria-label="产物范围">
-        <a class="chip {% if news.scope == 'flow' %}active{% endif %}" href="/fragments/news?{{ base_params|urlencode }}&news_scope=flow" hx-get="/fragments/news?{{ base_params|urlencode }}&news_scope=flow" hx-target="#news-panel" hx-swap="innerHTML" {% if news.scope == 'flow' %}aria-current="true"{% endif %}>本次流程</a>
-        <a class="chip {% if news.scope == 'all' %}active{% endif %}" href="/fragments/news?{{ base_params|urlencode }}&news_scope=all" hx-get="/fragments/news?{{ base_params|urlencode }}&news_scope=all" hx-target="#news-panel" hx-swap="innerHTML" {% if news.scope == 'all' %}aria-current="true"{% endif %}>全部历史</a>
+        <a class="chip {% if news.scope == 'flow' %}active{% endif %}" href="/fragments/news?{{ base_params|urlencode }}&news_scope=flow" hx-get="/fragments/news?{{ base_params|urlencode }}&news_scope=flow" hx-target="#news-panel" hx-swap="innerHTML" title="本次流程产物" {% if news.scope == 'flow' %}aria-current="true"{% endif %}>本次</a>
+        <a class="chip {% if news.scope == 'all' %}active{% endif %}" href="/fragments/news?{{ base_params|urlencode }}&news_scope=all" hx-get="/fragments/news?{{ base_params|urlencode }}&news_scope=all" hx-target="#news-panel" hx-swap="innerHTML" title="全部历史产物" {% if news.scope == 'all' %}aria-current="true"{% endif %}>历史</a>
       </div>
     </div>
     {# 面板状态(sort/dir/scope)的隐藏载体:app.js 的 syncPanelFields 靠它写 cookie,无可见控件故 hidden #}

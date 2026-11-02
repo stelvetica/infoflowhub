@@ -412,5 +412,5 @@ def test_news_flow_status_terminal_has_no_polling(client: TestClient, flow_state
     response = client.get("/fragments/news-flow-status")
     assert "hx-trigger" not in response.text
     assert "部分失败" in response.text
-    assert "新增产物 1 个" in response.text
+    assert "+1 项" in response.text
     assert "portfolio-news" in response.text
