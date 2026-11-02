@@ -340,6 +340,10 @@ def test_wheel_syncs_and_passes_context(fake_bsk):
     calls = [c["argv"] for c in fake_bsk.calls() if c["argv"][0] in ("cooperate", "wheel")]
     assert [argv[0] for argv in calls] == ["cooperate", "wheel"]
     assert calls[1][calls[1].index("--context") + 1] == "ctx-fake"
+    # wheel 是无目标动作：没 --json 失败信封不可解析（重试走不到），
+    # 没 --observation 则扩展按整页校验，页面自更新就会撤销动作。
+    assert "--json" in calls[1]
+    assert calls[1][calls[1].index("--observation") + 1] == "obs-fake"
 
 
 def test_sync_failure_raises_instead_of_acting_blind(fake_bsk):

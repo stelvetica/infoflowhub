@@ -176,7 +176,12 @@ def collect_x_articles(page, username: str, limit: int = 12, rounds: int = 4) ->
         if len(merged) == previous_count:
             break
         previous_count = len(merged)
-        page.mouse.wheel(0, 2600)
+        try:
+            page.mouse.wheel(0, 2600)
+        except Exception:
+            # 滚动只是「多拿一些」的增强：X 时间线持续自更新，滚动动作可能被扩展撤销。
+            # 已解析到的文章仍然有效，不能因为一次滚动失败就整个源失败。
+            break
         page.wait_for_timeout(1800)
     return list(merged.values())
 

@@ -672,9 +672,10 @@ class BskBrowser:
             return
         budget = self._timeout if timeout is None else float(timeout)
 
-        def build(context_id: str, _observation_id: str) -> list[str]:
+        def build(context_id: str, observation_id: str) -> list[str]:
             args = [
                 "wheel",
+                "--json",
                 "--session",
                 self._require_session(),
                 "--context",
@@ -686,6 +687,11 @@ class BskBrowser:
                 "--timeout",
                 f"{budget:.0f}s",
             ]
+            # wheel 是无目标动作，必须显式带上 sync 的 observation，否则扩展按整页校验，
+            # 滚动前页面任何变化（X/YouTube 的计数、时间戳）都会让动作被撤销。
+            # 不带 --json 时失败信封无法被 _run_action 解析，重试路径也永远走不到。
+            if observation_id:
+                args += ["--observation", observation_id]
             if selector:
                 args += ["--selector", selector]
             return args

@@ -192,3 +192,41 @@ def test_macromargin_batch_uses_bsk(settings_file, monkeypatch):
 
     assert results[0].ok
     assert len(seen_sessions) == 1 and isinstance(seen_sessions[0], FakeBskSession)
+
+
+def test_collect_x_articles_keeps_parsed_items_when_scroll_fails(monkeypatch):
+    """滚动只是增强：X 时间线自更新导致 wheel 被撤销时，已解析的文章不能丢。"""
+    from connectors.x import feed as x_feed
+
+    class WheelBoom:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def wheel(self, dx, dy):
+            self.calls += 1
+            raise RuntimeError("wheel 失败 (exit=1, code=unknown)")
+
+    class FakePage:
+        def __init__(self) -> None:
+            self.mouse = WheelBoom()
+
+        def wait_for_timeout(self, ms):
+            return None
+
+    monkeypatch.setattr(
+        x_feed,
+        "extract_x_articles",
+        lambda page, username, limit=24: [
+            {"href": "https://x.com/MacroMargin/status/1", "text": "a"},
+            {"href": "https://x.com/MacroMargin/status/2", "text": "b"},
+        ],
+    )
+    page = FakePage()
+
+    items = x_feed.collect_x_articles(page, "MacroMargin", limit=12, rounds=3)
+
+    assert {item["href"] for item in items} == {
+        "https://x.com/MacroMargin/status/1",
+        "https://x.com/MacroMargin/status/2",
+    }
+    assert page.mouse.calls == 1  # 失败即停止滚动，不再无谓重试
