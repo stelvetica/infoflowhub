@@ -30,39 +30,6 @@ SOURCE = {
 }
 
 
-class FakeCopySession:
-    """占位复制副本会话：记录实例，绝不真起 Chrome。"""
-
-    instances: list["FakeCopySession"] = []
-
-    def __init__(self, *args, **kwargs) -> None:
-        self.started = False
-        self.shutdown_calls = 0
-        FakeCopySession.instances.append(self)
-
-    def start(self) -> None:
-        self.started = True
-
-    def shutdown(self, **kwargs) -> None:
-        self.started = False
-        self.shutdown_calls += 1
-
-    def __enter__(self):
-        self.start()
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        self.shutdown()
-        return False
-
-
-@pytest.fixture(autouse=True)
-def _reset_fake_copy():
-    FakeCopySession.instances = []
-    yield
-    FakeCopySession.instances = []
-
-
 @pytest.fixture
 def settings_file(tmp_path, monkeypatch):
     path = tmp_path / "rss_settings.json"
@@ -108,34 +75,18 @@ def _ok_result(source: dict, entries: int = 1) -> FeedFetchResult:
     )
 
 
-# ---- 后端选择 ----
+# ---- 后端固定 bsk（copy 已整体禁用） ----
 
 
-def test_missing_backend_config_defaults_to_bsk(settings_file):
-    """缺省必须落 bsk：落 copy 会静默登出用户 Google 账号，bsk 失败至少是显式报错。"""
-    settings_file(None)  # 完全没有 browser_backend 配置项
-    assert rss_config.browser_backend_for(SOURCE) == "bsk"
-
-
-def test_explicit_copy_override_uses_copy_and_never_touches_bsk(settings_file, fake_bsk, monkeypatch):
-    """copy 只允许显式按源启用；一旦启用就只走 copy，不起任何 bsk 子进程。"""
-    settings_file({"default": "bsk", "sources": {"alphapai": "copy"}})
-    sessions: list = []
-    monkeypatch.setattr(web_fetch, "_make_copy_session_for", FakeCopySession)
-    monkeypatch.setattr(
-        web_fetch, "_fetch_one_via_session", lambda session, source, **kw: sessions.append(session) or _ok_result(source)
-    )
-
-    result = web_fetch._fetch_one_with_backend(SOURCE)
-
-    assert result.ok
-    assert sessions and all(isinstance(s, FakeCopySession) for s in sessions)
-    assert fake_bsk.calls() == []  # 一个 bsk 子进程都没起
-    assert FakeCopySession.instances[0].shutdown_calls == 1
+def test_copy_backend_switch_is_gone(settings_file):
+    """不存在可切换到 copy 的配置入口：浏览器抓取只走 bsk。"""
+    settings_file({"default": "copy", "sources": {"alphapai": "copy"}})
+    assert not hasattr(rss_config, "browser_backend_for")
+    assert not hasattr(web_fetch, "fetch_source_via_copy")
+    assert not hasattr(web_fetch, "_make_copy_session_for")
 
 
 def test_bsk_backend_prefers_bsk_and_drives_page_ops(settings_file, fake_bsk, monkeypatch):
-    settings_file({"default": "copy", "sources": {"alphapai": "bsk"}})
     seen: list = []
 
     def fake_fetch(page, source, timeout_ms=0, limit=0):
@@ -150,19 +101,6 @@ def test_bsk_backend_prefers_bsk_and_drives_page_ops(settings_file, fake_bsk, mo
     assert seen == [(ALPHAPAI_URL, 3)]  # 页面操作真的落到了 bsk 上
     subcommands = [c["argv"][0] for c in fake_bsk.calls()]
     assert "evaluate" in subcommands and "session" in subcommands
-
-
-def test_per_source_override_wins_over_default(settings_file):
-    settings_file({"default": "bsk", "sources": {"alphapai": "copy", "youtube": "bsk"}})
-    assert rss_config.browser_backend_for(SOURCE) == "copy"
-    assert rss_config.browser_backend_for({"id": "youtube"}) == "bsk"
-    assert rss_config.browser_backend_for({"id": "x"}) == "bsk"
-
-
-def test_invalid_backend_value_falls_back_to_bsk(settings_file):
-    """非法值也落 bsk：落 copy 会在用户不知情时复制 profile 并登出其 Google 账号。"""
-    settings_file({"default": "selenium", "sources": {"alphapai": "wat"}})
-    assert rss_config.browser_backend_for(SOURCE) == "bsk"
 
 
 def test_timeout_values_are_bounded(settings_file):
@@ -190,17 +128,12 @@ def test_bsk_failure_retries_configured_times_and_never_builds_copy(settings_fil
         seen.append(session)
         raise BskCommandError("navigate 失败 (exit=1, code=not_found)")
 
-    def boom(*args, **kwargs):
-        raise AssertionError("bsk 失败不得构造 copy 会话")
-
-    monkeypatch.setattr(web_fetch, "_make_copy_session_for", boom)
     monkeypatch.setattr(web_fetch, "_fetch_one_via_session", fake_fetch_once)
 
     result = web_fetch._fetch_one_with_backend(SOURCE)
 
     assert not result.ok
     assert len(seen) == 3 and all(isinstance(s, BskRunnerSession) for s in seen)
-    assert FakeCopySession.instances == []  # 全程零 copy 会话构造
     assert "已尝试 3 次，未回退 copy" in result.error
     # bsk 会话每次都被结束（不留半开 session）
     assert any(c["argv"][0:2] == ["session", "stop"] for c in fake_bsk.calls())
@@ -239,22 +172,17 @@ def test_non_ok_bsk_result_also_retries_and_reports_no_copy(settings_file, fake_
     assert not result.ok
     assert len(attempts) == 2  # 非 ok 结果同样重试到配置次数
     assert "蓝宝书页面未完成加载" in result.error and "未回退 copy" in result.error
-    assert FakeCopySession.instances == []
 
 
 def test_bsk_failure_saves_no_entries(settings_file, fake_bsk, monkeypatch):
-    """bsk 失败不再回退 copy，所以没有任何结果可落库。"""
+    """bsk 失败没有任何结果可落库。"""
     settings_file({"sources": {"alphapai": "bsk"}})
     saved: list = []
 
     def fake_run_once(session, source, *, limit, timeout_ms):
         raise BskCommandError("evaluate 超时")
 
-    def boom():
-        raise AssertionError("bsk 失败不得回退 copy 会话")
-
     monkeypatch.setattr(alphapai_runner, "_run_fetch_once", fake_run_once)
-    monkeypatch.setattr(alphapai_runner, "_make_session", boom)
     monkeypatch.setattr(alphapai_runner, "save_entries", lambda entries: saved.append(list(entries)) or len(list(entries)))
 
     result, inserted = alphapai_runner.fetch_and_save_alphapai(SOURCE)
@@ -313,32 +241,7 @@ def test_bsk_failure_surfaces_in_run_outcome_and_status(monkeypatch, tmp_path):
     assert "未回退 copy" in outcome.status["last_error"]
 
 
-# ---- 显式 copy 入口（设置页「用 copy 重试」专用） ----
-
-
-def test_fetch_source_via_copy_runs_copy_path_once(settings_file, monkeypatch):
-    sessions: list = []
-    monkeypatch.setattr(web_fetch, "_make_copy_session_for", FakeCopySession)
-    monkeypatch.setattr(
-        web_fetch, "_fetch_one_via_session", lambda session, source, **kw: sessions.append(session) or _ok_result(source)
-    )
-
-    result = web_fetch.fetch_source_via_copy(SOURCE)
-
-    assert result.ok
-    assert len(sessions) == 1 and isinstance(sessions[0], FakeCopySession)
-    assert FakeCopySession.instances[0].shutdown_calls == 1
-
-
-def test_copy_retry_available_only_for_bsk_failure():
-    from web.services.views import copy_retry_available
-
-    assert copy_retry_available("") is False
-    assert copy_retry_available("网络错误") is False
-    assert copy_retry_available("bsk 后端失败（已尝试 2 次，未回退 copy）：boom") is True
-
-
-# ---- 设置页按钮与 copy-retry 路由 ----
+# ---- copy 入口与路由已移除 ----
 
 
 def _client():
@@ -351,82 +254,13 @@ def _client():
     return TestClient(app)
 
 
-def _settings_with(rows: list[dict]) -> dict:
-    return {"sources": rows, "q": "", "source_filter": "", "sort": "name", "dir": "asc"}
-
-
-def test_copy_retry_button_hidden_without_bsk_failure(monkeypatch):
+def test_copy_retry_route_is_gone(monkeypatch):
     from web.routes import main as main_routes
 
-    row = {"id": "alphapai", "name": "蓝宝书", "enabled": True, "last_error": "网络错误", "copy_retry_available": False}
-    monkeypatch.setattr(main_routes, "get_settings_view", lambda params: _settings_with([row]))
-
-    response = _client().get("/fragments/sources")
-
-    assert response.status_code == 200
-    assert "/copy-retry" not in response.text
-
-
-def test_copy_retry_button_shown_with_bsk_failure(monkeypatch):
-    from web.routes import main as main_routes
-
-    row = {
-        "id": "alphapai",
-        "name": "蓝宝书",
-        "enabled": True,
-        "last_error": "bsk 后端失败（已尝试 2 次，未回退 copy）：boom",
-        "copy_retry_available": True,
-    }
-    monkeypatch.setattr(main_routes, "get_settings_view", lambda params: _settings_with([row]))
-
-    response = _client().get("/fragments/sources")
-
-    assert response.status_code == 200
-    assert "/actions/source/alphapai/copy-retry" in response.text
-    assert "用 copy 重试" in response.text
-
-
-def test_copy_retry_post_runs_copy_once_and_saves_once(monkeypatch):
-    from apps.subscriptions import rss_db, runtime_health
-    from web.routes import main as main_routes
-
-    monkeypatch.setattr(main_routes, "get_settings_view", lambda params: _settings_with([]))
-    monkeypatch.setattr(main_routes, "normalize_sources", lambda: [SOURCE])
-    calls = {"fetch": 0, "health": 0, "saved": []}
-
-    def fake_fetch(source, **kwargs):
-        calls["fetch"] += 1
-        return _ok_result(source, entries=2)
-
-    monkeypatch.setattr("connectors._shared.web_fetch.fetch_source_via_copy", fake_fetch)
-    monkeypatch.setattr(runtime_health, "update_source_health", lambda result: calls.__setitem__("health", calls["health"] + 1))
-    monkeypatch.setattr(rss_db, "save_entries", lambda entries: calls["saved"].append(list(entries)) or len(list(entries)))
-
+    monkeypatch.setattr(main_routes, "get_settings_view", lambda params: {"sources": [], "q": "", "source_filter": "", "sort": "name", "dir": "asc"})
     response = _client().post("/actions/source/alphapai/copy-retry")
 
-    assert response.status_code == 200
-    assert calls["fetch"] == 1
-    assert calls["health"] == 1
-    assert len(calls["saved"]) == 1 and len(calls["saved"][0]) == 2  # 只落一次库
-
-
-def test_explicit_session_argument_skips_backend_selection(settings_file, fake_bsk, monkeypatch):
-    """调用方显式注入会话时沿用原逻辑（不切 bsk）。"""
-    settings_file({"sources": {"alphapai": "bsk"}})
-    seen: list = []
-
-    def fake_run_once(session, source, *, limit, timeout_ms):
-        seen.append(session)
-        return _ok_result(source)
-
-    monkeypatch.setattr(alphapai_runner, "_run_fetch_once", fake_run_once)
-    session = FakeCopySession()
-
-    result = alphapai_runner.fetch_alphapai_source(SOURCE, session=session)
-
-    assert result.ok
-    assert seen == [session]
-    assert fake_bsk.calls() == []
+    assert response.status_code == 404
 
 
 # ---- bsk 会话构造失败不得炸穿整批（H1） ----
@@ -487,19 +321,13 @@ def test_slow_command_timeout_is_much_larger_than_help_watchdog(settings_file):
     # 子进程硬超时留出余量，让 bsk 自身的 --timeout 先到期（否则会被我们 kill，丢掉错误分类）
     assert browser._timeout > browser._slow_command_timeout
 
-# ---- 默认路径零 copy 守卫 ----
+# ---- 浏览器源一律 bsk 守卫 ----
 
 
-def test_no_enabled_source_falls_through_to_copy():
-    """copy 会带 Google 身份从第二个 profile 路径联网并吊销用户会话，只允许显式按源启用。
-
-    两道守卫：① 默认后端不得是 copy（否则将来新增的浏览器源会静默落回 copy）；
-    ② 当前所有走浏览器的启用源都不得解析成 copy。
-    """
+def test_every_enabled_browser_source_runs_on_bsk(monkeypatch):
+    """所有走浏览器的启用源都只能构造 bsk 会话——没有任何配置能改回 copy。"""
     from connectors._shared.common import resolve_web_target
-
-    settings = json.loads(rss_config.SETTINGS_PATH.read_text(encoding="utf-8"))
-    assert settings["browser_backend"]["default"] != "copy", "默认后端不得为 copy"
+    from connectors._shared.bsk_session import BskRunnerSession
 
     sources = json.loads(rss_config.SOURCES_PATH.read_text(encoding="utf-8"))["sources"]
     browser_path = []
@@ -508,10 +336,10 @@ def test_no_enabled_source_falls_through_to_copy():
             continue
         target = resolve_web_target(source)
         site = target.site if target else None
-        # alphapai 按 id 特判走 bsk；其余浏览器源以站点识别为准
-        if source.get("id") == "alphapai" or site in web_fetch._SHARED_RUNNER_SITES:
+        # alphapai 按 id 特判；其余浏览器源以站点识别为准
+        if source.get("id") == "alphapai" or site in web_fetch._SHARED_RUNNER_SITES or site == "bilibili":
             browser_path.append((source, site))
-            assert rss_config.browser_backend_for(source) != "copy", f"{source['id']} 会走 copy"
+            assert isinstance(web_fetch._make_session_for(source), BskRunnerSession)
 
     # 守卫本身要有效：确实存在走浏览器的源
     assert browser_path, "未识别到任何浏览器源，守卫失效"

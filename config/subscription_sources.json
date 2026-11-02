@@ -160,7 +160,7 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "小黑盒用户主页帖子，bsk 复用日常 Chrome 登录态抓取；失败不回退 copy",
+      "note": "小黑盒用户主页帖子，bsk 复用日常 Chrome 登录态抓取；失败只重试报错",
       "channel": "xiaoheihe",
       "auth_key": "xiaoheihe_shared",
       "fallback_mode": "none"

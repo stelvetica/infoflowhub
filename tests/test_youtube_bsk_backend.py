@@ -163,10 +163,8 @@ def settings_file(tmp_path, monkeypatch):
 
 
 def test_youtube_source_routes_to_bsk_session(settings_file, monkeypatch):
-    settings_file({"default": "copy", "sources": {"laolihai_youtube": "bsk"}})
     monkeypatch.setattr(web_fetch, "resolve_web_target", lambda source: SimpleNamespace(site="youtube", page_url="https://x"))
 
-    assert web_fetch._uses_bsk(SOURCE) is True
     session = web_fetch._make_session_for(SOURCE)
     assert isinstance(session, BskRunnerSession)
     # 构造期不得起 bsk 子进程（懒启动）
@@ -186,14 +184,8 @@ class FakeBskSession:
         return None
 
 
-def test_youtube_batch_uses_bsk_and_never_starts_copy_session(settings_file, monkeypatch):
-    settings_file({"default": "copy", "sources": {"laolihai_youtube": "bsk"}})
-    started_copy: list = []
+def test_youtube_batch_uses_bsk(settings_file, monkeypatch):
     seen_sessions: list = []
-
-    def boom_copy():
-        started_copy.append(True)
-        raise AssertionError("youtube 配了 bsk 不得构造 copy 会话")
 
     def fake_run_once(session, source, **kwargs):
         seen_sessions.append(session)
@@ -202,7 +194,6 @@ def test_youtube_batch_uses_bsk_and_never_starts_copy_session(settings_file, mon
             [yt_feed.FeedEntry(source["id"], source["name"], "标题A", "https://www.youtube.com/watch?v=B8pVlybJ86g", "2026/09/22 00:11", "")],
         )
 
-    monkeypatch.setattr(web_fetch, "_make_copy_session_for", boom_copy)
     monkeypatch.setattr(web_fetch, "_make_session_for", lambda source: FakeBskSession())
     monkeypatch.setattr(web_fetch, "_fetch_one_via_session", fake_run_once)
 
@@ -210,4 +201,3 @@ def test_youtube_batch_uses_bsk_and_never_starts_copy_session(settings_file, mon
 
     assert results[0].ok
     assert len(seen_sessions) == 1 and isinstance(seen_sessions[0], FakeBskSession)
-    assert started_copy == []

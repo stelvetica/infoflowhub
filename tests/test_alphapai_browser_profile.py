@@ -8,7 +8,7 @@ def test_fetch_many_uses_alphapai_limit(monkeypatch):
     """fetch_many 对 alphapai 源传入 FETCH_SOURCE_LIMIT。"""
     seen_limits = []
 
-    def fake_fetch_alphapai_source(source, *, limit, session=None):
+    def fake_fetch_alphapai_source(source, *, limit):
         seen_limits.append(limit)
         return FeedFetchResult(
             source_id=source["id"],

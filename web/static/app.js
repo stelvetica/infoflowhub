@@ -888,9 +888,7 @@
     if (!button.dataset.originalText) {
       button.dataset.originalText = button.textContent || "";
     }
-    // 按源 copy 重试同样会长时间占着请求,复用同一套转圈。
-    const isCopyRetry = (form.getAttribute("hx-post") || "").includes("/copy-retry");
-    if (!isCopyRetry && !button.dataset.originalText.includes("抓取")) return null;
+    if (!button.dataset.originalText.includes("抓取")) return null;
     return button;
   }
 
@@ -909,10 +907,9 @@
   document.body.addEventListener("htmx:afterRequest", (event) => {
     const button = fetchLoadingButton(event.target);
     if (!button) return;
-    // 稍后处理(/actions/laterhub/fetch-now)与按源 copy 重试均同步执行,响应返回即完成,直接复位;
+    // 稍后处理(/actions/laterhub/fetch-now)为同步执行,响应返回即完成,直接复位;
     // 订阅抓取的 POST 秒回、后台才真正执行,保持转圈,由轮询结束后统一复位。
-    const isSync = !!button.closest('form[hx-post*="/actions/laterhub/fetch-now"]')
-      || !!button.closest('form[hx-post*="/copy-retry"]');
+    const isSync = !!button.closest('form[hx-post*="/actions/laterhub/fetch-now"]');
     if (isSync) {
       setButtonLoading(button, false);
     } else {

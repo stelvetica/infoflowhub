@@ -243,7 +243,7 @@ def _no_retry_sleep(monkeypatch):
 
 
 def test_bilibili_bsk_uses_page_path_and_never_copy(settings_file, monkeypatch):
-    settings_file({"sources": {SRC_ID: "bsk"}})
+    settings_file({})
     session = FakeBskSession()
     seen_pages: list = []
     monkeypatch.setattr(web_fetch, "_make_session_for", lambda source: session)
@@ -251,16 +251,6 @@ def test_bilibili_bsk_uses_page_path_and_never_copy(settings_file, monkeypatch):
         web_fetch,
         "fetch_bilibili_dynamic_feed_with_page",
         lambda page, source, limit=12, timeout_ms=60000: seen_pages.append(page) or _ok_result(source),
-    )
-
-    def boom(*args, **kwargs):
-        raise AssertionError("B 站不得构造 copy 会话")
-
-    monkeypatch.setattr(web_fetch, "_make_copy_session_for", boom)
-    monkeypatch.setattr(
-        web_fetch,
-        "fetch_bilibili_dynamic_feed",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("bsk 配置不应走 HTTP 路径")),
     )
 
     result = web_fetch._fetch_bilibili_one(SOURCE)
@@ -270,57 +260,10 @@ def test_bilibili_bsk_uses_page_path_and_never_copy(settings_file, monkeypatch):
     assert session.start_calls == 1 and session.shutdown_calls == 1
 
 
-def test_bilibili_non_bsk_uses_http_path_and_never_copy(settings_file, monkeypatch):
-    settings_file({"default": "copy", "sources": {}})  # B 站未配 bsk
-    http_calls: list = []
-    monkeypatch.setattr(
-        web_fetch,
-        "fetch_bilibili_dynamic_feed",
-        lambda source, limit=12, timeout_ms=60000: http_calls.append(source) or _ok_result(source),
-    )
-
-    def boom(*args, **kwargs):
-        raise AssertionError("非 bsk 配置下 B 站也不得构造 copy 会话")
-
-    monkeypatch.setattr(web_fetch, "_make_copy_session_for", boom)
-    monkeypatch.setattr(
-        web_fetch,
-        "fetch_bilibili_dynamic_feed_with_page",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("非 bsk 配置不应走页内 fetch")),
-    )
-
-    result = web_fetch._fetch_bilibili_one(SOURCE)
-
-    assert result.ok and http_calls == [SOURCE]
-
-
 def test_bilibili_never_in_shared_runner_sites():
-    """把 B 站留在 _SHARED_RUNNER_SITES 之外，是「永不走 copy」的结构性保证。"""
+    """把 B 站留在 _SHARED_RUNNER_SITES 之外：批量抓取时它单独分组复用同一个 bsk 会话。"""
     assert "bilibili" not in web_fetch._SHARED_RUNNER_SITES
     assert web_fetch._needs_shared_runner(SOURCE) is False
-
-
-def test_bilibili_copy_retry_route_still_never_builds_copy(settings_file, monkeypatch):
-    """即便用户点「用 copy 重试」，B 站也不构造 copy 会话：bsk 配置继续走页内取数。"""
-    settings_file({"sources": {SRC_ID: "bsk"}})
-    session = FakeBskSession()
-    seen_pages: list = []
-    monkeypatch.setattr(web_fetch, "_make_session_for", lambda source: session)
-    monkeypatch.setattr(
-        web_fetch,
-        "fetch_bilibili_dynamic_feed_with_page",
-        lambda page, source, limit=12, timeout_ms=60000: seen_pages.append(page) or _ok_result(source),
-    )
-
-    def boom(*args, **kwargs):
-        raise AssertionError("B 站的 copy 重试入口也不得构造 copy 会话")
-
-    monkeypatch.setattr(web_fetch, "_make_copy_session_for", boom)
-
-    result = web_fetch.fetch_source_via_copy(SOURCE)
-
-    assert result.ok and seen_pages == [session.page]
-    assert session.start_calls == 1 and session.shutdown_calls == 1
 
 
 # ---- 批量：12 源共用同一个 bsk 会话 ----
@@ -349,11 +292,6 @@ def test_batch_bilibili_reuses_single_bsk_session(settings_file, monkeypatch):
         lambda sess, source, limit=12, timeout_ms=60000: fetched.append((sess, source["id"])) or _ok_result(source),
     )
 
-    def boom(*args, **kwargs):
-        raise AssertionError("B 站批量不得构造 copy 会话")
-
-    monkeypatch.setattr(web_fetch, "_make_copy_session_for", boom)
-
     results = web_fetch.fetch_web_many(sources)
 
     assert len(results) == 12 and all(r.ok for r in results)
@@ -365,12 +303,11 @@ def test_batch_bilibili_reuses_single_bsk_session(settings_file, monkeypatch):
 # ---- 配置一致性 ----
 
 
-def test_twelve_bilibili_sources_configured_for_bsk_backend():
+def test_twelve_bilibili_sources_are_bsk_only():
     settings = json.loads((REPO_ROOT / "config" / "rss_settings.json").read_text(encoding="utf-8"))
     sources = json.loads((REPO_ROOT / "config" / "subscription_sources.json").read_text(encoding="utf-8"))["sources"]
     bili_ids = [s["id"] for s in sources if s.get("auth_key") == "bilibili_main"]
 
     assert len(bili_ids) == 12
-    configured = settings["browser_backend"]["sources"]
-    for sid in bili_ids:
-        assert configured.get(sid) == "bsk", sid
+    # copy 后端已删除：配置里不再有可切换后端的字段
+    assert "sources" not in settings["browser_backend"]

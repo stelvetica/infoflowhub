@@ -12,9 +12,8 @@ BROWSER_PROFILES_DIR = RUNTIME_DIR / "browser_profiles"
 # login_profiles.py 拉起浏览器扫码登录。
 AUTH_PROFILE_DIR = BROWSER_PROFILES_DIR / "auth"
 
-# 方式2：copy profile。复制本机 Chrome Default profile 登录态到副本，不在副本登录，
-# 避免单设备登录限制与你常用浏览器互踢。仅剩网页源的显式 copy 兜底走此路径；
-# 蓝宝书/抖音/小黑盒/YouTube 的抓取已迁 bsk，复用日常 Chrome 实时会话，不再复制副本。
+# 历史 copy profile 目录：抓取管线已不再使用（copy 后端整体禁用），仅保留给登录脚本/人工
+# 排障复用旧路径；蓝宝书/抖音/小黑盒/YouTube 的抓取全部走 bsk，复用日常 Chrome 实时会话。
 ALPHAPAI_RUNNER_DIR = BROWSER_PROFILES_DIR / "alphapai-runner"
 WEB_RUNNER_DIR = BROWSER_PROFILES_DIR / "web-runner"
 
@@ -170,7 +169,7 @@ def validate_jiuyangongshe_auth() -> dict[str, object]:
 
 
 def validate_alphapai_auth() -> dict[str, object]:
-    """Alpha派：抓取走 bsk 后端，复用本机日常 Chrome 登录会话（失败回退 CopyRunner）。
+    """Alpha派：抓取只走 bsk 后端，复用本机日常 Chrome 登录会话。
 
     只检查日常 Chrome 是否含 Alpha派域名会话这一**非敏感**状态：只做 COUNT，
     绝不读取、返回或打印任何 cookie 名或值。Chrome 运行时其 Cookies SQLite 被
@@ -220,7 +219,7 @@ def validate_alphapai_auth() -> dict[str, object]:
         "is_available": True,
         "status_level": "ok",
         "status_text": "可用",
-        "hint": "复用日常 Chrome 登录会话（bsk 后端）；bsk 失败不回退 copy，需在设置页手动按源重试 copy。",
+        "hint": "复用日常 Chrome 登录会话（bsk 后端）；copy 后端已禁用，失败时按「最近错误」排查并在日常 Chrome 重新登录。",
     }
 
 

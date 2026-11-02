@@ -143,9 +143,6 @@ def settings_file(tmp_path, monkeypatch):
 
 
 def test_xiaoheihe_source_routes_to_bsk_session(settings_file):
-    settings_file({"default": "copy", "sources": {"xiaoheihe_cuojuehuanjue": "bsk"}})
-
-    assert web_fetch._uses_bsk(SOURCE) is True
     session = web_fetch._make_session_for(SOURCE)
     assert isinstance(session, BskRunnerSession)
     # 构造期不得起 bsk 子进程（懒启动）。
@@ -164,6 +161,7 @@ def test_source_auth_key_matches_registry():
     assert entry["auth_key"] in AUTH_REGISTRY
 
 
-def test_xiaoheihe_source_configured_for_bsk_backend():
+def test_xiaoheihe_source_is_bsk_only():
     settings = json.loads((REPO_ROOT / "config" / "rss_settings.json").read_text(encoding="utf-8"))
-    assert settings["browser_backend"]["sources"]["xiaoheihe_cuojuehuanjue"] == "bsk"
+    # copy 后端已删除：配置里不再有可切换后端的字段
+    assert "sources" not in settings["browser_backend"]

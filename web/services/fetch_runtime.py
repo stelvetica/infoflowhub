@@ -10,13 +10,13 @@ def is_successful_run(success_sources: int, failure_count: int) -> bool:
     return success_sources > 0 and failure_count == 0
 
 
-def fetch_now(session=None) -> dict:
+def fetch_now() -> dict:
     sources = [item for item in load_sources() if item.get("enabled", False)]
-    outcome = run_source_fetch(sources, timeout=45, session=session)
+    outcome = run_source_fetch(sources, timeout=45)
     return outcome.status
 
 
-def fetch_news_now(session=None) -> dict:
+def fetch_news_now() -> dict:
     """只抓「资讯」前缀源（蓝宝书 + 韭研），即公告/新闻 skill 的新闻输入。
 
     8:10 晨间流程不再全量重抓：其余订阅与稍后读是早读材料，归 7:10 前置槽。
@@ -36,7 +36,7 @@ def fetch_news_now(session=None) -> dict:
             "last_inserted_entries": 0,
             "last_error": f"没有 name 以「{NEWS_SOURCE_PREFIX}」开头的启用源",
         }
-    outcome = run_source_fetch(sources, timeout=45, session=session, persist_global=False)
+    outcome = run_source_fetch(sources, timeout=45, persist_global=False)
     return {
         "fetch_state": "success" if is_successful_run(outcome.success_sources, len(outcome.failures)) else "error",
         "last_total_sources": len(sources),

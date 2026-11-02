@@ -17,7 +17,7 @@ from connectors.auth.providers import (
 
 
 AUTH_REGISTRY: dict[str, AuthRegistration] = {
-    # 方式1：bsk 后端复用日常 Chrome 登录会话（失败不回退，需在源表显式用 copy 重试）
+    # 方式1：bsk 后端复用日常 Chrome 登录会话（copy 后端已禁用，失败只报错/重试）
     "douyin_shared": AuthRegistration(
         auth_key="douyin_shared",
         platform="douyin",
@@ -81,22 +81,21 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         storage_ref="复用本机 Chrome 会话，不导出 token",
         renew_strategy="login_daily_chrome",
         display_name="Alpha派",
-        description="抓取后端 bsk，复用日常 Chrome 登录会话；bsk 失败不回退，可在源表手动用 copy 重试。",
+        description="抓取后端固定 bsk，复用日常 Chrome 登录会话；失败只重试并报错，不回退其他后端。",
         login_method="日常 Chrome 登录会话",
         renew_label="请在日常 Chrome 登录 Alpha派",
     ),
     # 方式3：B站——订阅动态与稍后看均走 bsk 页内调 API（复用日常 Chrome 登录态，不走 HTTP）。
-    # 本地认证文件 bilibili_main.json（SESSDATA/bili_jct/DedeUserID）仍服务订阅动态的 copy
-    # 兜底 HTTP 路径（bsk 失败、源表显式用 copy 重试时）；该文件由「同步登录态」从常用 Chrome
-    # 导入，故保留同步按钮。
+    # 本地认证文件 bilibili_main.json（SESSDATA/bili_jct/DedeUserID）供 laterhub 稍后看的
+    # 官方 API 直连使用，也供「同步登录态」面板校验；copy 后端已整体禁用。
     "bilibili_main": AuthRegistration(
         auth_key="bilibili_main",
         platform="bilibili",
         auth_mode="browser_profile",
-        storage_ref="本地认证文件 bilibili_main.json（订阅动态 copy 兜底 HTTP 路径）",
+        storage_ref="本地认证文件 bilibili_main.json（laterhub 稍后看官方 API）",
         renew_strategy="scan_qr_sync",
         display_name="B站",
-        description="订阅 B站动态与稍后看均走 bsk（页内调 API，复用日常 Chrome 登录态）；本地认证文件仅供 copy 兜底 HTTP 路径。",
+        description="订阅 B站动态走 bsk 页内调 API（复用日常 Chrome 登录态）；稍后看走官方 API 直连。",
         login_method="日常 Chrome 登录会话",
         renew_label="在常用 Chrome 登录 B站后点「同步登录态」",
     ),

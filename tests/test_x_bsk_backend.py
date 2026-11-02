@@ -158,9 +158,6 @@ def settings_file(tmp_path, monkeypatch):
 
 
 def test_macromargin_source_routes_to_bsk_session(settings_file, monkeypatch):
-    settings_file({"default": "copy", "sources": {"MacroMargin": "bsk"}})
-
-    assert web_fetch._uses_bsk(SOURCE) is True
     session = web_fetch._make_session_for(SOURCE)
     assert isinstance(session, BskRunnerSession)
     # 构造期不得起 bsk 子进程（懒启动）
@@ -178,14 +175,8 @@ class FakeBskSession:
         return None
 
 
-def test_macromargin_batch_uses_bsk_and_never_starts_copy(settings_file, monkeypatch):
-    settings_file({"default": "copy", "sources": {"MacroMargin": "bsk"}})
-    started_copy: list = []
+def test_macromargin_batch_uses_bsk(settings_file, monkeypatch):
     seen_sessions: list = []
-
-    def boom_copy():
-        started_copy.append(True)
-        raise AssertionError("MacroMargin 配了 bsk 不得构造 copy 会话")
 
     def fake_run_once(session, source, **kwargs):
         seen_sessions.append(session)
@@ -194,7 +185,6 @@ def test_macromargin_batch_uses_bsk_and_never_starts_copy(settings_file, monkeyp
             [FeedEntry(source["id"], source["name"], "标题A", "https://x.com/MacroMargin", "2026/09/23 06:44", "")],
         )
 
-    monkeypatch.setattr(web_fetch, "_make_copy_session_for", boom_copy)
     monkeypatch.setattr(web_fetch, "_make_session_for", lambda source: FakeBskSession())
     monkeypatch.setattr(web_fetch, "_fetch_one_via_session", fake_run_once)
 
@@ -202,4 +192,3 @@ def test_macromargin_batch_uses_bsk_and_never_starts_copy(settings_file, monkeyp
 
     assert results[0].ok
     assert len(seen_sessions) == 1 and isinstance(seen_sessions[0], FakeBskSession)
-    assert started_copy == []

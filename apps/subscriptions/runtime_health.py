@@ -125,7 +125,6 @@ def run_source_fetch(
     *,
     settings: dict | None = None,
     timeout: int = 45,
-    session=None,
     persist_global: bool = True,
 ) -> FetchRunOutcome:
     """执行一批源抓取。
@@ -144,7 +143,7 @@ def run_source_fetch(
     total_sources = len(sources)
     with FETCH_LOCK:
         try:
-            results = fetch_many(sources, settings=settings, timeout=timeout, session=session)
+            results = fetch_many(sources, settings=settings, timeout=timeout)
             outcome.results = results
             for result in results:
                 update_source_health(result)

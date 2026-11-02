@@ -255,28 +255,18 @@ def _no_retry_sleep(monkeypatch):
 
 
 def test_douyin_source_routes_to_bsk_session(settings_file):
-    settings_file({"default": "copy", "sources": {SRC_ID: "bsk"}})
-
-    assert web_fetch._uses_bsk(SOURCE) is True
     session = web_fetch._make_session_for(SOURCE)
     assert isinstance(session, BskRunnerSession)
     assert session.browser.session_id is None  # 懒启动，构造期不起子进程
 
 
-def test_douyin_batch_uses_bsk_and_never_starts_copy(settings_file, monkeypatch):
-    settings_file({"default": "copy", "sources": {SRC_ID: "bsk"}})
-    started_copy: list = []
+def test_douyin_batch_uses_bsk(settings_file, monkeypatch):
     seen_sessions: list = []
-
-    def boom_copy():
-        started_copy.append(True)
-        raise AssertionError("抖音配了 bsk 不得构造 copy 会话")
 
     def fake_run_once(session, source, **kwargs):
         seen_sessions.append(session)
         return _ok_result(source)
 
-    monkeypatch.setattr(web_fetch, "_make_copy_session_for", boom_copy)
     monkeypatch.setattr(web_fetch, "_make_session_for", lambda source: FakeBskSession())
     monkeypatch.setattr(web_fetch, "_fetch_one_via_session", fake_run_once)
 
@@ -284,15 +274,13 @@ def test_douyin_batch_uses_bsk_and_never_starts_copy(settings_file, monkeypatch)
 
     assert results[0].ok
     assert len(seen_sessions) == 1 and isinstance(seen_sessions[0], FakeBskSession)
-    assert started_copy == []
 
 
-def test_both_douyin_sources_configured_for_bsk_backend():
+def test_both_douyin_sources_are_bsk_only():
     settings = json.loads((REPO_ROOT / "config" / "rss_settings.json").read_text(encoding="utf-8"))
     sources = json.loads((REPO_ROOT / "config" / "subscription_sources.json").read_text(encoding="utf-8"))["sources"]
     douyin_ids = [s["id"] for s in sources if s.get("auth_key") == "douyin_shared"]
 
     assert set(douyin_ids) == {"破壁狗", "马儿聊世界"}
-    configured = settings["browser_backend"]["sources"]
-    for sid in douyin_ids:
-        assert configured.get(sid) == "bsk", sid
+    # copy 后端已删除：配置里不再有可切换后端的字段
+    assert "sources" not in settings["browser_backend"]

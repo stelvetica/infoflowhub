@@ -62,10 +62,9 @@ def save_sources(sources: List[Dict[str, Any]]) -> None:
     dump_json_utf8(SOURCES_PATH, {"sources": normalized})
 
 
-# 浏览器抓取后端：copy = 复制常用 Chrome Default profile 到副本（历史默认，行为不变）；
-# bsk = 用 bsk CLI 驱动用户自己已登录的 Chromium。可按 source id 覆盖，默认不动。
-DEFAULT_BROWSER_BACKEND = "bsk"
-BROWSER_BACKENDS = ("copy", "bsk")
+# 浏览器抓取后端固定为 bsk：用 bsk CLI 驱动用户自己已登录的 Chromium。
+# copy（复制常用 Chrome Default profile 到副本）已整体禁用——它会带着 Google 身份/会话从
+# 第二个 profile 路径联网，触发账号双活吊销并强杀用户 Chrome，收益不足以保留。
 # request_help_timeout：逐命令看门狗——命令超过这个时长无返回即判本次抓取失败。
 # 成因不预设（扩展的「允许请求人工协助」开/关都可能，也可能是页面卡住或网络慢）。
 DEFAULT_REQUEST_HELP_TIMEOUT_SECONDS = 30.0
@@ -73,12 +72,10 @@ DEFAULT_REQUEST_HELP_TIMEOUT_SECONDS = 30.0
 # 否则正常慢加载会被看门狗提前判死。
 DEFAULT_COMMAND_TIMEOUT_SECONDS = 120.0
 BROWSER_TIMEOUT_BOUNDS = (5.0, 600.0)
-# bsk 后端失败后的总尝试次数（含首次）。bsk 失败不再自动回退 copy：copy 会带着 Google
-# 身份/会话从第二个 profile 路径联网，触发账号双活吊销并强杀用户 Chrome，只能由用户在
-# 设置页显式按源触发。
+# bsk 后端失败后的总尝试次数（含首次），不自动回退其他后端。
 DEFAULT_BSK_ATTEMPTS = 2
 BSK_ATTEMPTS_BOUNDS = (1, 10)
-# 源失败文案里标记 bsk 后端失败的前缀：设置页据此判断是否显示「用 copy 重试」按钮。
+# 源失败文案里标记 bsk 后端失败的前缀，供日志/健康面板识别。
 BSK_FAILURE_MARKER = "bsk 后端失败"
 
 
@@ -113,36 +110,17 @@ def _bounded_int(raw: Any, default: int, bounds: tuple[int, int]) -> int:
 
 
 def browser_backend_settings(settings: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    """浏览器后端配置的唯一归一化入口（SSOT）：缺省/非法值一律回落默认，调用方不做判断。"""
+    """浏览器抓取参数（超时/重试）的唯一归一化入口：缺省/非法值一律回落默认。"""
     section = (settings if settings is not None else load_settings()).get("browser_backend")
     if not isinstance(section, dict):
         section = {}
-    default = str(section.get("default") or DEFAULT_BROWSER_BACKEND).strip().lower()
-    if default not in BROWSER_BACKENDS:
-        default = DEFAULT_BROWSER_BACKEND
-    raw_sources = section.get("sources")
-    sources: Dict[str, str] = {}
-    if isinstance(raw_sources, dict):
-        for key, value in raw_sources.items():
-            backend = str(value or "").strip().lower()
-            if backend in BROWSER_BACKENDS:
-                sources[str(key)] = backend
     return {
-        "default": default,
-        "sources": sources,
         "request_help_timeout": _bounded_seconds(
             section.get("request_help_timeout"), DEFAULT_REQUEST_HELP_TIMEOUT_SECONDS
         ),
         "command_timeout": _bounded_seconds(section.get("command_timeout"), DEFAULT_COMMAND_TIMEOUT_SECONDS),
         "bsk_attempts": _bounded_int(section.get("bsk_attempts"), DEFAULT_BSK_ATTEMPTS, BSK_ATTEMPTS_BOUNDS),
     }
-
-
-def browser_backend_for(source: Dict[str, Any] | str | None) -> str:
-    """某个源该用哪个浏览器后端：按 source id 覆盖优先，其次全局默认。"""
-    settings = browser_backend_settings()
-    source_id = source if isinstance(source, str) else str((source or {}).get("id") or "")
-    return settings["sources"].get(source_id, settings["default"])
 
 
 def browser_request_help_timeout() -> float:
