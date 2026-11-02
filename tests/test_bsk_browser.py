@@ -132,6 +132,30 @@ if cmd == "wait-ms":
 
 if cmd == "wheel":
     time.sleep(scenario.get("wheel_sleep", 0))
+    fail_times = scenario.get("wheel_fail_times", 0)
+    if fail_times and log_path:
+        prior = 0
+        with open(log_path, encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    if json.loads(line).get("argv", [])[0:1] == ["wheel"]:
+                        prior += 1
+                except ValueError:
+                    pass
+        if prior <= fail_times:
+            # 复刻真实行为：页面自更新导致 observation 被取代，daemon 无法确认是否已执行。
+            sys.stdout.write(
+                json.dumps(
+                    {
+                        "code": "permission_denied",
+                        "message": "The action's observed content changed; synchronize and replan",
+                        "exit_code": 1,
+                        "data": {"effect_state": "unknown", "reason": "cooperation_sync_required"},
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            sys.exit(1)
     sys.stdout.write("wheeled")
     sys.exit(scenario.get("wheel_exit", 0))
 
@@ -344,6 +368,15 @@ def test_wheel_syncs_and_passes_context(fake_bsk):
     # 没 --observation 则扩展按整页校验，页面自更新就会撤销动作。
     assert "--json" in calls[1]
     assert calls[1][calls[1].index("--observation") + 1] == "obs-fake"
+
+
+def test_wheel_retries_when_effect_state_unknown(fake_bsk):
+    """页面自更新会让 daemon 回 effect_state=unknown；滚动可安全重放，必须重新 sync 重试。"""
+    browser, _ = fake_bsk.build(wheel_fail_times=1)
+    browser.start()
+    browser.wheel(0, 120)
+    assert len(_subcommand_calls(fake_bsk, "wheel")) == 2
+    assert len(_subcommand_calls(fake_bsk, "cooperate")) == 2
 
 
 def test_sync_failure_raises_instead_of_acting_blind(fake_bsk):

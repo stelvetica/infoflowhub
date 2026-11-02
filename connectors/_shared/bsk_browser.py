@@ -579,11 +579,15 @@ class BskBrowser:
         label: str,
         timeout: float,
         help_watchdog: bool = True,
+        retry_uncertain: bool = False,
     ) -> BskResult:
         """带控制上下文执行一个动作：先 sync 再动作，必要时重试。
 
-        只有 effect_state=none（daemon 明确表示什么都没执行）的 permission_denied 才重试：
+        只有 daemon 明确「没执行」的 permission_denied 才重试（effect_state=none）：
         页面在 sync 之后又变了会走到这里，重新 sync 即可；已经执行过的动作绝不重放。
+        retry_uncertain=True 供可安全重放的滚动（wheel）使用：effect_state=unknown 时
+        daemon 只是无法确认是否执行（实测是「observation 已被页面自更新取代」），
+        对滚动而言重放无副作用，放行重试。
         """
         last_error = "未知错误"
         for attempt in range(ACTION_RETRY_ATTEMPTS):
@@ -606,10 +610,11 @@ class BskBrowser:
             data = payload.get("data")
             effect_state = str(data.get("effect_state") or "") if isinstance(data, dict) else ""
             last_error = str(payload.get("message") or code or f"exit={result.returncode}")
+            retryable_effect = effect_state == "none" or (retry_uncertain and effect_state == "unknown")
             if (
                 attempt + 1 < ACTION_RETRY_ATTEMPTS
                 and code == "permission_denied"
-                and effect_state == "none"
+                and retryable_effect
             ):
                 time.sleep(COOPERATE_SYNC_RETRY_DELAY_SECONDS)
                 continue
@@ -696,7 +701,8 @@ class BskBrowser:
                 args += ["--selector", selector]
             return args
 
-        self._run_action(build, label="wheel", timeout=budget, help_watchdog=False)
+        # 滚动可安全重放：effect_state=unknown 也允许重试（见 _run_action）。
+        self._run_action(build, label="wheel", timeout=budget, help_watchdog=False, retry_uncertain=True)
 
     def navigate(self, url: str, *, wait_until: str | None = None, timeout: float | None = None) -> None:
         # 导航是唯一真正慢的阶段（冷启动 SPA 首屏），显式给 bsk 一个远大于看门狗的 --timeout，
