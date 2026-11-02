@@ -120,8 +120,22 @@ $statusErr = $probe.Err
 $ext = Get-NewestExtensionVersion $status
 $cliVer = ConvertTo-BskVersion ([string]$update.current_version)
 $extAhead = ($ext.Version -and $cliVer -and $ext.Version -gt $cliVer)
-if ($extAhead) {
-    Write-Line "扩展已升级到 $($ext.Text)，CLI 仍为 $($update.current_version)：执行 bsk update -y 追平"
+$skewed = @($status.version_skew_browsers | Where-Object { $_ })
+# 盲区修正（2026-10-31 事故）：扩展太新时连不上 daemon，browsers / version_skew_browsers
+# 双双为空，纯按「扩展版本 > CLI 版本」比较永远判不领先——升级死锁。故「读不到任何扩展
+# 版本 + CLI 有新版」也按待追平处理：CLI 升级不需要浏览器在线。
+$noExtensionVisible = -not $ext.Version
+$cliHasNewer = ([string]$update.status -ne 'up_to_date')
+$shouldUpgrade = $extAhead -or ($skewed.Count -gt 0) -or ($noExtensionVisible -and $cliHasNewer)
+if ($shouldUpgrade) {
+    if ($extAhead) {
+        $why = "扩展已升级到 $($ext.Text)，CLI 仍为 $($update.current_version)"
+    } elseif ($skewed.Count -gt 0) {
+        $why = "存在版本错配（$($skewed -join ', ')）"
+    } else {
+        $why = "CLI $($update.current_version) -> $($update.latest_version) 有新版，且读不到扩展版本（可能因协议不兼容连不上）"
+    }
+    Write-Line "$why：执行 bsk update -y 追平"
     # 原生命令往 stderr 写东西时，$ErrorActionPreference='Stop' 会把重定向变成终止错误，
     # 故这段临时降级为 Continue，改用退出码判成败。
     $prevEap = $ErrorActionPreference
@@ -138,7 +152,11 @@ if ($extAhead) {
         $why = if ($upgradeOut) { $upgradeOut.Substring(0, [Math]::Min(200, $upgradeOut.Length)) } else { '无输出' }
         Write-Line "FAIL bsk update 退出码 $upgradeCode：$why"
     }
-    # 升级会替换 CLI 二进制并重启 daemon：等它重新就绪再复检，否则会把「重启中」误报成故障。
+    # bsk update 只换二进制，**不重启由宿主持有的 daemon**（host_managed，见 2026-11-02 实测
+    # "daemon: left_to_host"）。旧 daemon 与新扩展协议仍不兼容，不先 stop 等于白升：
+    # 停掉后下一次抓取的 BskBrowser.ensure_daemon() 会用新二进制拉起。
+    & $bsk daemon stop *> $null
+    # 升级后复检：daemon 已被停掉，状态读不到属正常，这里只确认 CLI 版本已变。
     $update = Get-BskUpdateInfo $bsk
     if (-not $update -or -not $update.status) {
         Write-Line 'FAIL 追平后 bsk update --check 仍拿不到有效 JSON。'

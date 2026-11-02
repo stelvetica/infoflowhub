@@ -76,6 +76,23 @@ if cmd == "session" and len(argv) > 1 and argv[1] == "stop":
     sys.stdout.write("stopped " + (argv[2] if len(argv) > 2 else ""))
     sys.exit(exit_code)
 
+if cmd == "cooperate" and len(argv) > 1 and argv[1] == "sync":
+    # bsk 0.4+ 动作前的控制上下文；scenario 可覆盖成失败信封，验证重试/报错路径。
+    sys.stdout.write(
+        json.dumps(
+            scenario.get(
+                "cooperate_sync",
+                {
+                    "context_id": "ctx-fake",
+                    "observation": {"observation_id": "obs-fake"},
+                    "tab_id": 1,
+                },
+            ),
+            ensure_ascii=False,
+        )
+    )
+    sys.exit(scenario.get("cooperate_sync_exit", 0))
+
 if cmd == "evaluate":
     time.sleep(scenario.get("evaluate_sleep", 0))
     expr = argv[-1]
@@ -278,6 +295,50 @@ def test_evaluate_js_error_raises_command_error(fake_bsk):
     with pytest.raises(BskCommandError) as excinfo:
         browser.evaluate("throw 1")
     assert "boom" in str(excinfo.value)
+
+
+# ---- bsk 0.4+ 的 cooperate sync 契约 ----
+
+
+def test_evaluate_syncs_first_and_passes_context(fake_bsk):
+    """协议 1.8 起动作必须带最新 sync 的上下文，一次 context 只授权一次动作。"""
+    browser, _ = fake_bsk.build()
+    browser.start()
+    assert browser.evaluate("1+1") is None
+    assert browser.evaluate("2+2") is None
+    calls = fake_bsk.calls()
+    action_calls = [c["argv"] for c in calls if c["argv"][0] in ("cooperate", "evaluate")]
+    # 每个动作前各有一次 sync，顺序必须是 sync → evaluate
+    assert [argv[0] for argv in action_calls] == ["cooperate", "evaluate", "cooperate", "evaluate"]
+    for argv in action_calls[1::2]:
+        assert argv[argv.index("--context") + 1] == "ctx-fake"
+        assert argv[argv.index("--observation") + 1] == "obs-fake"
+    # sync 自身也要带 strict 策略与 session
+    for argv in action_calls[0::2]:
+        assert argv[1:2] == ["sync"]
+        assert "--policy" in argv and argv[argv.index("--policy") + 1] == "strict"
+
+
+def test_wheel_syncs_and_passes_context(fake_bsk):
+    browser, _ = fake_bsk.build()
+    browser.start()
+    browser.wheel(0, 120)
+    calls = [c["argv"] for c in fake_bsk.calls() if c["argv"][0] in ("cooperate", "wheel")]
+    assert [argv[0] for argv in calls] == ["cooperate", "wheel"]
+    assert calls[1][calls[1].index("--context") + 1] == "ctx-fake"
+
+
+def test_sync_failure_raises_instead_of_acting_blind(fake_bsk):
+    """sync 拿不到上下文时必须报错，不能退化成无上下文直接动作（那必然 permission_denied）。"""
+    browser, _ = fake_bsk.build(
+        cooperate_sync={"code": "permission_denied", "message": "Page changed while synchronizing"},
+        cooperate_sync_exit=1,
+    )
+    browser.start()
+    with pytest.raises(BskCommandError) as excinfo:
+        browser.evaluate("1+1")
+    assert "cooperate sync" in str(excinfo.value)
+    assert fake_bsk.evaluate_exprs() == []
 
 
 # ---- locator 契约 ----

@@ -384,15 +384,18 @@ class AutoRunner:
 
         await self._do_run_morning(now, today)
 
-    def _maybe_check_bsk_update(self) -> None:
+    def _maybe_check_bsk_update(self, *, force: bool = False) -> None:
         """跑一次 bsk 更新检查（复用 scripts\\check_bsk_update.ps1，逻辑不重写）。
 
         用独立戳文件记时间，不碰 views.AUTOMATION_RUNTIME_PATH 那份共享 state——避免和 morning
         流程并发写同一个文件互相覆盖。检查失败也落戳（失败原因由脚本自己写进
         runtime\\bsk_update_check.log），否则每个 tick 都会重试一遍。
+
+        force=True 用于晨间流程开工前：扩展可能在昨夜静默升级，按天的戳会让「扩展已升、
+        CLI 没升」的窗口一直拖到下一次日常检查（2026-10-31 事故即如此）。
         """
         try:
-            if BSK_UPDATE_STAMP.is_file():
+            if not force and BSK_UPDATE_STAMP.is_file():
                 last = datetime.strptime(BSK_UPDATE_STAMP.read_text(encoding="utf-8").strip(), DT_FORMAT)
                 if (datetime.now() - last).days < BSK_UPDATE_CHECK_INTERVAL_DAYS:
                     return
@@ -425,6 +428,10 @@ class AutoRunner:
 
             # flow.started_at 必须在抓取之前落盘，产物判定以它为时间基线
             started_at = self._begin_flow(refreshed)
+
+            # 开工前强制查一次 bsk 版本：扩展会在 Chrome 里静默升级，按天的日常检查最坏
+            # 要等到第二天才追上（2026-10-31 扩展升级 → 11-02 晨间全量浏览器源失败）。
+            await asyncio.to_thread(self._maybe_check_bsk_update, force=True)
 
             try:
                 result = await asyncio.to_thread(_fetch_news)

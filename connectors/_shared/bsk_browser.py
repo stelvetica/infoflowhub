@@ -54,6 +54,13 @@ BROWSER_LAUNCH_COOLDOWN_SECONDS = 3600.0
 # 上次拉起用户 Chrome 的时刻（time.monotonic）；0 表示从未拉起。模块级：一轮抓取里每个源
 # 各建一个 BskBrowser，冷却必须跨实例共享，否则同一轮抓取会反复拉起 Chrome。
 _last_browser_launch_at: float = 0.0
+# bsk 0.4+（协议 1.6+）起，evaluate / wheel 这类「动作」不再直接执行：必须先 cooperate sync
+# 拿控制上下文，一次 context 只授权一次动作（2026-10-31 扩展静默升级到 0.4.x 后全量浏览器源
+# 报 permission_denied / cooperation_sync_required 的根因）。sync 期间页面有变化会回
+# 「Page changed while synchronizing」，等页面落定后重试即可。--policy 固定 strict：它对
+# 扩展 1.7 / 1.8 都可用，而 target 策略要求双方 1.8，用它会在旧扩展上直接 unsupported。
+COOPERATE_SYNC_ATTEMPTS = 3
+COOPERATE_SYNC_RETRY_DELAY_SECONDS = 0.4
 
 
 class BskError(Exception):
@@ -523,24 +530,115 @@ class BskBrowser:
 
     # ---- 原语 ----
 
+    def _sync_context(self) -> tuple[str, str]:
+        """取最新 cooperate sync 的 (context_id, observation_id)，供一个动作使用。
+
+        失败一律重试：sync 会把整页当前状态拍成基线，页面还在变化时 daemon 回
+        「Page changed while synchronizing」，等下一次即可。重试耗尽才抛错——上层按
+        抓取失败处理，不会静默降级成「无上下文直接动作」（那必然 permission_denied）。
+        """
+        last_error = "未知错误"
+        for attempt in range(COOPERATE_SYNC_ATTEMPTS):
+            result = self._run(
+                [
+                    "cooperate",
+                    "sync",
+                    "--json",
+                    "--policy",
+                    "strict",
+                    "--session",
+                    self._require_session(),
+                ],
+                label="cooperate sync",
+                timeout=self._control_timeout(),
+                check=False,
+                help_watchdog=False,
+            )
+            payload: dict[str, Any] = {}
+            try:
+                payload = _read_json_object(result.stdout, "cooperate sync")
+            except BskCommandError:
+                payload = {}
+            context_id = str(payload.get("context_id") or "")
+            if result.returncode == 0 and context_id:
+                observation = payload.get("observation") or {}
+                observation_id = str(observation.get("observation_id") or "") if isinstance(observation, dict) else ""
+                return context_id, observation_id
+            last_error = str(payload.get("message") or payload.get("code") or f"exit={result.returncode}")
+            if attempt + 1 < COOPERATE_SYNC_ATTEMPTS:
+                time.sleep(COOPERATE_SYNC_RETRY_DELAY_SECONDS)
+        raise BskCommandError(f"cooperate sync 失败: {last_error[:200]}")
+
+    def _run_action(
+        self,
+        build_args: Callable[[str, str], list[str]],
+        *,
+        label: str,
+        timeout: float,
+        help_watchdog: bool = True,
+    ) -> BskResult:
+        """带控制上下文执行一个动作：先 sync 再动作，必要时重试。
+
+        只有 effect_state=none（daemon 明确表示什么都没执行）的 permission_denied 才重试：
+        页面在 sync 之后又变了会走到这里，重新 sync 即可；已经执行过的动作绝不重放。
+        """
+        last_error = "未知错误"
+        for attempt in range(COOPERATE_SYNC_ATTEMPTS):
+            context_id, observation_id = self._sync_context()
+            result = self._run(
+                build_args(context_id, observation_id),
+                label=label,
+                timeout=timeout,
+                check=False,
+                help_watchdog=help_watchdog,
+            )
+            if result.returncode == 0:
+                return result
+            payload: dict[str, Any] = {}
+            try:
+                payload = _read_json_object(result.stdout, label)
+            except BskCommandError:
+                payload = {}
+            code = str(payload.get("code") or "")
+            data = payload.get("data")
+            effect_state = str(data.get("effect_state") or "") if isinstance(data, dict) else ""
+            last_error = str(payload.get("message") or code or f"exit={result.returncode}")
+            if (
+                attempt + 1 < COOPERATE_SYNC_ATTEMPTS
+                and code == "permission_denied"
+                and effect_state == "none"
+            ):
+                time.sleep(COOPERATE_SYNC_RETRY_DELAY_SECONDS)
+                continue
+            # 与 _run 的归一一致：bsk 内部超时（退出码 4 / code=timeout）归到 BskTimeout。
+            if code == "timeout":
+                raise BskTimeout(f"{label} 超时（bsk 内部超时）")
+            raise BskCommandError(f"{label} 失败 (exit={result.returncode}, code={code or 'unknown'})")
+        raise BskCommandError(f"{label} 重试耗尽: {last_error[:200]}")
+
     def evaluate(self, expression: str, *, timeout: float | None = None, help_watchdog: bool = True) -> Any:
         # evaluate 的 JS 异常也返回退出码 0，必须看信封里的 ok 字段。
         # 显式把预算透传给 bsk --timeout：bsk 自身默认 30s，否则页内长轮询/await fetch
         # 会被 bsk 先判超时（退出码 4），调用方传更大 timeout 也无效。
         budget = self._timeout if timeout is None else float(timeout)
-        result = self._run(
-            [
+
+        def build(context_id: str, observation_id: str) -> list[str]:
+            args = [
                 "evaluate",
                 "--json",
                 "--session",
                 self._require_session(),
-                "--timeout",
-                f"{budget:.0f}s",
-                expression,
-            ],
-            label="evaluate",
-            timeout=budget,
-            help_watchdog=help_watchdog,
+                "--context",
+                context_id,
+            ]
+            # 脚本动作同时要 sync 的 observation（协议 1.8 的 strict 要求）；拿不到就不传，
+            # 由 daemon 用最新观测兜底（1.7 扩展实测仅 --context 也能通过）。
+            if observation_id:
+                args += ["--observation", observation_id]
+            return args + ["--timeout", f"{budget:.0f}s", expression]
+
+        result = self._run_action(
+            build, label="evaluate", timeout=budget, help_watchdog=help_watchdog
         )
         payload = _read_json_object(result.stdout, "evaluate")
         if not payload.get("ok"):
@@ -570,20 +668,26 @@ class BskBrowser:
         if dx == 0 and dy == 0:
             return
         budget = self._timeout if timeout is None else float(timeout)
-        args = [
-            "wheel",
-            "--session",
-            self._require_session(),
-            "--delta-x",
-            str(dx),
-            "--delta-y",
-            str(dy),
-            "--timeout",
-            f"{budget:.0f}s",
-        ]
-        if selector:
-            args += ["--selector", selector]
-        self._run(args, label="wheel", timeout=budget, help_watchdog=False)
+
+        def build(context_id: str, _observation_id: str) -> list[str]:
+            args = [
+                "wheel",
+                "--session",
+                self._require_session(),
+                "--context",
+                context_id,
+                "--delta-x",
+                str(dx),
+                "--delta-y",
+                str(dy),
+                "--timeout",
+                f"{budget:.0f}s",
+            ]
+            if selector:
+                args += ["--selector", selector]
+            return args
+
+        self._run_action(build, label="wheel", timeout=budget, help_watchdog=False)
 
     def navigate(self, url: str, *, wait_until: str | None = None, timeout: float | None = None) -> None:
         # 导航是唯一真正慢的阶段（冷启动 SPA 首屏），显式给 bsk 一个远大于看门狗的 --timeout，

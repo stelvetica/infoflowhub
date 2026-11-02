@@ -135,6 +135,23 @@ def test_extension_ahead_upgrades_cli_and_reports_after(tmp_path: Path):
     assert code == 0
 
 
+def test_extension_invisible_but_cli_outdated_upgrades(tmp_path: Path):
+    """事故回归：扩展太新连不上 daemon，browsers 为空且 CLI 有新版 —— 仍须追平。
+
+    2026-10-31 起 bsk 扩展静默升级到 0.4.x（协议 1.6+），CLI 停在 0.3.3（协议 1.3）；
+    扩展连不上 daemon，browsers/version_skew_browsers 都为空，纯版本比较判不出「扩展领先」，
+    每天检查都空转，直到 11-02 晨间全量浏览器源失败。
+    """
+    stub = _prepare(tmp_path, cli="0.3.3", latest="0.4.1", ext="")
+    _write(
+        stub / "update-check.json",
+        {"status": "update_available", "current_version": "0.3.3", "latest_version": "0.4.1"},
+    )
+    code, log = _run(tmp_path, stub)
+    assert "执行 bsk update -y 追平" in log
+    assert "读不到扩展版本" in log
+
+
 def test_extension_matching_cli_takes_no_action(tmp_path: Path):
     """扩展与 CLI 同版本：不升级、不提示。"""
     stub = _prepare(tmp_path, cli="0.3.2", latest="0.3.2", ext="0.3.2")

@@ -18,8 +18,14 @@ bsk 是一个通过浏览器扩展驱动**本机日常 Chrome** 的抓取工具�
 
 - **CLI / daemon**：`bsk update` 升级，`bsk update --check` 只检查不升级。
 - **浏览器扩展**：走浏览器扩展自己的更新渠道，`bsk update` **无法更新扩展**。
-- **扩展升级后 CLI 会自动跟上**：上游把 CLI 与扩展**成对发布**、协议需一致，而扩展会在 Chrome 里静默升级、CLI 不会自己动。故 `check_bsk_update.ps1` 检测到**扩展版本高于 CLI** 时直接 `bsk update -y` 把 CLI 追平（这是该脚本唯一的写动作，只在真需要时发生）。反方向无解——CLI 更新不了扩展，只能等扩展自己升，脚本只提示。
-- **三者协议需一致**：`bsk status` 报 `daemon_version`、每个已连接浏览器的 `extension_version`，并用 `version_skew_browsers` 列出错配的浏览器。当前基线：CLI/daemon `0.3.2`、扩展 `0.3.2`、协议双方 `1.3`，无错配。
+- **扩展升级后 CLI 会自动跟上**：上游把 CLI 与扩展**成对发布**、协议需一致，而扩展会在 Chrome 里静默升级、CLI 不会自己动。故 `check_bsk_update.ps1` 在下列任一条件成立时直接 `bsk update -y` 把 CLI 追平（这是该脚本唯一的写动作，只在真需要时发生）：
+  - 已连接浏览器的扩展版本高于 CLI；
+  - `version_skew_browsers` 非空；
+  - **读不到任何扩展版本**（daemon 连不上 / 没有已连接浏览器）**且 CLI 有新版**——这是 2026-10-31 事故暴露的盲区：扩展太新时连不上 daemon，`browsers` 为空，纯版本比较永远判不出「扩展领先」，检查天天空转，直到 11-02 晨间全量浏览器源失败。
+  升级后脚本会 `bsk daemon stop`：`bsk update` 只换二进制、**不重启由宿主持有的 daemon**（`host_managed`，实测输出 `daemon: left_to_host`），旧 daemon 与新扩展协议仍不兼容；停掉后下一次抓取的 `BskBrowser.ensure_daemon()` 会用新二进制拉起。反方向无解——CLI 更新不了扩展，只能等扩展自己升，脚本只提示。
+- **晨间流程开工前强制查一次**：`auto_runner._do_run_morning()` 以 `force=True` 调同一个脚本。按天的戳在「扩展昨夜升级、CLI 没跟」时会拖到第二天，故晨间抓取前无条件复检。
+- **三者协议需一致**：`bsk status` 报 `daemon_version`、每个已连接浏览器的 `extension_version`，并用 `version_skew_browsers` 列出错配的浏览器。当前基线：CLI/daemon `0.4.1`、扩展 `0.4.1`、协议双方 `1.8`，无错配。
+- **0.4+ 的动作必须先 `cooperate sync`**：协议 1.6 起，扩展只接受带「最新 control context」的动作；`evaluate` / `wheel` 不带上下文一律 `permission_denied`（`cooperation_sync_required`），且**一个 context 只授权一次动作**。`connectors/_shared/bsk_browser.py` 的 `_run_action()` 已内聚该协议：先 `cooperate sync --policy strict` 取 `context_id` + `observation_id`，再带 `--context`（脚本动作另带 `--observation`）执行；页面在 sync 后变化导致的 `permission_denied`（`effect_state=none`，即什么都没执行）会自动重新 sync 重试。`--policy strict` 是扩展 1.7 也能用的策略，`target` 需双方 1.8。
 
 ## 运行前提：权限级别必须与 daemon 一致
 
