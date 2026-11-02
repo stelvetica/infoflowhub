@@ -1,6 +1,6 @@
 # bsk（BrowserSkill）浏览器抓取
 
-> 2026-09-24：**源表驱动的订阅流**已全部迁到 bsk。2026-09-28：**稍后处理（laterhub）的两个收藏源**（抖音收藏、小黑盒收藏）迁到 bsk。2026-11-02：**B 站稍后看也迁到 bsk**（页内 fetch 官方接口），laterhub 四源与订阅流全部只走 bsk；copy 后端与 `bilibili_main.json` 的稍后看依赖均已删除。
+> 2026-09-24：**源表驱动的订阅流**已全部迁到 bsk。2026-09-28：**稍后处理（laterhub）的两个收藏源**（抖音收藏、小黑盒收藏）迁到 bsk。2026-11-02：**B 站稍后看与视频摘要也迁到 bsk**（页内 fetch 官方接口），订阅流、laterhub、视频摘要全部只走 bsk；copy 后端与 `bilibili_main.json` 已彻底删除。
 
 ## 一句话定位
 
@@ -13,6 +13,14 @@ bsk 是一个通过浏览器扩展驱动**本机日常 Chrome** 的抓取工具�
 - 小黑盒收藏：bsk 无请求/响应拦截能力，改为在页内借前端 `$hbRequest` 拿签名后直接取数（不再用 `page.on("request")`）。
 - 微信读书书架：走 bsk 复用日常 Chrome 登录态；页内直接调同源接口 `/web/shelf/bookIds` + `/web/book/publicinfos`（页内 fetch 自动带登录 cookie，无需导出 token）。书架内可解析的书全部入库（不按「读完」标记过滤），坏 `bookId` 单条跳过、不拖垮整批。
 - B 站稍后看：与订阅动态同一姿势——先导航到 watchlater 页，再页内 fetch 官方接口 `x/v2/history/toview/web`（`credentials: include` 自动带日常 Chrome cookie）。不再读 `bilibili_main.json`、不再需要手动「同步登录态」；报 `-101 账号未登录` 时在日常 Chrome 登录 B站即可。
+
+## 视频摘要（video_digest）
+
+- 手动 CLI 子流程（`python -m apps.laterhub.video_digest`），不进主抓取流水线。
+- B站素材全部走 bsk：在**稳定的 watchlater 页**内 fetch `x/web-interface/view`、`x/player/v2`（字幕轨道）、`x/player/playurl`（dash/durl）。
+  不用视频播放页取数——弹幕/计时器持续自更新，整页基线校验必然判 changed，evaluate 会被拒。
+- 字幕 JSON（签名 URL）与媒体 CDN 流不需要 Cookie：前者直接 HTTP 拉取，后者只需浏览器 UA + Referer（实测 206）。
+- 抖音分支仍是免签直链下载 + 本地 ASR，与 B站无关。
 
 
 ## 版本与更新

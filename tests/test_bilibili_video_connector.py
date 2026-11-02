@@ -1,6 +1,6 @@
-"""B站视频 connector 的离线回归。
+"""B站视频 connector 的离线回归（bsk 页内取数）。
 
-不触真实网络：`_build_session` 被打桩成 FakeSession，请求按 URL 路由到预设载荷。
+不触真实网络/浏览器：page facade 与 HTTP 下载会话均打桩。
 覆盖：URL 判定/ID 提取、CC 字幕解析、完整 mp4 直链与试看截断、dash/durl 下载、接口错误。
 """
 
@@ -39,20 +39,48 @@ class FakeResponse:
         return False
 
 
-class FakeSession:
+class FakeHttpSession:
+    """只服务字幕 JSON 与 CDN 媒体流；按 URL 子串路由。"""
+
     def __init__(self, handler) -> None:
         self.handler = handler
         self.calls: list[dict] = []
+        self.headers: dict[str, str] = {}
+        self.trust_env = True
 
-    def get(self, url, *, params=None, timeout=None, headers=None, stream=False):
-        self.calls.append({"url": url, "params": params or {}, "stream": stream})
-        return self.handler(url, params or {})
+    def get(self, url, *, timeout=None, stream=False):
+        self.calls.append({"url": url, "stream": stream})
+        return self.handler(url)
+
+
+class FakePage:
+    """bsk page facade：按 evaluate 传入的 URL 路由 JSON 接口。"""
+
+    def __init__(self, routes, *, url: str = "https://www.bilibili.com/watchlater/list") -> None:
+        self.routes = routes
+        self._url = url
+        self.gotos: list[str] = []
+        self.evaluate_calls: list[tuple] = []
+
+    @property
+    def url(self) -> str:
+        return self._url
+
+    def goto(self, url, wait_until=None):
+        self.gotos.append(url)
+        self._url = url
+
+    def evaluate(self, js, arg=None, timeout=None):
+        self.evaluate_calls.append((js, arg, timeout))
+        target = json.loads(arg)["url"]
+        for needle, payload in self.routes:
+            if needle in target:
+                return payload
+        raise AssertionError(f"未打桩的接口: {target}")
 
 
 def _route(*rules):
-    """rules: (子串, FakeResponse 或 payload dict)；按序匹配 URL。"""
-
-    def handler(url, params):
+    def handler(url):
         for needle, result in rules:
             if needle in url:
                 return result if isinstance(result, FakeResponse) else FakeResponse(result)
@@ -61,8 +89,9 @@ def _route(*rules):
     return handler
 
 
-def _use_session(monkeypatch, session: FakeSession) -> FakeSession:
-    monkeypatch.setattr(video_mod, "_build_session", lambda: session)
+def _use_http(monkeypatch, routes, default=None):
+    session = FakeHttpSession(_route(*routes)) if default is None else FakeHttpSession(lambda url: default)
+    monkeypatch.setattr(video_mod, "_download_session", lambda: session)
     return session
 
 
@@ -108,90 +137,114 @@ def test_extract_invalid_returns_empty():
     assert video_mod.extract_bilibili_video_id("") == ""
 
 
-# --- 3) CC 字幕 ---------------------------------------------------------------
+# --- 3) 页内取数基础 ----------------------------------------------------------
 
-def test_cc_subtitle_joins_cues_with_newline(monkeypatch):
-    session = _use_session(
-        monkeypatch,
-        FakeSession(
-            _route(
-                ("player/wbi/v2", {"code": 0, "data": {"subtitle": {"subtitles": [{"lan": "zh", "subtitle_url": "//aisubtitle.test/sub.json"}]}}}),
-                ("aisubtitle.test/sub.json", {"body": [{"content": "你好", "from": 0, "to": 1}, {"content": "世界", "from": 1, "to": 2}]}),
-            )
-        ),
+def test_page_is_moved_to_stable_page_when_elsewhere():
+    page = FakePage([], url="about:blank")
+
+    video_mod._ensure_stable_page(page)
+
+    assert page.gotos == [video_mod.BILIBILI_STABLE_PAGE_URL]
+
+
+def test_page_already_on_bilibili_is_reused():
+    page = FakePage([])
+
+    video_mod._ensure_stable_page(page)
+
+    assert page.gotos == []
+
+
+def test_meta_reads_view_api_through_page():
+    page = FakePage(
+        [("web-interface/view", {"code": 0, "data": {"bvid": BVID, "aid": 1, "cid": 222, "title": "标题", "owner": {"name": "UP"}, "duration": 90}})]
     )
 
-    text = video_mod.get_bilibili_cc_subtitle_text(BVID, 222)
+    meta = video_mod.get_bilibili_video_meta(f"https://www.bilibili.com/video/{BVID}", page=page)
+
+    assert meta == video_mod.BilibiliVideoMeta(BVID, 1, 222, "标题", "UP", 90)
+    assert page.evaluate_calls  # 真的走了页内 fetch
+
+
+# --- 4) CC 字幕 ---------------------------------------------------------------
+
+def test_cc_subtitle_joins_cues_with_newline(monkeypatch):
+    page = FakePage(
+        [("player/v2", {"code": 0, "data": {"subtitle": {"subtitles": [{"lan": "zh", "subtitle_url": "//aisubtitle.test/sub.json"}]}}})]
+    )
+    http = _use_http(
+        monkeypatch,
+        [("aisubtitle.test/sub.json", {"body": [{"content": "你好", "from": 0, "to": 1}, {"content": "世界", "from": 1, "to": 2}]})],
+    )
+
+    text = video_mod.get_bilibili_cc_subtitle_text(BVID, 222, page=page)
 
     assert text == "你好\n世界"
     # 协议补全：请求 URL 必须是 https 开头
-    assert any(c["url"].startswith("https://aisubtitle.test/sub.json") for c in session.calls)
+    assert any(c["url"].startswith("https://aisubtitle.test/sub.json") for c in http.calls)
 
 
-def test_cc_subtitle_empty_returns_none(monkeypatch):
-    _use_session(
-        monkeypatch,
-        FakeSession(_route(("player/wbi/v2", {"code": 0, "data": {"subtitle": {"subtitles": []}}}))),
-    )
-    assert video_mod.get_bilibili_cc_subtitle_text(BVID, 222) is None
+def test_cc_subtitle_empty_returns_none():
+    page = FakePage([("player/v2", {"code": 0, "data": {"subtitle": {"subtitles": []}}})])
+
+    assert video_mod.get_bilibili_cc_subtitle_text(BVID, 222, page=page) is None
 
 
-# --- 4) 完整 mp4 直链 ---------------------------------------------------------
+# --- 5) 完整 mp4 直链 ---------------------------------------------------------
 
-def _mp4_session(monkeypatch, *, duration: int, durl: list[dict]) -> None:
-    _use_session(
-        monkeypatch,
-        FakeSession(
-            _route(
-                ("web-interface/view", {"code": 0, "data": {"cid": 222, "duration": duration}}),
-                ("player/playurl", {"code": 0, "data": {"durl": durl}}),
-            )
-        ),
+def _mp4_page(*, duration: int, durl: list[dict]) -> FakePage:
+    return FakePage(
+        [
+            ("web-interface/view", {"code": 0, "data": {"cid": 222, "duration": duration}}),
+            ("player/playurl", {"code": 0, "data": {"durl": durl}}),
+        ]
     )
 
 
-def test_full_mp4_url_complete(monkeypatch):
-    _mp4_session(monkeypatch, duration=100, durl=[{"url": "https://d.test/x.mp4", "length": 100_000}])
-    assert video_mod.get_bilibili_full_mp4_url(BVID, 222) == "https://d.test/x.mp4"
+def test_full_mp4_url_complete():
+    page = _mp4_page(duration=100, durl=[{"url": "https://d.test/x.mp4", "length": 100_000}])
+    assert video_mod.get_bilibili_full_mp4_url(BVID, 222, page=page) == "https://d.test/x.mp4"
 
 
-def test_full_mp4_url_truncated_preview_returns_none(monkeypatch):
-    _mp4_session(monkeypatch, duration=443, durl=[{"url": "https://d.test/x.mp4", "length": 35_000}])
-    assert video_mod.get_bilibili_full_mp4_url(BVID, 222) is None
+def test_full_mp4_url_truncated_preview_returns_none():
+    page = _mp4_page(duration=443, durl=[{"url": "https://d.test/x.mp4", "length": 35_000}])
+    assert video_mod.get_bilibili_full_mp4_url(BVID, 222, page=page) is None
 
 
-def test_full_mp4_url_no_durl_returns_none(monkeypatch):
-    _mp4_session(monkeypatch, duration=100, durl=[])
-    assert video_mod.get_bilibili_full_mp4_url(BVID, 222) is None
+def test_full_mp4_url_no_durl_returns_none():
+    page = _mp4_page(duration=100, durl=[])
+    assert video_mod.get_bilibili_full_mp4_url(BVID, 222, page=page) is None
 
 
-# --- 5) 下载 ------------------------------------------------------------------
+# --- 6) 下载 ------------------------------------------------------------------
 
 def test_download_dash_merges_with_ffmpeg(monkeypatch, tmp_path):
-    session = _use_session(
-        monkeypatch,
-        FakeSession(
-            _route(
-                ("web-interface/view", {"code": 0, "data": {"cid": 222, "duration": 90}}),
-                (
-                    "player/playurl",
-                    {
-                        "code": 0,
-                        "data": {
-                            "dash": {
-                                "video": [
-                                    {"baseUrl": "https://v.test/hi.m4s", "bandwidth": 900},
-                                    {"baseUrl": "https://v.test/lo.m4s", "bandwidth": 100},
-                                ],
-                                "audio": [{"baseUrl": "https://a.test/lo.m4s", "bandwidth": 50}],
-                            }
-                        },
+    page = FakePage(
+        [
+            ("web-interface/view", {"code": 0, "data": {"cid": 222, "duration": 90}}),
+            (
+                "player/playurl",
+                {
+                    "code": 0,
+                    "data": {
+                        "dash": {
+                            "video": [
+                                {"baseUrl": "https://v.test/hi.m4s", "bandwidth": 900},
+                                {"baseUrl": "https://v.test/lo.m4s", "bandwidth": 100},
+                            ],
+                            "audio": [{"baseUrl": "https://a.test/lo.m4s", "bandwidth": 50}],
+                        }
                     },
-                ),
-                ("v.test/lo.m4s", FakeResponse(content=b"VIDEO")),
-                ("a.test/lo.m4s", FakeResponse(content=b"AUDIO")),
-            )
-        ),
+                },
+            ),
+        ]
+    )
+    http = _use_http(
+        monkeypatch,
+        [
+            ("v.test/lo.m4s", FakeResponse(content=b"VIDEO")),
+            ("a.test/lo.m4s", FakeResponse(content=b"AUDIO")),
+        ],
     )
     run_calls: list[list[str]] = []
 
@@ -209,12 +262,12 @@ def test_download_dash_merges_with_ffmpeg(monkeypatch, tmp_path):
 
     monkeypatch.setattr(video_mod.subprocess, "run", fake_run)
 
-    out = video_mod.download_bilibili_video(BVID, 222, dest_dir=tmp_path)
+    out = video_mod.download_bilibili_video(BVID, 222, page=page, dest_dir=tmp_path)
 
     assert out == tmp_path / f"{BVID}.mp4"
     assert out.read_bytes() == b"MERGED"
     # 选最小带宽流，且合流参数正确
-    assert any(c["url"] == "https://v.test/lo.m4s" for c in session.calls)
+    assert any(c["url"] == "https://v.test/lo.m4s" for c in http.calls)
     ffmpeg_cmd = next(c for c in run_calls if c[0].endswith("ffmpeg.exe"))
     assert "-c" in ffmpeg_cmd and "copy" in ffmpeg_cmd
     assert any(c[0].endswith("ffprobe.exe") for c in run_calls)
@@ -224,30 +277,22 @@ def test_download_dash_merges_with_ffmpeg(monkeypatch, tmp_path):
 
 
 def test_download_durl_single_file(monkeypatch, tmp_path):
-    _use_session(
-        monkeypatch,
-        FakeSession(
-            _route(
-                ("web-interface/view", {"code": 0, "data": {"cid": 222, "duration": 90}}),
-                ("player/playurl", {"code": 0, "data": {"durl": [{"url": "https://d.test/x.mp4", "length": 90_000}]}}),
-                ("d.test/x.mp4", FakeResponse(content=b"MP4DATA")),
-            )
-        ),
-    )
+    page = _mp4_page(duration=90, durl=[{"url": "https://d.test/x.mp4", "length": 90_000}])
+    _use_http(monkeypatch, [("d.test/x.mp4", FakeResponse(content=b"MP4DATA"))])
 
-    out = video_mod.download_bilibili_video(BVID, 222, dest_dir=tmp_path)
+    out = video_mod.download_bilibili_video(BVID, 222, page=page, dest_dir=tmp_path)
 
     assert out == tmp_path / f"{BVID}.mp4"
     assert out.read_bytes() == b"MP4DATA"
 
 
-# --- 6) 接口错误 --------------------------------------------------------------
+# --- 7) 接口错误 --------------------------------------------------------------
 
-def test_api_error_raises_runtime_error(monkeypatch):
-    _use_session(monkeypatch, FakeSession(_route(("web-interface/view", {"code": -404, "message": "啥都木有"}))))
+def test_api_error_raises_runtime_error():
+    page = FakePage([("web-interface/view", {"code": -404, "message": "啥都木有"})])
 
     with pytest.raises(RuntimeError) as excinfo:
-        video_mod.get_bilibili_video_meta(f"https://www.bilibili.com/video/{BVID}")
+        video_mod.get_bilibili_video_meta(f"https://www.bilibili.com/video/{BVID}", page=page)
 
     message = str(excinfo.value)
     assert "code=-404" in message

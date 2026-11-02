@@ -24,7 +24,7 @@ SOURCE = {
     "name": "观点 Mark__Huang",
     "feed_url": "https://rsshub.app/bilibili/user/dynamic/424405794",
     "site_url": "https://space.bilibili.com/424405794/dynamic",
-    "auth_key": "bilibili_main",
+    "auth_key": "",
     "provider": "web",
     "fetch_via": "web",
 }
@@ -306,8 +306,10 @@ def test_batch_bilibili_reuses_single_bsk_session(settings_file, monkeypatch):
 def test_twelve_bilibili_sources_are_bsk_only():
     settings = json.loads((REPO_ROOT / "config" / "rss_settings.json").read_text(encoding="utf-8"))
     sources = json.loads((REPO_ROOT / "config" / "subscription_sources.json").read_text(encoding="utf-8"))["sources"]
-    bili_ids = [s["id"] for s in sources if s.get("auth_key") == "bilibili_main"]
+    bili_sources = [s for s in sources if "bilibili.com" in str(s.get("feed_url") or "") + str(s.get("site_url") or "")]
 
-    assert len(bili_ids) == 12
+    assert len(bili_sources) == 12
+    # B站没有独立认证资产：auth_key 必须为空，登录态全部来自 bsk 复用的日常 Chrome
+    assert all(not s.get("auth_key") for s in bili_sources)
     # copy 后端已删除：配置里不再有可切换后端的字段
     assert "sources" not in settings["browser_backend"]

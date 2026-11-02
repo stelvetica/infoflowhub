@@ -27,7 +27,7 @@
       "enabled": true,
       "note": "",
       "channel": "bilibili",
-      "auth_key": "bilibili_main",
+      "auth_key": "",
       "fallback_mode": "none"
     },
     {
@@ -42,7 +42,7 @@
       "enabled": true,
       "note": "",
       "channel": "bilibili",
-      "auth_key": "bilibili_main",
+      "auth_key": "",
       "fallback_mode": "none"
     },
     {
@@ -57,7 +57,7 @@
       "enabled": true,
       "note": "",
       "channel": "bilibili",
-      "auth_key": "bilibili_main",
+      "auth_key": "",
       "fallback_mode": "none"
     },
     {
@@ -72,7 +72,7 @@
       "enabled": true,
       "note": "",
       "channel": "bilibili",
-      "auth_key": "bilibili_main",
+      "auth_key": "",
       "fallback_mode": "none"
     },
     {
@@ -102,7 +102,7 @@
       "enabled": true,
       "note": "用户手动补充",
       "channel": "bilibili",
-      "auth_key": "bilibili_main",
+      "auth_key": "",
       "fallback_mode": "none"
     },
     {
@@ -117,7 +117,7 @@
       "enabled": true,
       "note": "用户手动补充",
       "channel": "bilibili",
-      "auth_key": "bilibili_main",
+      "auth_key": "",
       "fallback_mode": "none"
     },
     {
@@ -132,7 +132,7 @@
       "enabled": true,
       "note": "用户手动补充",
       "channel": "bilibili",
-      "auth_key": "bilibili_main",
+      "auth_key": "",
       "fallback_mode": "none"
     },
     {
@@ -192,7 +192,7 @@
       "enabled": true,
       "note": "",
       "channel": "bilibili",
-      "auth_key": "bilibili_main",
+      "auth_key": "",
       "fallback_mode": "none"
     },
     {
@@ -207,7 +207,7 @@
       "enabled": true,
       "note": "",
       "channel": "bilibili",
-      "auth_key": "bilibili_main",
+      "auth_key": "",
       "fallback_mode": "none"
     },
     {
@@ -237,7 +237,7 @@
       "enabled": true,
       "note": "用户手动补充",
       "channel": "bilibili",
-      "auth_key": "bilibili_main",
+      "auth_key": "",
       "fallback_mode": "none"
     },
     {
@@ -252,7 +252,7 @@
       "enabled": true,
       "note": "用户手动补充",
       "channel": "bilibili",
-      "auth_key": "bilibili_main",
+      "auth_key": "",
       "fallback_mode": "none"
     },
     {
@@ -297,7 +297,7 @@
       "enabled": true,
       "note": "",
       "channel": "bilibili",
-      "auth_key": "bilibili_main",
+      "auth_key": "",
       "fallback_mode": "none"
     },
     {

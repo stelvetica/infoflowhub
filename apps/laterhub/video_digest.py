@@ -1,7 +1,8 @@
 """视频简报：把稍后阅读里的视频做成一篇简明扼要的介绍。
 
 独立子流程，不进主流水线（apps/laterhub/pipeline.py）。链路：
-B站 CC 字幕直取 → 下载视频 + videocaptioner bijian 转录 → GLM 视频理解兜底；
+B站（bsk 页内取数，一个条目一个会话）：CC 字幕直取 → 下载视频 + videocaptioner bijian
+转录 → GLM 视频理解兜底；
 抖音无 CC 字幕：免签直链下载 → videocaptioner bijian 转录 → LLM 简报（无 GLM 兜底）。
 LLM 基于材料产出简报 md 落 data/reports/，links 表记 digest_status。
 """
@@ -207,9 +208,20 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
         db.mark_digest_unsupported(link_id, error_message=f"非视频链接或暂不支持的来源: {url[:120]}")
         return DigestOutcome(link_id, url, title, "unsupported", "非视频链接")
 
+    # B站全部走 bsk：一个条目一个会话，同一个 page 承载 view/字幕/直链/下载。
+    from connectors._shared.bsk_session import BskRunnerSession
+
+    bsk_session = None
     try:
         try:
-            meta = bili_video.get_bilibili_video_meta(url)
+            bsk_session = BskRunnerSession(start_url="about:blank")
+            bsk_session.start()
+        except Exception as exc:  # noqa: BLE001
+            db.mark_digest_failed(link_id, error_message=f"bsk 会话启动失败: {exc}"[:500])
+            return DigestOutcome(link_id, url, title, "failed", f"bsk: {exc}")
+        page = bsk_session.acquire_page()
+        try:
+            meta = bili_video.get_bilibili_video_meta(url, page=page)
         except Exception as exc:  # noqa: BLE001
             db.mark_digest_failed(link_id, error_message=f"获取视频详情失败: {exc}")
             return DigestOutcome(link_id, url, title, "failed", f"meta: {exc}")
@@ -217,7 +229,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
         # 1) B站 CC 字幕直取：免费、秒级、免下载
         subtitle_text, subtitle_source, truncated = "", "", False
         try:
-            cc = bili_video.get_bilibili_cc_subtitle_text(meta.bvid, meta.cid)
+            cc = bili_video.get_bilibili_cc_subtitle_text(meta.bvid, meta.cid, page=page)
         except Exception as exc:  # noqa: BLE001
             cc = None
             errors.append(f"CC字幕接口失败: {exc}")
@@ -227,7 +239,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
             # 2) 下载视频 + videocaptioner bijian 转录
             try:
                 workdir.mkdir(parents=True, exist_ok=True)
-                video_path = bili_video.download_bilibili_video(meta.bvid, meta.cid, dest_dir=workdir)
+                video_path = bili_video.download_bilibili_video(meta.bvid, meta.cid, page=page, dest_dir=workdir)
                 srt_path = _transcribe_with_videocaptioner(video_path, workdir)
                 subtitle_text = _srt_to_text(srt_path)
                 subtitle_source = "videocaptioner_bijian"
@@ -235,7 +247,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
                 errors.append(f"下载+ASR失败: {exc}")
                 # 3) GLM 视频理解兜底：完整 mp4 直链直接喂给多模态模型
                 try:
-                    mp4_url = bili_video.get_bilibili_full_mp4_url(meta.bvid, meta.cid)
+                    mp4_url = bili_video.get_bilibili_full_mp4_url(meta.bvid, meta.cid, page=page)
                 except Exception as exc2:  # noqa: BLE001
                     mp4_url = None
                     errors.append(f"拿直链失败: {exc2}")
@@ -259,6 +271,8 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
         db.mark_digest_failed(link_id, error_message=f"{type(exc).__name__}: {exc}"[:500])
         return DigestOutcome(link_id, url, title, "failed", str(exc))
     finally:
+        if bsk_session is not None:
+            bsk_session.shutdown()
         if not keep_temp and workdir.exists():
             shutil.rmtree(workdir, ignore_errors=True)
 

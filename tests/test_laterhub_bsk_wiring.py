@@ -122,7 +122,7 @@ def test_bilibili_watchlater_uses_bsk_page():
     # 不得再回到「读本地 cookie 文件 + requests 直连」的老路。
     assert "BilibiliWatchLaterFetcher" not in source
     assert "BILIBILI_API_CANDIDATES" not in source
-    watchlater_body = source.split("def fetch_bilibili_watchlater_with_page")[1].split("class BilibiliApiSession")[0]
+    watchlater_body = source.split("def fetch_bilibili_watchlater_with_page")[1].split("def build_bilibili_dynamic_link")[0]
     assert "credentials" in source  # 页内 fetch 带 cookie
     assert "Cookie" not in watchlater_body
 

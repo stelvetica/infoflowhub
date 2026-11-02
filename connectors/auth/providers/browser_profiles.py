@@ -9,7 +9,7 @@ RUNTIME_DIR = BASE_DIR / "runtime"
 BROWSER_PROFILES_DIR = RUNTIME_DIR / "browser_profiles"
 
 # 方式1：独立登录 profile（共享）。无法复用日常 Chrome 会话的站点用，
-# login_profiles.py 拉起浏览器扫码登录。
+# 由登录脚本/人工扫码维护；当前抓取链路不再读取它。
 AUTH_PROFILE_DIR = BROWSER_PROFILES_DIR / "auth"
 
 

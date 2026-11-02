@@ -4,10 +4,8 @@ from pathlib import Path
 
 from connectors.auth.models import AuthDescriptor, AuthRegistration
 from connectors.auth.providers import (
-    get_bilibili_headers,
     get_context_path,
     validate_alphapai_auth,
-    validate_bilibili_auth,
     validate_douyin_auth,
     validate_jiuyangongshe_auth,
     validate_x_auth,
@@ -85,20 +83,8 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         login_method="日常 Chrome 登录会话",
         renew_label="请在日常 Chrome 登录 Alpha派",
     ),
-    # 方式3：B站——订阅动态与稍后看均走 bsk 页内调 API（复用日常 Chrome 登录态）。
-    # 本地认证文件 bilibili_main.json（SESSDATA/bili_jct/DedeUserID）只剩视频摘要
-    # （video_digest → connectors/bilibili/video.py）在用，也供「同步登录态」面板校验。
-    "bilibili_main": AuthRegistration(
-        auth_key="bilibili_main",
-        platform="bilibili",
-        auth_mode="browser_profile",
-        storage_ref="本地认证文件 bilibili_main.json（仅供视频摘要下载/字幕）",
-        renew_strategy="scan_qr_sync",
-        display_name="B站",
-        description="订阅动态与稍后看均走 bsk 页内调 API（复用日常 Chrome 登录态）；本地认证文件仅服务视频摘要。",
-        login_method="日常 Chrome 登录会话",
-        renew_label="在常用 Chrome 登录 B站后点「同步登录态」",
-    ),
+    # B站不再有独立认证资产：订阅动态、稍后看、视频摘要全部走 bsk，
+    # 直接复用日常 Chrome 登录态，无本地 cookie 文件。
 }
 
 
@@ -113,8 +99,6 @@ def validate_auth(auth_key: str) -> AuthDescriptor:
     registration = resolve_auth(auth_key)
     if auth_key == "douyin_shared":
         status = validate_douyin_auth()
-    elif auth_key == "bilibili_main":
-        status = validate_bilibili_auth()
     elif auth_key == "x_profile2":
         status = validate_x_auth()
     elif auth_key == "xiaoheihe_shared":
@@ -168,13 +152,6 @@ def invalidate_auth_status_cache() -> None:
     """登录/重新扫码后调用，使下次读取刷新缓存。"""
     global _AUTH_STATUS_CACHE
     _AUTH_STATUS_CACHE = None
-
-
-
-def get_auth_headers(auth_key: str) -> dict[str, str]:
-    if auth_key == "bilibili_main":
-        return get_bilibili_headers()
-    raise ValueError(f"{auth_key} 不是 cookie/session 类型登录态")
 
 
 def get_auth_context_path(auth_key: str) -> Path:

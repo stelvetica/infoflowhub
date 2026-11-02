@@ -36,7 +36,6 @@ BSK_AUTH_KEYS = (
     "xiaoheihe_shared",
     "youtube_main",
     "alphapai_main",
-    "bilibili_main",
 )
 # 旧「复制 profile」机制的文案，走 bsk 的站点不得再出现。
 COPY_PROFILE_WORDING = ("复制常用 Chrome Default", "复制常用Chrome登录态", "抓取时复制")
@@ -70,7 +69,6 @@ def _stub_auth_validators(monkeypatch) -> None:
         "validate_xiaoheihe_auth",
         "validate_youtube_auth",
         "validate_jiuyangongshe_auth",
-        "validate_bilibili_auth",
     ):
         monkeypatch.setattr(registry, name, lambda: dict(ok))
     registry.invalidate_auth_status_cache()

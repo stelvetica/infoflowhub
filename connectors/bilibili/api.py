@@ -2,24 +2,12 @@ from __future__ import annotations
 
 import json
 import re
-import time
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import requests
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
-from connectors.auth.providers.bilibili import get_bilibili_cookie
 
-try:
-    from dotenv import load_dotenv
-except ImportError:  # pragma: no cover
-    load_dotenv = None
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_ENV_PATH = PROJECT_ROOT / ".env"
 # 稍后看与订阅动态同一姿势：bsk 页内 fetch 官方接口，复用日常 Chrome 登录态。
 # 先导航到 watchlater 页拿同域上下文/Referer，再带 credentials 调接口。
 BILIBILI_WATCHLATER_PAGE_URL = "https://www.bilibili.com/watchlater/list"
@@ -36,33 +24,8 @@ def _bilibili_uid_from_source(source: dict[str, Any]) -> str:
     return match.group(1) if match else ""
 
 
-def load_project_env(env_path: str | Path | None = None) -> None:
-    if load_dotenv is None:
-        return
-    target = Path(env_path) if env_path else DEFAULT_ENV_PATH
-    if target.exists():
-        load_dotenv(dotenv_path=target, override=False)
-
-
-@dataclass(slots=True)
-class BilibiliConfig:
-    cookie: str
-    ps: int = 20
-
-    @classmethod
-    def from_env(cls, env_path: str | Path | None = None) -> "BilibiliConfig":
-        load_project_env(env_path)
-        cookie = get_bilibili_cookie()
-        if not cookie:
-            raise ValueError("缺少 B 站登录态。请在 .env 中填写 BILIBILI_COOKIE，或至少填写 BILIBILI_SESSDATA")
-        return cls(cookie=cookie)
-
-
 def _extract_watchlater_items(data: dict[str, Any]) -> list[dict[str, Any]] | None:
-    """从稍后看接口载荷里取出条目并归一化；结构无法识别返回 None。
-
-    bsk 页内 fetch 与历史 HTTP 路径共用此解析入口（SSOT）。
-    """
+    """从稍后看接口载荷里取出条目并归一化；结构无法识别返回 None。"""
     container = data.get("data")
     if isinstance(container, dict):
         for key in ("list", "items"):
@@ -168,33 +131,6 @@ def fetch_bilibili_watchlater(
         return fetch_bilibili_watchlater_with_page(own_session.acquire_page())
 
 
-class BilibiliApiSession:
-    def __init__(self, config: BilibiliConfig, timeout: int = 20) -> None:
-        self.config = config
-        self.timeout = timeout
-        self.session = requests.Session()
-        self.session.trust_env = False  # B 站是国内站点，绕过系统代理（本地代理未开时避免 ProxyError）
-        self.session.headers.update(
-            {
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
-                ),
-                "Origin": "https://space.bilibili.com",
-                "Cookie": self.config.cookie,
-            }
-        )
-
-    def get(self, url: str, *, params: dict[str, Any], referer: str) -> dict[str, Any]:
-        headers = {"Referer": referer}
-        response = self.session.get(url, params=params, headers=headers, timeout=self.timeout)
-        response.raise_for_status()
-        data = response.json()
-        if data.get("code") != 0:
-            raise RuntimeError(f"B站接口返回异常: code={data.get('code')} message={data.get('message')}")
-        return data
-
-
 def build_bilibili_dynamic_link(item: dict[str, Any]) -> str:
     dynamic_id = str(item.get("id_str") or item.get("id") or "").strip()
     if not dynamic_id:
@@ -290,101 +226,10 @@ def _parse_dynamic_item(item: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def fetch_bilibili_user_dynamic(
-    uid: str,
-    *,
-    limit: int = 12,
-    timeout: int = 20,
-    max_pages: int = 2,
-    retry_delays: tuple[float, ...] = (1.5, 3.0, 6.0),
-    env_path: str | Path | None = None,
-) -> list[dict[str, Any]]:
-    load_project_env(env_path)
-    cookie = get_bilibili_cookie()
-    config = BilibiliConfig(cookie=cookie) if cookie else BilibiliConfig.from_env(env_path)
-    client = BilibiliApiSession(config=config, timeout=timeout)
-    referer = f"https://space.bilibili.com/{uid}/dynamic"
-    offset = ""
-    collected: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
-
-    for _ in range(max_pages):
-        params = {
-            "host_mid": uid,
-            "offset": offset,
-            "timezone_offset": -480,
-            "features": "itemOpusStyle",
-        }
-        last_error: Exception | None = None
-        payload: dict[str, Any] | None = None
-        for attempt, delay in enumerate((0.0, *retry_delays), start=1):
-            if delay:
-                time.sleep(delay)
-            try:
-                payload = client.get(BILIBILI_DYNAMIC_API, params=params, referer=referer)
-                break
-            except Exception as exc:  # noqa: BLE001
-                last_error = exc
-                if attempt == len(retry_delays) + 1:
-                    raise RuntimeError(f"B站动态接口失败[uid={uid}][attempt={attempt}]: {exc}") from exc
-        if payload is None:
-            raise RuntimeError(f"B站动态接口失败[uid={uid}]: {last_error}")
-
-        data = payload.get("data") or {}
-        items = data.get("items") or []
-        for item in items:
-            parsed = _parse_dynamic_item(item)
-            if not parsed or parsed["id"] in seen_ids:
-                continue
-            seen_ids.add(parsed["id"])
-            collected.append(parsed)
-            if len(collected) >= limit:
-                return collected
-
-        offset = str(data.get("offset") or "").strip()
-        has_more = bool(data.get("has_more"))
-        if not has_more or not offset:
-            break
-
-    return collected[:limit]
-
-
-def fetch_bilibili_dynamic_feed(source: dict, limit: int = 12, timeout_ms: int = 60000) -> FeedFetchResult:
-    site_url = str(source.get("site_url") or "").strip()
-    match = re.search(r"space\.bilibili\.com/(\d+)", site_url)
-    if not match:
-        return FeedFetchResult(
-            source_id=source["id"],
-            source_name=source["name"],
-            feed_url=source["feed_url"],
-            ok=False,
-            status=0,
-            entries=[],
-            error="暂不支持的 B 站网页源",
-        )
-
-    uid = match.group(1)
-    page_url = f"https://space.bilibili.com/{uid}/dynamic"
-    try:
-        items = fetch_bilibili_user_dynamic(uid, limit=limit, timeout=max(10, timeout_ms // 1000))
-    except Exception as exc:
-        return FeedFetchResult(
-            source_id=source["id"],
-            source_name=source["name"],
-            feed_url=page_url,
-            ok=False,
-            status=0,
-            entries=[],
-            error=f"B站抓取失败[uid={uid}][stage=api][kind=unknown][attempt=1][url={page_url}]: {exc}",
-        )
-
-    return _dynamic_feed_result(source, uid, page_url, items, stage="api")
-
-
 def _dynamic_feed_result(
     source: dict[str, Any], uid: str, page_url: str, items: list[dict[str, Any]], *, stage: str
 ) -> FeedFetchResult:
-    """把解析后的动态条目拼成 FeedFetchResult（HTTP / bsk 两条路径共用，输出一致）。"""
+    """把解析后的动态条目拼成 FeedFetchResult（bsk 页内取数路径）。"""
     entries: list[FeedEntry] = []
     for item in items:
         title = str(item.get("title") or "").strip()
@@ -521,7 +366,7 @@ async (argsJson) => {
 def fetch_bilibili_dynamic_feed_with_page(
     page, source: dict, limit: int = 12, timeout_ms: int = 60000
 ) -> FeedFetchResult:
-    """bsk 页内取数版：与 fetch_bilibili_dynamic_feed 输出字段完全一致，只是取数改用真实浏览器。
+    """bsk 页内取数版：先导航到 space 页拿同域上下文，再页内 fetch 官方接口。
 
     先导航到 space 页拿同域上下文/Referer，再页内 fetch 官方接口（带用户真实 cookie）。
     """

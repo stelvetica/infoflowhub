@@ -1,12 +1,15 @@
 """B站视频能力 connector：详情 / CC 字幕 / 直链 / 下载。
 
-供 apps/laterhub/video_digest.py 编排调用，链路：
+供 apps/laterhub/video_digest.py 编排调用，全部走 bsk 页内 fetch（复用日常 Chrome 登录态）：
 - get_bilibili_video_meta        拿 aid/cid/title/owner/duration
 - get_bilibili_cc_subtitle_text  免下载直取 CC 字幕
 - get_bilibili_full_mp4_url      取完整 mp4 直链（喂多模态模型）
 - download_bilibili_video        dash 合流 / durl 单文件落盘
 
-取数姿势见 tmp_m0 实测脚本：view → player/wbi/v2 → subtitle_url → playurl(dash/durl)。
+为什么在 watchlater 页取数：视频播放页的弹幕/计时器持续自更新，bsk 的整页基线校验
+几乎必然判「content changed」，evaluate 会被拒。watchlater 页同属 www.bilibili.com，
+Cookie/Origin 一致且页面稳定，足以承载这些接口请求。字幕 JSON 与 CDN 媒体流不需要
+Cookie：前者是签名 URL，后者只需浏览器 UA + Referer（实测 206）。
 """
 
 from __future__ import annotations
@@ -18,25 +21,48 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
-from connectors.auth.providers.bilibili import get_bilibili_cookie
-from connectors.bilibili.api import load_project_env
-
 VIEW_API = "https://api.bilibili.com/x/web-interface/view"
-PLAYER_V2_API = "https://api.bilibili.com/x/player/wbi/v2"
+# 播放器信息用非 wbi 的 player/v2：页内直调不需要自行算 w_rid，字幕轨道同样能拿到。
+PLAYER_V2_API = "https://api.bilibili.com/x/player/v2"
 PLAYURL_API = "https://api.bilibili.com/x/player/playurl"
+BILIBILI_STABLE_PAGE_URL = "https://www.bilibili.com/watchlater/list"
 REFERER = "https://www.bilibili.com/"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
 )
+# 页内 fetch 单次超时：字幕/播放地址接口通常秒回，卡住就快速失败。
+PAGE_REQUEST_TIMEOUT_MS = 20000
 
 # BV 号固定为 BV + 10 位字母数字；av 号为其后的纯数字
 _BV_RE = re.compile(r"BV[0-9A-Za-z]{10}")
 _AV_RE = re.compile(r"/video/av(\d+)", re.IGNORECASE)
 _BILI_VIDEO_URL_RE = re.compile(r"bilibili\.com/video/(?:BV[0-9A-Za-z]{10}|av\d+)", re.IGNORECASE)
+
+# 页内 fetch 约定：evaluate 的 arg 是 JSON 字符串，函数内 JSON.parse（与订阅动态 JS 一致）。
+_BILIBILI_PAGE_FETCH_JS = r"""
+async (argsJson) => {
+  const args = JSON.parse(argsJson);
+  let resp;
+  try {
+    resp = await fetch(args.url, {
+      credentials: "include",
+      signal: AbortSignal.timeout(args.requestTimeoutMs),
+    });
+  } catch (e) {
+    return { error: "接口请求失败: " + String(e) };
+  }
+  try {
+    return await resp.json();
+  } catch (e) {
+    return { error: "接口返回非 JSON（可能登录态失效）" };
+  }
+}
+"""
 
 
 @dataclass(slots=True)
@@ -49,48 +75,56 @@ class BilibiliVideoMeta:
     duration_seconds: int | None
 
 
-def _build_session() -> requests.Session:
-    """构造统一会话：Chrome UA + Referer + 登录态 cookie，并绕过系统代理。"""
-    load_project_env()
+def _download_session() -> requests.Session:
+    """CDN 下载会话：浏览器 UA + Referer 即可（qn=16 不需要 Cookie）。"""
     session = requests.Session()
-    # B站是国内站点，绕过系统代理（本地代理未开时避免 ProxyError）
-    session.trust_env = False
-    session.headers.update(
-        {
-            "User-Agent": USER_AGENT,
-            "Referer": REFERER,
-            "Cookie": get_bilibili_cookie(),
-        }
-    )
+    session.trust_env = False  # B站是国内站点，绕过系统代理（本地代理未开时避免 ProxyError）
+    session.headers.update({"User-Agent": USER_AGENT, "Referer": REFERER})
     return session
 
 
-def _request_json(
-    session: requests.Session,
-    url: str,
-    *,
-    params: dict[str, Any] | None = None,
-    timeout: float,
-) -> Any:
-    response = session.get(url, params=params, timeout=timeout, headers={"Referer": REFERER})
+def _request_json(url: str, *, timeout: float) -> Any:
+    session = _download_session()
+    response = session.get(url, timeout=timeout)
     response.raise_for_status()
     return response.json()
 
 
-def _api_json(
-    session: requests.Session,
-    url: str,
-    *,
-    params: dict[str, Any] | None = None,
-    timeout: float,
-) -> dict[str, Any]:
-    """调 B站 JSON 接口：code!=0 一律抛 RuntimeError（含 code/message）。"""
-    data = _request_json(session, url, params=params, timeout=timeout)
-    if not isinstance(data, dict):
-        raise RuntimeError(f"B站接口返回非 JSON 对象: {url}")
-    if data.get("code") != 0:
-        raise RuntimeError(f"B站接口返回异常: code={data.get('code')} message={data.get('message')} url={url}")
-    return data
+def _ensure_stable_page(page) -> None:
+    """把会话里的 tab 落到稳定的 B站页面；已在 bilibili.com 上则复用。"""
+    current = ""
+    try:
+        current = str(page.url or "")
+    except Exception:  # noqa: BLE001 - 读不到 URL 就当不在目标页
+        current = ""
+    if "bilibili.com" not in current:
+        page.goto(BILIBILI_STABLE_PAGE_URL, wait_until="domcontentloaded")
+        # 导航后扩展内容脚本需要时间注入新文档；立即 evaluate 会撞
+        # 「Receiving end does not exist」，这里先等落定，再由 sync 重试兜底。
+        try:
+            page.wait_for_timeout(2000)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _page_api_json(page, api_url: str, params: dict[str, Any], *, timeout: float) -> dict[str, Any]:
+    """bsk 页内 fetch 一个 B站 JSON 接口；code!=0 一律抛 RuntimeError。"""
+    _ensure_stable_page(page)
+    query = "&".join(f"{key}={quote(str(value))}" for key, value in params.items() if value is not None)
+    payload = page.evaluate(
+        _BILIBILI_PAGE_FETCH_JS,
+        json.dumps({"url": f"{api_url}?{query}", "requestTimeoutMs": PAGE_REQUEST_TIMEOUT_MS}),
+        timeout=max(timeout, 30.0),
+    )
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"B站接口返回异常（非对象）: {api_url}")
+    if payload.get("error"):
+        raise RuntimeError(str(payload["error"]))
+    if payload.get("code") != 0:
+        raise RuntimeError(
+            f"B站接口返回异常: code={payload.get('code')} message={payload.get('message')} url={api_url}"
+        )
+    return payload
 
 
 def is_bilibili_video_url(url: str) -> bool:
@@ -111,15 +145,18 @@ def extract_bilibili_video_id(url: str) -> str:
     return ""
 
 
-def get_bilibili_video_meta(url: str, *, timeout: float = 30) -> BilibiliVideoMeta:
-    """调 view 接口拿视频详情。接口异常（code!=0）抛 RuntimeError。"""
+def _view_payload(page, video_id: str, *, timeout: float) -> dict[str, Any]:
+    params = {"bvid": video_id} if video_id.upper().startswith("BV") else {"aid": video_id[2:]}
+    return _page_api_json(page, VIEW_API, params, timeout=timeout).get("data") or {}
+
+
+def get_bilibili_video_meta(url: str, *, page, timeout: float = 30) -> BilibiliVideoMeta:
+    """页内调 view 接口拿视频详情。接口异常（code!=0）抛 RuntimeError。"""
     video_id = extract_bilibili_video_id(url)
     if not video_id:
         raise RuntimeError(f"无法从链接解析出 B站视频 ID: {url}")
 
-    session = _build_session()
-    params = {"bvid": video_id} if video_id.upper().startswith("BV") else {"aid": video_id[2:]}
-    payload = _api_json(session, VIEW_API, params=params, timeout=timeout).get("data") or {}
+    payload = _view_payload(page, video_id, timeout=timeout)
     owner = payload.get("owner") or {}
     owner_name = str(owner.get("name") or "").strip()
     return BilibiliVideoMeta(
@@ -132,15 +169,14 @@ def get_bilibili_video_meta(url: str, *, timeout: float = 30) -> BilibiliVideoMe
     )
 
 
-def get_bilibili_cc_subtitle_text(bvid: str, cid: int | None = None, *, timeout: float = 30) -> str | None:
+def get_bilibili_cc_subtitle_text(bvid: str, cid: int | None = None, *, page, timeout: float = 30) -> str | None:
     """取第一条 CC 字幕轨道文本。
 
     无字幕轨道返回 None；接口错误抛 RuntimeError（不能把接口错误包装成"无字幕"）。
     """
-    session = _build_session()
     aid: int | None = None
     if cid is None:
-        payload = _api_json(session, VIEW_API, params={"bvid": bvid}, timeout=timeout).get("data") or {}
+        payload = _view_payload(page, bvid, timeout=timeout)
         aid = payload.get("aid")
         cid = payload.get("cid")
     if cid is None:
@@ -149,7 +185,7 @@ def get_bilibili_cc_subtitle_text(bvid: str, cid: int | None = None, *, timeout:
     params: dict[str, Any] = {"bvid": bvid, "cid": cid}
     if aid is not None:
         params["aid"] = aid
-    player = _api_json(session, PLAYER_V2_API, params=params, timeout=timeout)
+    player = _page_api_json(page, PLAYER_V2_API, params, timeout=timeout)
     subtitles = ((player.get("data") or {}).get("subtitle") or {}).get("subtitles") or []
     if not subtitles:
         return None
@@ -160,30 +196,29 @@ def get_bilibili_cc_subtitle_text(bvid: str, cid: int | None = None, *, timeout:
     if subtitle_url.startswith("//"):
         subtitle_url = f"https:{subtitle_url}"
 
-    body = _request_json(session, subtitle_url, timeout=timeout)
+    body = _request_json(subtitle_url, timeout=timeout)
     cues = (body or {}).get("body") or []
     # 每条 cue 以换行连接，保留字幕的自然断句
     text = "\n".join(str(cue.get("content") or "") for cue in cues).strip()
     return text or None
 
 
-def get_bilibili_full_mp4_url(bvid: str, cid: int | None = None, *, timeout: float = 30) -> str | None:
+def get_bilibili_full_mp4_url(bvid: str, cid: int | None = None, *, page, timeout: float = 30) -> str | None:
     """取完整 mp4 直链（html5 durl 姿势），供多模态模型消费。
 
     试看截断或 durl 缺失返回 None；接口错误抛 RuntimeError。
     """
-    session = _build_session()
-    payload = _api_json(session, VIEW_API, params={"bvid": bvid}, timeout=timeout).get("data") or {}
+    payload = _view_payload(page, bvid, timeout=timeout)
     duration = payload.get("duration")
     if cid is None:
         cid = payload.get("cid")
     if cid is None:
         raise RuntimeError(f"无法获取视频 cid: bvid={bvid}")
 
-    data = _api_json(
-        session,
+    data = _page_api_json(
+        page,
         PLAYURL_API,
-        params={"bvid": bvid, "cid": cid, "qn": 16, "fnval": 0, "platform": "html5", "high_quality": 1},
+        {"bvid": bvid, "cid": cid, "qn": 16, "fnval": 0, "platform": "html5", "high_quality": 1},
         timeout=timeout,
     ).get("data") or {}
     durl = data.get("durl") or []
@@ -212,7 +247,7 @@ def _download_stream(
 ) -> int:
     """流式下载到 dest，返回累计字节数；超 max_bytes 抛 RuntimeError。"""
     total = already
-    with session.get(url, timeout=timeout, stream=True, headers={"Referer": REFERER}) as response:
+    with session.get(url, timeout=timeout, stream=True) as response:
         response.raise_for_status()
         with dest.open("wb") as handle:
             for chunk in response.iter_content(chunk_size=1 << 20):
@@ -264,6 +299,7 @@ def download_bilibili_video(
     bvid: str,
     cid: int | None = None,
     *,
+    page,
     dest_dir: Path,
     max_bytes: int = 2**31,
     timeout: float = 1800,
@@ -275,8 +311,8 @@ def download_bilibili_video(
     """
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    session = _build_session()
-    payload = _api_json(session, VIEW_API, params={"bvid": bvid}, timeout=min(timeout, 60)).get("data") or {}
+    session = _download_session()
+    payload = _view_payload(page, bvid, timeout=min(timeout, 60))
     duration = payload.get("duration")
     if cid is None:
         cid = payload.get("cid")
@@ -286,10 +322,10 @@ def download_bilibili_video(
     final_path = dest_dir / f"{bvid}.mp4"
     created: list[Path] = []
     try:
-        play = _api_json(
-            session,
+        play = _page_api_json(
+            page,
             PLAYURL_API,
-            params={"bvid": bvid, "cid": cid, "qn": 16, "fnval": 4048, "fnver": 0, "fourk": 1},
+            {"bvid": bvid, "cid": cid, "qn": 16, "fnval": 4048, "fnver": 0, "fourk": 1},
             timeout=timeout,
         ).get("data") or {}
         dash = play.get("dash") or {}
@@ -318,10 +354,10 @@ def download_bilibili_video(
         durl = play.get("durl") or []
         if not durl:
             # dash 与 durl 皆缺：回退 html5 durl 端点再试一次
-            fallback = _api_json(
-                session,
+            fallback = _page_api_json(
+                page,
                 PLAYURL_API,
-                params={"bvid": bvid, "cid": cid, "qn": 16, "fnval": 0, "platform": "html5", "high_quality": 1},
+                {"bvid": bvid, "cid": cid, "qn": 16, "fnval": 0, "platform": "html5", "high_quality": 1},
                 timeout=timeout,
             ).get("data") or {}
             durl = fallback.get("durl") or []

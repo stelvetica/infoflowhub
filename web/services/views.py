@@ -172,7 +172,8 @@ def default_auth_key(channel: str, site_url: str, feed_url: str = "") -> str:
     normalized_feed = normalize_text(feed_url)
     combined = f"{normalized_site} {normalized_feed}"
     if "bilibili.com" in combined:
-        return "bilibili_main"
+        # B站全部走 bsk（复用日常 Chrome），没有独立认证资产
+        return ""
     if "x.com/" in combined:
         return "x_profile2"
     if channel == "douyin":
@@ -188,7 +189,6 @@ def auth_requirement_meta(auth_key: str) -> dict[str, str] | None:
             continue
         requirement_map = {
             "douyin_shared": "依赖抖音共享登录态",
-            "bilibili_main": "依赖 B站主账号登录态",
             "x_profile2": "依赖 X 平台共享登录态",
         }
         return {
@@ -1060,10 +1060,6 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         is_expired = False
         is_expiring_soon = False
         nickname = normalize_utf8_text(descriptor.nickname)
-        if descriptor.auth_key == "bilibili_main":
-            renew_action_url = "/actions/bilibili-login/sync"
-            renew_action_label = "同步登录态"
-            is_expired = bool(descriptor.is_expired)
         row = {
             "auth_key": descriptor.auth_key,
             "display_name": normalize_utf8_text(descriptor.display_name),

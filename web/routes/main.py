@@ -324,20 +324,6 @@ async def source_form_fragment(request: Request, source_id: str = ""):
     return templates.TemplateResponse(request, "partials/source_modal_form.html", {"draft": draft, "params": params})
 
 
-@router.post("/actions/bilibili-login/sync", response_class=HTMLResponse)
-async def bilibili_login_sync(request: Request):
-    from connectors.auth import invalidate_auth_status_cache
-    from connectors.auth.providers import export_bilibili_cookie_from_chrome
-
-    try:
-        await run_in_threadpool(export_bilibili_cookie_from_chrome)
-        invalidate_auth_status_cache()
-    except Exception:
-        pass
-    params = query_dict(request)
-    return templates.TemplateResponse(request, "partials/auth_assets_panel.html", {"settings": get_settings_view(params), "params": params})
-
-
 _FETCH_BG_LOCK = threading.Lock()
 
 
