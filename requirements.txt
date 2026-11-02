@@ -10,6 +10,7 @@ requests>=2.31,<3
 python-dotenv>=1,<2
 pyyaml>=6,<7
 
-# Optional: browser-based fetchers (douyin/x/youtube/xiaoheihe via chrome_runner).
+# Optional: Playwright is used by login/QR-sync scripts (bsk drives the user's own Chrome;
+# browser fetching itself does not need Playwright).
 # After installing, also run:  python -m playwright install chromium
 # playwright>=1.40,<2

@@ -122,7 +122,7 @@ def _extract_payload_maps(payload: dict) -> tuple[dict[str, str], dict[str, str]
 def _supports_response_listener(page) -> bool:
     """探测式判定 page 是否支持响应拦截。
 
-    只有 copy 后端（真 Playwright page）才有 on/remove_listener；bsk facade 无此能力
+    只有真 Playwright page（测试/离线工具）才有 on/remove_listener；bsk facade 无此能力
     （bsk network 只回 URL/错误文本，不给 body），必须走纯 DOM 降级路径。
     """
     return callable(getattr(page, "on", None)) and callable(getattr(page, "remove_listener", None))
@@ -131,7 +131,7 @@ def _supports_response_listener(page) -> bool:
 def _navigate_and_collect_payload_maps(
     page, target_url: str, timeout_ms: int
 ) -> tuple[dict[str, str], dict[str, str], dict[str, str], str]:
-    """导航到目标页；copy 后端顺带拦截 aweme/post 响应取权威时间/标题，bsk 后端只导航。
+    """导航到目标页；支持响应拦截的 page 顺带取权威时间/标题，bsk 后端只导航。
 
     bsk 无响应拦截能力，三个 map 保持为空，时间/标题全走 DOM 降级
     （标题取卡片内 img[alt]/desc 文本；列表页无发布时间，published 由调用方兜底）。

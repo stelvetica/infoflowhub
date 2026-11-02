@@ -274,8 +274,8 @@ def _apply_youtube_language_pref(page) -> None:
     """尽力把 YouTube 界面语言/地区设为 en/US，缺失写入面时静默跳过。
 
     PREF cookie 只是让页面按 en/US 渲染，作用是让 publishedTimeText 等文案落到
-    提取器已覆盖的英文相对时间（见 normalize_youtube_published）。copy 后端
-    （Playwright）有 page.context.add_cookies 可写；bsk 后端 page facade 无 cookie
+    提取器已覆盖的英文相对时间（见 normalize_youtube_published）。真 Playwright page
+    （测试/离线工具）有 page.context.add_cookies 可写；bsk page facade 无 cookie
     写入命令，但 goto 已带 hl=en&gl=US 查询参数——服务端按查询参数应用语言/地区，
     对本次加载等效，故 bsk 下该 cookie 非必需（提取器解析的是语言无关的 renderer
     JSON 与 DOM 结构，不依赖此 cookie）。

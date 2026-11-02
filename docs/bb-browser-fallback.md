@@ -10,8 +10,8 @@
 
 bb **绕不开**复制管线，也就绕不开 Google 账号验证问题：
 
-- infoflowhub 至少有一个源（**蓝宝书/Alpha派**）是**单设备登录**——登录态只存在于常用 Chrome，bb 浏览器里登录会互踢，所以蓝宝书必须走 `CopyRunnerSession` 复制管线（`connectors/alphapai/runner.py:29`）。
-- 只要复制管线还在，每 7 天一次的副本重建就会强杀 Chrome + 触碰 Google 相关 profile 数据，账号验证弹窗的诱因就还在。
+- infoflowhub 至少有一个源（**蓝宝书/Alpha派**）是**单设备登录**——登录态只存在于常用 Chrome，bb 浏览器里登录会互踢，所以蓝宝书必须复用日常 Chrome 会话（现由 bsk 承担，见 `connectors/alphapai/runner.py`）。
+- 只要复制管线还在，每 7 天一次的副本重建就会强杀 Chrome + 触碰 Google 相关 profile 数据，账号验证弹窗的诱因就还在。**该管线已于 2026-11-02 整体删除。**
 - bb 只能接管多设备登录站点（B站/YouTube/小黑盒），这些站点现有管线本来就工作正常——bb 解决的是不存在的问题。
 
 ## 已验证的事实（2026-09-08 试用记录）
@@ -45,5 +45,5 @@ bb-browser guide                   # 新站点适配指南（AI 可自动逆向�
 
 ## 相关背景
 
-- 谷歌验证登录问题根因与修复史：`connectors/_shared/chrome_runner.py` 内 `_strip_google_identity` / `_strip_google_cookies` 注释，及提交 6dc8804 → a1f385c → 74b11ff → 432259e。
+- 谷歌验证登录问题根因与修复史：见提交 6dc8804 → a1f385c → 74b11ff → 432259e（当时在 `chrome_runner.py` 的 `_strip_google_identity` / `_strip_google_cookies`；该复制管线已于 2026-11-02 删除，历史仅存于 git）。
 - ABE 已通过注册表策略关闭（README「Chrome ABE」节）。

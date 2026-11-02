@@ -8,14 +8,9 @@ BASE_DIR = Path(__file__).resolve().parents[3]
 RUNTIME_DIR = BASE_DIR / "runtime"
 BROWSER_PROFILES_DIR = RUNTIME_DIR / "browser_profiles"
 
-# 方式1：独立登录 profile（共享）。无法复制常用 Chrome 的站点用，
+# 方式1：独立登录 profile（共享）。无法复用日常 Chrome 会话的站点用，
 # login_profiles.py 拉起浏览器扫码登录。
 AUTH_PROFILE_DIR = BROWSER_PROFILES_DIR / "auth"
-
-# 历史 copy profile 目录：抓取管线已不再使用（copy 后端整体禁用），仅保留给登录脚本/人工
-# 排障复用旧路径；蓝宝书/抖音/小黑盒/YouTube 的抓取全部走 bsk，复用日常 Chrome 实时会话。
-ALPHAPAI_RUNNER_DIR = BROWSER_PROFILES_DIR / "alphapai-runner"
-WEB_RUNNER_DIR = BROWSER_PROFILES_DIR / "web-runner"
 
 
 def _default_chrome_profile_dir() -> Path:

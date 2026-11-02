@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import re
 import os
-import subprocess
-import time as _time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
@@ -288,53 +286,6 @@ def launch_x_context(playwright, headless: bool):
 
 
 CHROME_USER_DATA = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data"
-
-
-def is_chrome_running() -> bool:
-    """检测 Chrome 是否正在运行。
-
-    双保险：SingletonLock 文件 + 进程检测。新版 Chrome 不一定写 SingletonLock，
-    仅靠文件会误判已关，导致后续复制 profile 时 Cookies 被持锁失败。
-    """
-    if (CHROME_USER_DATA / "SingletonLock").exists():
-        return True
-    try:
-        result = subprocess.run(
-            ["tasklist", "/fi", "imagename eq chrome.exe", "/nh"],
-            capture_output=True, timeout=5,
-        )
-        # tasklist 无匹配时输出 "信息: 没有运行的任务..." ; 有匹配则含 "chrome.exe"
-        out = (result.stdout or b"").decode("utf-8", errors="ignore").lower()
-        return "chrome.exe" in out
-    except (OSError, subprocess.SubprocessError):
-        return False
-
-
-def kill_chrome_gracefully() -> bool:
-    """先软后硬关闭 Chrome"""
-    try:
-        # 第一轮：优雅关闭（不带 /f）
-        subprocess.run(
-            ["taskkill", "/im", "chrome.exe", "/t"],
-            capture_output=True, timeout=10,
-        )
-        for _ in range(8):
-            _time.sleep(1)
-            if not is_chrome_running():
-                return True
-
-        # 第二轮：强制关闭（带 /f），处理顽固子进程
-        subprocess.run(
-            ["taskkill", "/f", "/im", "chrome.exe", "/t"],
-            capture_output=True, timeout=10,
-        )
-        for _ in range(10):
-            _time.sleep(1)
-            if not is_chrome_running():
-                return True
-        return False
-    except Exception:
-        return False
 
 
 def launch_alphapai_context(playwright, headless: bool = True):

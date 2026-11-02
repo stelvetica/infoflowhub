@@ -160,7 +160,7 @@ def _extract_profile_moments_via_hbrequest(
 def _extract_profile_moments(
     page, target_url: str, userid: str, timeout_ms: int, limit: int
 ) -> tuple[list[dict], str]:
-    """按后端能力选路：copy（Playwright page 有 on）走响应拦截；bsk 走 $hbRequest 直取。"""
+    """按 page 能力选路：支持 on 的真 Playwright page 走响应拦截；bsk 走 $hbRequest 直取。"""
     if getattr(page, "on", None) is not None:
         return _extract_profile_moments_from_network(page, target_url, timeout_ms, limit)
     return _extract_profile_moments_via_hbrequest(page, target_url, userid, timeout_ms, limit)

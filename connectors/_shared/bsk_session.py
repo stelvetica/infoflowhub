@@ -1,5 +1,5 @@
-"""bsk 会话适配层：把 BskBrowser 包成与 CopyRunnerSession 同形的最小会话对象，
-并提供「bsk 失败 → 重试 N 次 → 返回可读失败结果」的统一入口（不再自动回退 copy）。
+"""bsk 会话适配层：把 BskBrowser 包成最小会话对象，并提供「bsk 失败 → 重试 N 次 →
+返回可读失败结果」的统一入口。
 
 放在独立小文件而非 bsk_browser.py：那边只管 bsk CLI 原语，这里只管会话形状与重试策略。
 """
@@ -29,11 +29,7 @@ BSK_RETRY_DELAY_SECONDS = 2.0
 
 
 class BskRunnerSession:
-    """与 CopyRunnerSession 同形的最小 bsk 会话。
-
-    只提供 start / shutdown / restart / acquire_page / acquire_page_by_url，
-    因此 web_fetch 里既有的 `session.acquire_page_by_url(...)` 调用姿势无需改动。
-    """
+    """最小 bsk 会话：start / shutdown / restart / acquire_page / acquire_page_by_url。"""
 
     def __init__(
         self,
@@ -65,12 +61,11 @@ class BskRunnerSession:
         self._browser.start()
         self._started = True
         if self.start_url and self.start_url != "about:blank":
-            # 与 CopyRunnerSession 一致：会话起好后把 tab 落到目标页，后续 acquire_page_by_url
-            # 命中同域即可直接复用，省掉一次往返。
+            # 会话起好后把 tab 落到目标页，后续 acquire_page_by_url 命中同域即可复用。
             self._browser.navigate(self.start_url, wait_until="domcontentloaded")
 
     def shutdown(self, *, _reopen_chrome: bool = True) -> None:
-        # _reopen_chrome 仅为与 CopyRunnerSession 同形：bsk 驱动的是用户自己已登录的浏览器，
+        # _reopen_chrome 仅为兼容旧调用方签名：bsk 驱动的是用户自己已登录的浏览器，
         # 全程不关它，也就无所谓重开。
         self._browser.stop()
         self._started = False
@@ -84,7 +79,7 @@ class BskRunnerSession:
         return self._browser.page()
 
     def acquire_page_by_url(self, url: str, *, wait_until: str = "domcontentloaded", timeout_ms: int = 30000):
-        # timeout_ms 是 CopyRunnerSession 的毫秒语义，这里有意忽略：bsk 导航的硬超时统一由
+        # timeout_ms 为兼容旧调用方签名而保留，这里有意忽略：bsk 导航的硬超时统一由
         # slow_command_timeout 控制（30s 对冷启动 SPA 太紧，正是要放宽的那一类）。
         page = self._browser.page()
         try:
@@ -121,10 +116,8 @@ def run_bsk_with_retry(
     attempts: int | None = None,
     manage_session: bool = True,
 ) -> FeedFetchResult:
-    """在 bsk 会话上重试抓取；仍失败则返回可读失败结果——绝不自动回退 copy。
+    """在 bsk 会话上重试抓取；仍失败则返回可读失败结果。
 
-    copy 会带着 Google 身份/会话从第二个 profile 路径联网，触发账号双活吊销，
-    并会 taskkill 强杀用户 Chrome，因此只作为用户在设置页显式触发的最后手段。
     无论重试几次都只返回一个 FeedFetchResult——调用方据此落库，同一源不会重复保存条目。
 
     manage_session=False：调用方已持有并启动了一个跨源复用的会话（如批量抓取 B 站多源），
@@ -158,4 +151,4 @@ def run_bsk_with_retry(
 
 
 def _bsk_failure_error(attempts: int, bsk_error: str) -> str:
-    return f"{BSK_FAILURE_MARKER}（已尝试 {attempts} 次，未回退 copy）：{bsk_error}"
+    return f"{BSK_FAILURE_MARKER}（已尝试 {attempts} 次）：{bsk_error}"

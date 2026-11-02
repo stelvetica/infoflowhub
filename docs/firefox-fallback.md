@@ -2,7 +2,7 @@
 
 > 状态：**备用，未接入管线**。2026-09-08 实测验证。当 Chromium/CDP 路线整体失效（Google 风控升级、Chrome 反自动化收紧）时的第三退路。前置退路见 `docs/bb-browser-fallback.md`。
 >
-> 2026-09-24 更新：浏览器抓取已全部改走 bsk（复用日常 Chrome 登录态），**复制 profile 路径不再是任何源的默认**（降为设置页按源显式触发的最后手段），Google 风控诱因随之退出默认路径；本文档作为整体退路仍然有效。
+> 2026-11-02 更新：copy（复制 profile）后端已整体删除，浏览器抓取只走 bsk；本文档的第三退路若重启，需要重新实现一个 bsk 之外的会话后端，而不是复用旧 `CopyRunnerSession`。
 
 ## 为什么 Firefox 是有效退路
 
@@ -65,8 +65,8 @@ with sync_playwright() as p:
 
 ## 接入管线的改造点（若启用）
 
-1. `chrome_runner.py` 的复制/剥离逻辑不适用——Firefox 无 profile 复制需求，直接读 cookies.sqlite 注入。
-2. 各 connector 的 `CopyRunnerSession`/`SharedRunnerSession` 换成 Firefox context（Playwright `p.firefox`），页面解析逻辑（DOM 选择器）无需大改。
+1. 不复用 `chrome_runner.py`（现只剩浏览器可执行文件解析）——Firefox 无 profile 复制需求，直接读 cookies.sqlite 注入。
+2. 需要一个与 `BskRunnerSession` 同形的 Firefox 会话类（Playwright `p.firefox`），页面解析逻辑（DOM 选择器）无需大改。
 3. cookie 过期后需在 Firefox 里重登一次，再跑一次注入（可写自动化脚本定时同步）。
 
 ## 待验证（装普通版 Firefox 后）

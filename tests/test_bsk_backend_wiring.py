@@ -112,7 +112,7 @@ def test_timeout_values_are_bounded(settings_file):
     assert rss_config.browser_command_timeout() == high
 
 
-# ---- bsk 失败：重试配置次数后返回失败结果，绝不自动回退 copy ----
+# ---- bsk 失败：重试配置次数后返回可读失败结果 ----
 
 
 @pytest.fixture(autouse=True)
@@ -134,7 +134,7 @@ def test_bsk_failure_retries_configured_times_and_never_builds_copy(settings_fil
 
     assert not result.ok
     assert len(seen) == 3 and all(isinstance(s, BskRunnerSession) for s in seen)
-    assert "已尝试 3 次，未回退 copy" in result.error
+    assert "已尝试 3 次" in result.error
     # bsk 会话每次都被结束（不留半开 session）
     assert any(c["argv"][0:2] == ["session", "stop"] for c in fake_bsk.calls())
 
@@ -151,9 +151,8 @@ def test_bsk_failure_error_reports_no_copy_fallback(settings_file, fake_bsk, mon
 
     assert not result.ok
     assert "bsk 后端失败" in result.error
-    assert "已尝试 2 次，未回退 copy" in result.error
+    assert "已尝试 2 次" in result.error
     assert "session start 失败" in result.error
-    assert "已回退到复制 profile 路径" not in result.error
 
 
 def test_non_ok_bsk_result_also_retries_and_reports_no_copy(settings_file, fake_bsk, monkeypatch):
@@ -171,7 +170,7 @@ def test_non_ok_bsk_result_also_retries_and_reports_no_copy(settings_file, fake_
 
     assert not result.ok
     assert len(attempts) == 2  # 非 ok 结果同样重试到配置次数
-    assert "蓝宝书页面未完成加载" in result.error and "未回退 copy" in result.error
+    assert "蓝宝书页面未完成加载" in result.error and "已尝试 2 次" in result.error
 
 
 def test_bsk_failure_saves_no_entries(settings_file, fake_bsk, monkeypatch):
@@ -189,7 +188,7 @@ def test_bsk_failure_saves_no_entries(settings_file, fake_bsk, monkeypatch):
 
     assert not result.ok and inserted == 0
     assert saved == []
-    assert "未回退 copy" in result.error
+    assert "bsk 后端失败" in result.error
 
 
 # ---- bsk_attempts 配置 ----
@@ -215,13 +214,13 @@ def test_bsk_failure_error_is_written_to_source_health(monkeypatch, tmp_path):
     monkeypatch.setattr(runtime_health, "HEALTH_PATH", tmp_path / "health.json")
     failure = FeedFetchResult(
         SOURCE["id"], SOURCE["name"], SOURCE["feed_url"], False, 0, [],
-        "bsk 后端失败（已尝试 2 次，未回退 copy）：BskCommandError: navigate 失败",
+        "bsk 后端失败（已尝试 2 次）：BskCommandError: navigate 失败",
     )
 
     runtime_health.update_source_health(failure)
 
     saved = json.loads((tmp_path / "health.json").read_text(encoding="utf-8"))
-    assert "未回退 copy" in saved["sources"]["alphapai"]["last_error"]
+    assert "bsk 后端失败" in saved["sources"]["alphapai"]["last_error"]
 
 
 def test_bsk_failure_surfaces_in_run_outcome_and_status(monkeypatch, tmp_path):
@@ -231,14 +230,14 @@ def test_bsk_failure_surfaces_in_run_outcome_and_status(monkeypatch, tmp_path):
     monkeypatch.setattr(runtime_health, "STATUS_PATH", tmp_path / "status.json")
     failure = FeedFetchResult(
         SOURCE["id"], SOURCE["name"], SOURCE["feed_url"], False, 0, [],
-        "bsk 后端失败（已尝试 2 次，未回退 copy）：boom",
+        "bsk 后端失败（已尝试 2 次）：boom",
     )
     monkeypatch.setattr(runtime_health, "fetch_many", lambda *a, **k: [failure])
 
     outcome = runtime_health.run_source_fetch([SOURCE], persist_global=True)
 
-    assert outcome.failures and "未回退 copy" in outcome.failures[0]
-    assert "未回退 copy" in outcome.status["last_error"]
+    assert outcome.failures and "bsk 后端失败" in outcome.failures[0]
+    assert "bsk 后端失败" in outcome.status["last_error"]
 
 
 # ---- copy 入口与路由已移除 ----

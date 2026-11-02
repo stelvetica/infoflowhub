@@ -272,9 +272,9 @@ def _wait_for_tweets(page, timeout_ms: int = 30000) -> bool:
 def _apply_x_anti_detect(page) -> None:
     """尽力注入反自动化脚本，写入面缺失时静默跳过（参考 youtube 的 cookie 范式）。
 
-    copy 后端（Playwright）有 page.add_init_script 可写；bsk 后端驱动的是用户自己
-    已登录的真实 Chromium（非 --enable-automation 实例），navigator.webdriver 等特征
-    本就正常，故 bsk 下该脚本非必需（实测 webdriver=false / plugins.length=5 /
+    真 Playwright page（测试/离线工具）有 page.add_init_script 可写；bsk 驱动的是用户
+    自己已登录的真实 Chromium（非 --enable-automation 实例），navigator.webdriver 等
+    特征本就正常，故 bsk 下该脚本非必需（实测 webdriver=false / plugins.length=5 /
     languages 正常 / UA 不含 Headless|Automation）。
     """
     add_init_script = getattr(page, "add_init_script", None)
