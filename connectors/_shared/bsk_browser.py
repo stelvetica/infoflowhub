@@ -51,6 +51,11 @@ DAEMON_POLL_INTERVAL_SECONDS = 0.5
 # 拉起后等扩展自动连上 daemon 的预算；冷却窗口防止一轮抓取里 N 个源 × 重试各拉一次 Chrome。
 BROWSER_CONNECT_WAIT_SECONDS = 15.0
 BROWSER_LAUNCH_COOLDOWN_SECONDS = 3600.0
+# bsk get-html 默认 512KB 截断（stderr 会警告）。YouTube 频道页实测 1.6MB，ytInitialData
+# 整段在尾部，截断后 JSON 解析失败 → 误报「页面可访问但未解析到内容」。默认放宽到 8MB：
+# 纯本地子进程输出，不涉及 token，仅占内存。
+# ponytail: 固定上限；页面再长大到 8MB 会复现同样问题，届时改成分段读取。
+HTML_MAX_BYTES = 8_000_000
 # 上次拉起用户 Chrome 的时刻（time.monotonic）；0 表示从未拉起。模块级：一轮抓取里每个源
 # 各建一个 BskBrowser，冷却必须跨实例共享，否则同一轮抓取会反复拉起 Chrome。
 _last_browser_launch_at: float = 0.0
@@ -746,10 +751,11 @@ class BskBrowser:
             help_watchdog=False,
         )
 
-    def get_html(self, *, timeout: float | None = None) -> str:
+    def get_html(self, *, timeout: float | None = None, max_bytes: int = HTML_MAX_BYTES) -> str:
         # get-html 无 --timeout 选项，只能用子进程预算兜住；同属慢命令，不挂看门狗。
+        # 必须显式给 --max-bytes：CLI 默认 512KB 静默截断，大页面拿到的 HTML 是残页。
         result = self._run(
-            ["get-html", "--session", self._require_session()],
+            ["get-html", "--session", self._require_session(), "--max-bytes", str(max_bytes)],
             label="get-html",
             timeout=max(self._slow_budget(timeout), self._timeout),
             help_watchdog=False,

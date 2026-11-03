@@ -804,3 +804,18 @@ def test_mouse_wheel_both_zero_is_noop(fake_bsk):
     browser.start()
     browser.page().mouse.wheel(0, 0)
     assert _subcommand_calls(fake_bsk, "wheel") == []
+
+
+def test_get_html_widens_max_bytes(fake_bsk):
+    """CLI 默认 512KB 截断会让 1.6MB 的 YouTube 频道页丢 ytInitialData（整源解析失败）。"""
+    browser, _ = fake_bsk.build(html="<html>ok</html>")
+    browser.start()
+
+    assert browser.get_html() == "<html>ok</html>"
+
+    argv = _subcommand_calls(fake_bsk, "get-html")[-1]["argv"]
+    assert int(argv[argv.index("--max-bytes") + 1]) >= 2_000_000
+    # 调试路径仍可按需收紧
+    browser.get_html(max_bytes=1000)
+    argv = _subcommand_calls(fake_bsk, "get-html")[-1]["argv"]
+    assert argv[argv.index("--max-bytes") + 1] == "1000"
