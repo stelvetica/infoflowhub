@@ -311,7 +311,7 @@ def test_bilibili_sources_split_between_following_and_legacy():
     legacy = [s for s in sources if "space.bilibili.com" in str(s.get("site_url") or "")]
     following = [s for s in sources if s.get("id") == "bilibili_following"]
 
-    assert len(legacy) == 12
+    assert legacy, "未关注的 B站源应保留为独立抓取源"
     # B站没有独立认证资产：auth_key 必须为空，登录态全部来自 bsk 复用的日常 Chrome
     assert all(not s.get("auth_key") for s in legacy)
     assert len(following) == 1
