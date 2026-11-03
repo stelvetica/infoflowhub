@@ -56,10 +56,12 @@
           </td>
           <td title="{{ item.channel_label }}"><span class="cell-ellipsis">{{ item.channel_label }}</span></td>
           <td title="{{ item.provider_label }}"><span class="cell-ellipsis">{{ item.provider_label }}</span></td>
-          <td class="cell-login-requirement" title="{{ item.login_hint or '' }}">
+          <td class="cell-login-requirement" title="{{ item.login_hint or item.auth_note or '' }}">
             {% if item.auth_asset_name %}
             <span class="requirement-badge">{{ item.auth_asset_name }}</span>
             {% if item.auth_status_text %}<span class="auth-status-badge {{ item.auth_status_level }}">{{ item.auth_status_text }}</span>{% endif %}
+            {% elif item.auth_note %}
+            <span class="requirement-badge">{{ item.auth_note }}</span>
             {% else %}
             -
             {% endif %}

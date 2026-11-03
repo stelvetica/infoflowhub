@@ -1113,6 +1113,8 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             "enabled_sort": 1 if item.get("enabled") else 0,
             "enabled_text": "生效" if item.get("enabled") else "停用",
             "auth_asset_name": next((asset["display_name"] for asset in auth_assets if asset["auth_key"] == item.get("auth_key")), ""),
+            # B站没有独立认证资产，但抓取依赖日常 Chrome 登录态（bsk），给出一致的依赖说明。
+            "auth_note": "日常 Chrome 登录" if web_target and web_target.site == "bilibili" else "",
         }
         if keyword and not any(keyword in normalize_text(str(row.get(field) or "")) for field in ("name", "feed_url", "site_url")):
             continue

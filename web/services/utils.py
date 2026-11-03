@@ -207,6 +207,8 @@ def source_channel_label(feed_url: str, site_url: str, provider: str) -> str:
             "weibo": "微博",
             "x": "X",
             "douyin": "抖音",
+            "xiaoheihe": "小黑盒",
+            "youtube": "YouTube",
             "jiuyangongshe": "韭研公社",
             # resolve_web_target 对 Alpha派两个页面返回内部 site 名，需映射为中文标签，
             # 避免渠道列直接显示 alphapai / alphapai_social 这类内部标识。
