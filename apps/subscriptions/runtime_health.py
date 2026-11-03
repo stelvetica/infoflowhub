@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from apps.subscriptions.models import FeedFetchResult
-from apps.subscriptions.rss_db import save_entries
+from apps.subscriptions.rss_db import list_entries, save_entries
 from apps.subscriptions.source_ids import canonicalize_source_id, merge_source_health_rows
+from connectors._shared.common import normalize_dedupe_title_key, resolve_web_target
 from connectors.rss.fetch import fetch_many
 from infra.text_normalizer import normalize_utf8_obj, normalize_utf8_text
 from infra.utf8_json import dump_json_utf8, load_json_utf8
@@ -21,6 +22,9 @@ STATUS_PATH = RUNTIME_DIR / "health" / "subscriptions_status.json"
 # 进程级抓取互斥锁：定时任务（auto_runner）与手动“立即抓取”共享同一进程，
 # 防止并发跑全源抓取互相覆盖订阅状态文件。
 FETCH_LOCK = threading.RLock()
+
+# 增量翻页的已知键窗口：只取该源最近 N 条入库标题作为「已见过」判定集。
+BILIBILI_KNOWN_ENTRY_WINDOW = 200
 
 
 @dataclass
@@ -120,6 +124,30 @@ def update_source_health(result: FeedFetchResult) -> None:
     write_json(HEALTH_PATH, health)
 
 
+def _bilibili_known_entry_keys(source: dict) -> list[str]:
+    """取该源已入库标题的归一化键（仅 B 站源）；任何异常降级为空列表，不阻断抓取。"""
+    try:
+        target = resolve_web_target(source)
+        if not target or target.site != "bilibili":
+            return []
+        source_id = str(source.get("id") or "").strip()
+        if not source_id:
+            # 空 source_id 在 list_entries 里意味着「全部源」，会把跨源标题混入已知集合。
+            return []
+        rows = list_entries(limit=BILIBILI_KNOWN_ENTRY_WINDOW, source_id=source_id)
+        keys: list[str] = []
+        seen: set[str] = set()
+        for row in rows:
+            key = normalize_dedupe_title_key(str(row.get("title") or ""))
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            keys.append(key)
+        return keys
+    except Exception:
+        return []
+
+
 def run_source_fetch(
     sources: list[dict],
     *,
@@ -143,7 +171,16 @@ def run_source_fetch(
     total_sources = len(sources)
     with FETCH_LOCK:
         try:
-            results = fetch_many(sources, settings=settings, timeout=timeout)
+            # 浅拷贝注入已知键：B 站源在抓取前拿到「上一轮已入库」快照，用于增量翻页；
+            # 不修改调用方传入的 sources。
+            fetch_sources: list[dict] = []
+            for source in sources:
+                target = resolve_web_target(source)
+                if target and target.site == "bilibili":
+                    fetch_sources.append({**source, "known_entry_keys": _bilibili_known_entry_keys(source)})
+                else:
+                    fetch_sources.append(dict(source))
+            results = fetch_many(fetch_sources, settings=settings, timeout=timeout)
             outcome.results = results
             for result in results:
                 update_source_health(result)

@@ -156,6 +156,11 @@ def normalize_title_key(text: str) -> str:
     return value.lower()
 
 
+def normalize_dedupe_title_key(text: str) -> str:
+    """订阅库去重口径（(source_id, LOWER(TRIM(title)))）的标题键：空白折叠 + 小写。"""
+    return re.sub(r"\s+", " ", (text or "").strip()).lower()
+
+
 def normalize_yearless_date(text: str) -> str:
     digits = re.findall(r"\d+", text or "")
     now = datetime.now()

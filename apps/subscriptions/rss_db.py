@@ -8,7 +8,7 @@ from typing import Iterable
 
 from apps.subscriptions.models import FeedEntry
 from apps.subscriptions.source_ids import canonicalize_source_id, legacy_source_ids
-from connectors._shared.common import parse_published_datetime
+from connectors._shared.common import normalize_dedupe_title_key, parse_published_datetime
 from infra.text_normalizer import normalize_utf8_text
 
 
@@ -202,7 +202,8 @@ def sanitize_db_text(value: str) -> str:
 
 
 def normalize_title_key(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "").strip()).lower()
+    # 去重口径唯一实现收敛到 common（connector 与应用层共用同一份）。
+    return normalize_dedupe_title_key(text)
 
 
 def derive_alphapai_title_from_summary(summary: str, fallback_title: str) -> str:

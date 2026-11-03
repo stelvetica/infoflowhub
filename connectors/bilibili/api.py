@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
+from connectors._shared.common import normalize_dedupe_title_key
 
 # 稍后看与订阅动态同一姿势：bsk 页内 fetch 官方接口，复用日常 Chrome 登录态。
 # 先导航到 watchlater 页拿同域上下文/Referer，再带 credentials 调接口。
@@ -17,6 +18,14 @@ BILIBILI_DYNAMIC_API = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/s
 BILIBILI_BSK_EVALUATE_TIMEOUT_SECONDS = 120.0
 # 单次 fetch 的页内超时（毫秒）：任一页卡住时快速失败，而不是拖满整个 evaluate 预算。
 BILIBILI_PAGE_REQUEST_TIMEOUT_MS = 20000
+# 增量翻页：连续命中已入库标题达到该条数即认为已追上历史，停止继续翻页。
+BILIBILI_DUPLICATE_STOP_STREAK = 3
+# 安全上限：全新库/无已知键时最多翻这么多页，避免无限翻历史。
+BILIBILI_DYNAMIC_MAX_PAGES = 6
+BILIBILI_STOP_END_OF_FEED = "end_of_feed"
+BILIBILI_STOP_DUPLICATE_STREAK = "duplicate_streak"
+BILIBILI_STOP_MAX_PAGES = "max_pages"
+BILIBILI_STOP_LIMIT = "limit_reached"
 
 
 def _bilibili_uid_from_source(source: dict[str, Any]) -> str:
@@ -227,7 +236,13 @@ def _parse_dynamic_item(item: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _dynamic_feed_result(
-    source: dict[str, Any], uid: str, page_url: str, items: list[dict[str, Any]], *, stage: str
+    source: dict[str, Any],
+    uid: str,
+    page_url: str,
+    items: list[dict[str, Any]],
+    *,
+    stage: str,
+    stop_reason: str = "",
 ) -> FeedFetchResult:
     """把解析后的动态条目拼成 FeedFetchResult（bsk 页内取数路径）。"""
     entries: list[FeedEntry] = []
@@ -268,15 +283,16 @@ def _dynamic_feed_result(
         status=200,
         entries=entries,
         error="",
+        stop_reason=stop_reason,
     )
 
 
 # bsk 页内取数：bsk 无法手设 Origin/Referer（forbidden header），故先导航到 space 页建立同域
 # 上下文，再在页内用浏览器自带真实 cookie（credentials:include）直接 fetch 官方 API。
-# 纯 GET 无需 WBI 签名与 bili_jct（已实测 code:0）。一次 evaluate 内跑完 max_pages 页翻页，
-# 并在页内做字段投影——动态 item 原始载荷极大，全量经 CLI stdout 回传会爆量。
-# 只回传 _parse_dynamic_item / pick_bilibili_dynamic_link / extract_bilibili_dynamic_text
-# 实际读取的字段。
+# 纯 GET 无需 WBI 签名与 bili_jct（已实测 code:0）。每次 evaluate 只取一页，翻页与停止判定在
+# Python 侧做（按已入库标题增量翻页）；页内只做字段投影——动态 item 原始载荷极大，全量经
+# CLI stdout 回传会爆量。只回传 _parse_dynamic_item / pick_bilibili_dynamic_link /
+# extract_bilibili_dynamic_text 实际读取的字段。
 _BILIBILI_DYNAMIC_PAGE_JS = r"""
 async (argsJson) => {
   const args = JSON.parse(argsJson);
@@ -321,44 +337,37 @@ async (argsJson) => {
       },
     };
   };
-  const items = [];
-  let offset = "";
-  let code = null;
-  let message = "";
-  for (let i = 0; i < args.maxPages; i++) {
-    const url = new URL(base);
-    url.searchParams.set("host_mid", String(args.uid));
-    url.searchParams.set("offset", offset);
-    url.searchParams.set("timezone_offset", "-480");
-    url.searchParams.set("features", "itemOpusStyle");
-    let resp;
-    try {
-      resp = await fetch(url.toString(), {
-        credentials: "include",
-        signal: AbortSignal.timeout(args.requestTimeoutMs),
-      });
-    } catch (e) {
-      return {error: "接口请求失败: " + String(e)};
-    }
-    let data;
-    try {
-      data = await resp.json();
-    } catch (e) {
-      return {error: "接口返回非 JSON（可能登录态失效）"};
-    }
-    if (i === 0) {
-      code = data.code;
-      message = data.message;
-    }
-    if (data.code !== 0) {
-      return {code: data.code, message: data.message, items: items};
-    }
-    const pageItems = (data.data && data.data.items) || [];
-    for (const it of pageItems) items.push(project(it));
-    offset = (data.data && data.data.offset) || "";
-    if (!(data.data && data.data.has_more) || !offset) break;
+  const url = new URL(base);
+  url.searchParams.set("host_mid", String(args.uid));
+  url.searchParams.set("offset", args.offset || "");
+  url.searchParams.set("timezone_offset", "-480");
+  url.searchParams.set("features", "itemOpusStyle");
+  let resp;
+  try {
+    resp = await fetch(url.toString(), {
+      credentials: "include",
+      signal: AbortSignal.timeout(args.requestTimeoutMs),
+    });
+  } catch (e) {
+    return {error: "接口请求失败: " + String(e)};
   }
-  return {code: code, message: message, items: items};
+  let data;
+  try {
+    data = await resp.json();
+  } catch (e) {
+    return {error: "接口返回非 JSON（可能登录态失效）"};
+  }
+  if (data.code !== 0) {
+    return {code: data.code, message: data.message, items: []};
+  }
+  const container = data.data || {};
+  return {
+    code: data.code,
+    message: data.message,
+    items: (container.items || []).map(project),
+    offset: container.offset || "",
+    has_more: !!container.has_more,
+  };
 }
 """
 
@@ -388,17 +397,6 @@ def fetch_bilibili_dynamic_feed_with_page(
     )
     try:
         page.goto(page_url, wait_until="domcontentloaded")
-        payload = page.evaluate(
-            _BILIBILI_DYNAMIC_PAGE_JS,
-            json.dumps(
-                {
-                    "uid": uid,
-                    "maxPages": 2,
-                    "requestTimeoutMs": BILIBILI_PAGE_REQUEST_TIMEOUT_MS,
-                }
-            ),
-            timeout=eval_timeout,
-        )
     except Exception as exc:
         return FeedFetchResult(
             source_id=source["id"],
@@ -410,50 +408,108 @@ def fetch_bilibili_dynamic_feed_with_page(
             error=f"B站抓取失败[uid={uid}][stage=bsk][kind=unknown][attempt=1][url={page_url}]: {exc}",
         )
 
-    if not isinstance(payload, dict):
-        return FeedFetchResult(
-            source_id=source["id"],
-            source_name=source["name"],
-            feed_url=page_url,
-            ok=False,
-            status=0,
-            entries=[],
-            error=f"B站抓取失败[uid={uid}][stage=bsk][kind=payload][attempt=1][url={page_url}]: 页内 fetch 返回异常（非对象）",
-        )
-    if payload.get("error"):
-        return FeedFetchResult(
-            source_id=source["id"],
-            source_name=source["name"],
-            feed_url=page_url,
-            ok=False,
-            status=0,
-            entries=[],
-            error=f"B站抓取失败[uid={uid}][stage=bsk][kind=request][attempt=1][url={page_url}]: {payload['error']}",
-        )
-    code = payload.get("code")
-    if str(code) != "0":
-        return FeedFetchResult(
-            source_id=source["id"],
-            source_name=source["name"],
-            feed_url=page_url,
-            ok=False,
-            status=0,
-            entries=[],
-            error=(
-                f"B站抓取失败[uid={uid}][stage=bsk][kind=api][attempt=1][url={page_url}]: "
-                f"code={code} message={payload.get('message')}"
-            ),
-        )
-
-    collected: list[dict[str, Any]] = []
+    # 已知键约定已是归一化标题键（应用层用 normalize_dedupe_title_key 生成），此处不再二次归一化。
+    known = set(source.get("known_entry_keys") or ())
+    offset = ""
+    streak = 0
     seen_ids: set[str] = set()
-    for raw_item in payload.get("items") or []:
-        parsed = _parse_dynamic_item(raw_item)
-        if not parsed or parsed["id"] in seen_ids:
-            continue
-        seen_ids.add(parsed["id"])
-        collected.append(parsed)
-        if len(collected) >= limit:
-            break
+    collected: list[dict[str, Any]] = []
+    pages = 0
+    stop_reason = ""
 
-    return _dynamic_feed_result(source, uid, page_url, collected, stage="bsk")
+    while pages < BILIBILI_DYNAMIC_MAX_PAGES:
+        pages += 1
+        try:
+            payload = page.evaluate(
+                _BILIBILI_DYNAMIC_PAGE_JS,
+                json.dumps(
+                    {
+                        "uid": uid,
+                        "offset": offset,
+                        "requestTimeoutMs": BILIBILI_PAGE_REQUEST_TIMEOUT_MS,
+                    }
+                ),
+                timeout=eval_timeout,
+            )
+        except Exception as exc:
+            return FeedFetchResult(
+                source_id=source["id"],
+                source_name=source["name"],
+                feed_url=page_url,
+                ok=False,
+                status=0,
+                entries=[],
+                error=f"B站抓取失败[uid={uid}][stage=bsk][kind=unknown][attempt=1][url={page_url}]: {exc}",
+            )
+
+        if not isinstance(payload, dict):
+            return FeedFetchResult(
+                source_id=source["id"],
+                source_name=source["name"],
+                feed_url=page_url,
+                ok=False,
+                status=0,
+                entries=[],
+                error=f"B站抓取失败[uid={uid}][stage=bsk][kind=payload][attempt=1][url={page_url}]: 页内 fetch 返回异常（非对象）",
+            )
+        if payload.get("error"):
+            return FeedFetchResult(
+                source_id=source["id"],
+                source_name=source["name"],
+                feed_url=page_url,
+                ok=False,
+                status=0,
+                entries=[],
+                error=f"B站抓取失败[uid={uid}][stage=bsk][kind=request][attempt=1][url={page_url}]: {payload['error']}",
+            )
+        code = payload.get("code")
+        if str(code) != "0":
+            return FeedFetchResult(
+                source_id=source["id"],
+                source_name=source["name"],
+                feed_url=page_url,
+                ok=False,
+                status=0,
+                entries=[],
+                error=(
+                    f"B站抓取失败[uid={uid}][stage=bsk][kind=api][attempt=1][url={page_url}]: "
+                    f"code={code} message={payload.get('message')}"
+                ),
+            )
+
+        for raw_item in payload.get("items") or []:
+            parsed = _parse_dynamic_item(raw_item)
+            if not parsed:
+                continue
+            if parsed["id"] in seen_ids:
+                # 置顶等重复 id：不算新条目，也不打断连续命中计数。
+                continue
+            title = str(parsed.get("title") or "").strip()
+            if not title:
+                continue
+            seen_ids.add(parsed["id"])
+            if len(collected) < limit:
+                collected.append(parsed)
+            if normalize_dedupe_title_key(title) in known:
+                streak += 1
+            else:
+                streak = 0
+
+        if streak >= BILIBILI_DUPLICATE_STOP_STREAK:
+            stop_reason = BILIBILI_STOP_DUPLICATE_STREAK
+            break
+        if len(collected) >= limit:
+            stop_reason = BILIBILI_STOP_LIMIT
+            break
+        has_more = bool(payload.get("has_more"))
+        next_offset = str(payload.get("offset") or "")
+        if not has_more or not next_offset:
+            stop_reason = BILIBILI_STOP_END_OF_FEED
+            break
+        offset = next_offset
+    else:
+        stop_reason = BILIBILI_STOP_MAX_PAGES
+
+    return _dynamic_feed_result(
+        source, uid, page_url, collected, stage="bsk", stop_reason=stop_reason
+    )
