@@ -364,7 +364,6 @@ table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 th, td { padding: 6px 8px; border-bottom: 1px solid var(--line-soft); text-align: left; vertical-align: top; }
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover td { background: #f8fafc; }
-.auth-row-warning:hover td, .auth-row-expired:hover td { background: transparent; }
 th {
   position: sticky; top: 0; z-index: 1;
   font-size: var(--fs-xs);
@@ -507,34 +506,6 @@ td { font-size: var(--fs-sm); }
 .laterhub-link-cell a { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .laterhub-action-cell { white-space: nowrap; }
 .laterhub-action-cell form { display: flex; justify-content: flex-start; }
-
-/* ============================================================
-   认证资产表
-   ============================================================ */
-.auth-assets-panel { margin-bottom: var(--sp-4); }
-.panel-title-compact { margin-bottom: var(--sp-2); }
-.auth-assets-table { width: 100%; table-layout: fixed; font-size: var(--fs-sm); }
-.auth-assets-table th:nth-child(1) { width: 180px; }
-.auth-assets-table th:nth-child(2) { width: 110px; }
-.auth-assets-table th:nth-child(3) { width: 150px; }
-.auth-assets-table th:nth-child(4) { width: 210px; }
-.auth-assets-table th:nth-child(5) { width: auto; }
-.auth-assets-table td { vertical-align: middle; }
-.auth-assets-table .btn { font-size: var(--fs-xs); padding: 4px 8px; min-width: 68px; white-space: nowrap; }
-/* 操作列的提示文案（如「请在日常 Chrome 登录 Alpha派」）比 160px 列宽长，
-   禁止换行会横向溢出压到说明列；按钮自带 nowrap，放开单元格换行不会拆散按钮。 */
-.auth-actions-cell { white-space: normal; }
-.auth-actions-cell form { display: inline-flex; margin: 0 6px 0 0; }
-.auth-row-warning { background: rgba(255, 248, 197, 0.28); }
-.auth-row-expired { background: rgba(255, 235, 233, 0.32); }
-.auth-expire-text { margin-top: 3px; font-size: var(--fs-xs); }
-.auth-mode-tag { font-size: var(--fs-xs); color: var(--muted); }
-.auth-desc-text { font-size: var(--fs-xs); line-height: 1.5; }
-.line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.auth-status-badge { display: inline-flex; align-items: center; margin-left: 6px; padding: 3px 8px; border-radius: var(--radius-pill); font-size: var(--fs-2xs); border: 1px solid var(--line); background: var(--panel); color: var(--muted); }
-.auth-status-badge.ok { color: var(--ok); border-color: #8ddb9b; background: var(--ok-soft); }
-.auth-status-badge.warn { color: var(--warn); border-color: #eac54f; background: var(--warn-soft); }
-.auth-status-badge.danger { color: var(--danger); border-color: #ffb3ba; background: var(--danger-soft); }
 
 /* ============================================================
    模态框

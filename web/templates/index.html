@@ -23,23 +23,20 @@
 
     {% if view == 'settings' %}
       <div class="stack">
-        <div id="auth-assets-panel-root">
-          {% include "partials/auth_assets_panel.html" %}
-        </div>
-        <div id="laterhub-sources-panel">
-          {% include "partials/laterhub_source_table.html" %}
-        </div>
         <section class="card">
           <div class="panel-title">
             <h2>稍后处理运行日志</h2>
           </div>
           <pre class="codebox compact codebox-scroll">{{ settings.laterhub_log_text or '-' }}</pre>
         </section>
+        <div id="laterhub-sources-panel">
+          {% include "partials/laterhub_source_table.html" %}
+        </div>
 
         <section class="card">
           <div class="panel-title">
             <div class="panel-title-inline">
-              <h2>订阅设置</h2>
+              <h2>订阅运行日志</h2>
               <form hx-post="/actions/fetch-now?{{ params|urlencode }}" hx-target="#runtime-status-panel" hx-swap="innerHTML">
                 <button class="btn" type="submit">立即抓取</button>
               </form>
@@ -48,10 +45,10 @@
           <div id="runtime-status-panel" aria-live="polite">
             {% include "partials/runtime_status.html" %}
           </div>
-          <div id="sources-panel">
-            {% include "partials/source_table.html" %}
-          </div>
         </section>
+        <div id="sources-panel">
+          {% include "partials/source_table.html" %}
+        </div>
       </div>
     {% else %}
       <div class="split-shell">

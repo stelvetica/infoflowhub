@@ -1,4 +1,4 @@
-"""设置页认证资产语义 + 渠道列显示的回归测试。
+"""设置页登录依赖列 + 渠道列显示的回归测试。
 
 只渲染设置页 HTML，不连真实 daemon、不起浏览器：bsk 命令解析入口被换成记录器
 （BskBrowser 构造即调用 resolve_bsk_command），任何会话创建都会留痕。
@@ -87,18 +87,24 @@ def client(tmp_path, monkeypatch) -> TestClient:
     registry.invalidate_auth_status_cache()
 
 
-def test_settings_page_renders_alpha_auth_asset(client: TestClient, bsk_invocations) -> None:
+def test_settings_page_shows_login_sites_without_auth_panel(client: TestClient, bsk_invocations) -> None:
     response = client.get("/?view=settings")
 
     assert response.status_code == 200
     html = response.text
-    # 认证资产里只有一个 Alpha派 条目（面板用 <strong> 渲染展示名）。
-    assert html.count("<strong>Alpha派</strong>") == 1
-    assert "日常 Chrome 登录会话" in html
-    assert "复用本机 Chrome 会话，不导出 token" in html
-    assert "请在日常 Chrome 登录 Alpha派" in html
-    # 渲染认证资产/源表全程不创建任何 bsk 会话。
+    # 认证资产面板已退役，登录依赖直接写在源表里。
+    assert "认证资产" not in html
+    assert html.count('<span class="requirement-badge">Alpha派</span>') >= 2
+    # 渲染源表全程不创建任何 bsk 会话。
     assert bsk_invocations() == []
+
+
+def test_settings_sections_order_log_before_source_management(client: TestClient) -> None:
+    html = client.get("/?view=settings").text
+
+    assert "稍后处理运行日志" in html and "稍后处理源管理" in html
+    assert html.index("稍后处理运行日志") < html.index("稍后处理源管理")
+    assert html.index("订阅运行日志") < html.index("订阅源管理")
 
 
 def test_settings_page_has_no_forbidden_wording(client: TestClient) -> None:
@@ -120,7 +126,7 @@ def test_both_alphapai_sources_depend_on_alpha_auth(client: TestClient) -> None:
     # 按源 id 判定（渲染在操作 URL 里），不用展示名——展示名用户随时可改。
     assert "/actions/source/alphapai/toggle-enabled" in html
     assert "/actions/source/alphapai-social-media/toggle-enabled" in html
-    # 依赖认证资产列（requirement-badge）两条都指向 Alpha派。
+    # 登录依赖列（requirement-badge）两条都指向 Alpha派。
     assert html.count('<span class="requirement-badge">Alpha派</span>') >= 2
 
 
@@ -236,10 +242,10 @@ def test_bsk_site_status_hints_do_not_mention_copying(tmp_path, monkeypatch) -> 
             assert bad not in status["hint"], bad
 
 
-def test_settings_page_auth_assets_drop_copy_profile_wording(client: TestClient) -> None:
+def test_settings_page_drops_legacy_auth_wording(client: TestClient) -> None:
     html = client.get("/?view=settings").text
 
     for bad in COPY_PROFILE_WORDING:
         assert bad not in html
-    # 走 bsk 的 6 个站点，登录方式统一为「日常 Chrome 登录会话」。
-    assert html.count("日常 Chrome 登录会话") >= len(BSK_AUTH_KEYS)
+    # 认证资产面板退役后，登录方式/存储说明不再渲染到设置页。
+    assert "日常 Chrome 登录会话" not in html

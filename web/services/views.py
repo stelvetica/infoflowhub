@@ -185,6 +185,17 @@ def default_auth_key(channel: str, site_url: str, feed_url: str = "") -> str:
     return ""
 
 
+def login_site_label(auth_key: str) -> str:
+    """认证资产的展示名即登录站点；无独立资产的源返回空串，由调用方兜底。"""
+    key = str(auth_key or "").strip()
+    if not key:
+        return ""
+    try:
+        return normalize_utf8_text(resolve_auth(key).display_name)
+    except KeyError:
+        return ""
+
+
 def auth_requirement_meta(auth_key: str) -> dict[str, str] | None:
     for descriptor in list_auth_statuses():
         if descriptor.auth_key != auth_key:
@@ -531,12 +542,11 @@ def get_laterhub_source_stats() -> list[dict[str, Any]]:
     return result
 
 
-def get_laterhub_management_sources(auth_assets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def get_laterhub_management_sources() -> list[dict[str, Any]]:
     """设置页「稍后处理源管理」行：只含注册表内 4 个抓取源。"""
     counts = {row["source"]: row for row in get_laterhub_source_stats()}
     health = load_laterhub_source_health()
     enabled_map = load_enabled_map()
-    assets = {asset["auth_key"]: asset for asset in auth_assets if asset.get("auth_key")}
     rows: list[dict[str, Any]] = []
     for source in LATERHUB_SOURCES:
         stat = counts.get(source.id, {})
@@ -546,7 +556,6 @@ def get_laterhub_management_sources(auth_assets: list[dict[str, Any]]) -> list[d
         invalid_days = ""
         if failed_at and (not success_at or failed_at > success_at):
             invalid_days = str(max((datetime.now() - failed_at).days, 0))
-        asset = assets.get(source.auth_key) if source.auth_key else None
         enabled = bool(enabled_map.get(source.id, True))
         rows.append(
             {
@@ -556,10 +565,7 @@ def get_laterhub_management_sources(auth_assets: list[dict[str, Any]]) -> list[d
                 "enabled_text": "生效" if enabled else "停用",
                 "channel_label": source.channel,
                 "provider_label": source.fetch_mode,
-                "auth_asset_name": asset["display_name"] if asset else "",
-                "auth_status_text": asset["status_text"] if asset else "",
-                "auth_status_level": asset["status_level"] if asset else "",
-                "auth_note": source.auth_note,
+                "login_site": source.login_site,
                 "entry_count": int(stat.get("total_count") or 0),
                 "last_error": normalize_text_lines(source_health.get("last_error") or ""),
                 "last_success_at": str(source_health.get("last_success_at") or ""),
@@ -1052,41 +1058,8 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     source_filter = query.get("source_filter", "")
     sort = query.get("sort", "name")
     direction = query.get("dir", "asc")
-    auth_assets = []
-    for descriptor in list_auth_statuses():
-        expire_summary = ""
-        expire_at_text = ""
-        hint = normalize_utf8_text(descriptor.hint)
-        renew_action_url = ""
-        renew_action_label = ""
-        is_expired = False
-        is_expiring_soon = False
-        nickname = normalize_utf8_text(descriptor.nickname)
-        row = {
-            "auth_key": descriptor.auth_key,
-            "display_name": normalize_utf8_text(descriptor.display_name),
-            "platform": descriptor.platform,
-            "auth_mode": descriptor.auth_mode,
-            "login_method": normalize_utf8_text(getattr(descriptor, "login_method", "")),
-            "renew_label": normalize_utf8_text(reg.renew_label) if (reg := resolve_auth(descriptor.auth_key)).renew_label else "",
-            "storage_ref": descriptor.storage_ref,
-            "renew_strategy": descriptor.renew_strategy,
-            "description": normalize_utf8_text(descriptor.description),
-            "status_text": normalize_utf8_text(descriptor.status_text),
-            "status_level": descriptor.status_level,
-            "hint": hint,
-            "renew_action_url": renew_action_url,
-            "renew_action_label": renew_action_label,
-            "expire_summary": expire_summary,
-            "expire_at_text": expire_at_text,
-            "is_expired": is_expired,
-            "is_expiring_soon": is_expiring_soon,
-            "nickname": nickname,
-        }
-        auth_assets.append(row)
-
     rows = []
-    for item in normalize_sources():
+    for item in normalize_sources(include_auth=False):
         stat = stats.get(item["id"], {})
         source_health = source_runtime_health(item["id"])
         failed_at = parse_published_datetime(source_health.get("last_failed_at", "") or "")
@@ -1112,9 +1085,9 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             "invalid_sort": int(invalid_days) if invalid_days else -1,
             "enabled_sort": 1 if item.get("enabled") else 0,
             "enabled_text": "生效" if item.get("enabled") else "停用",
-            "auth_asset_name": next((asset["display_name"] for asset in auth_assets if asset["auth_key"] == item.get("auth_key")), ""),
-            # B站没有独立认证资产，但抓取依赖日常 Chrome 登录态（bsk），给出一致的依赖说明。
-            "auth_note": "日常 Chrome 登录" if web_target and web_target.site == "bilibili" else "",
+            "login_site": login_site_label(str(item.get("auth_key") or "")) or (
+                "B站" if web_target and web_target.site == "bilibili" else ""
+            ),
         }
         if keyword and not any(keyword in normalize_text(str(row.get(field) or "")) for field in ("name", "feed_url", "site_url")):
             continue
@@ -1126,9 +1099,8 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         "status": status,
         "summary": summary,
         "laterhub_sources": laterhub_sources,
-        "laterhub_management_sources": get_laterhub_management_sources(auth_assets),
+        "laterhub_management_sources": get_laterhub_management_sources(),
         "sources": rows,
-        "auth_assets": auth_assets,
         "laterhub_log_text": laterhub_log_text,
         "q": query.get("source_q", ""),
         "source_filter": source_filter,

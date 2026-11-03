@@ -310,12 +310,6 @@ async def toggle_laterhub_source_action(request: Request, source_id: str, enable
     return templates.TemplateResponse(request, "partials/laterhub_source_table.html", {"settings": get_settings_view(params), "params": params})
 
 
-@router.get("/fragments/auth-assets", response_class=HTMLResponse)
-async def auth_assets_fragment(request: Request):
-    params = query_dict(request)
-    return templates.TemplateResponse(request, "partials/auth_assets_panel.html", {"settings": get_settings_view(params), "params": params})
-
-
 @router.get("/fragments/source-form", response_class=HTMLResponse)
 async def source_form_fragment(request: Request, source_id: str = ""):
     params = query_dict(request)
