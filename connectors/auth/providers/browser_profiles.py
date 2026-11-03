@@ -159,7 +159,8 @@ def validate_jiuyangongshe_auth() -> dict[str, object]:
         "is_available": True,
         "status_level": "ok",
         "status_text": "无需登录",
-        "hint": "用户主页公开可读，纯 HTTP 抓取，无需登录态。",
+        # 说明列已写清公开可读，hint 留空避免同一句显示两遍。
+        "hint": "",
     }
 
 
