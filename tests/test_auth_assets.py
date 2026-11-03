@@ -119,6 +119,18 @@ def test_settings_sections_order_log_before_source_management(client: TestClient
     assert html.index("订阅运行日志") < html.index("订阅源管理")
 
 
+def test_settings_sections_share_one_card_each(client: TestClient) -> None:
+    html = client.get("/?view=settings").text
+    cards = html.split('<section class="card">')[1:]
+
+    # 认证资产 + 稍后处理 + 订阅，共 3 张卡。
+    assert len(cards) == 3
+    laterhub = next(card for card in cards if "稍后处理运行日志" in card)
+    assert "稍后处理源管理" in laterhub
+    subscription = next(card for card in cards if "订阅运行日志" in card)
+    assert "订阅源管理" in subscription
+
+
 def test_settings_page_has_no_forbidden_wording(client: TestClient) -> None:
     html = client.get("/?view=settings").text
 
