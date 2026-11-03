@@ -237,14 +237,19 @@ def _parse_dynamic_item(item: dict[str, Any]) -> dict[str, Any] | None:
 
 def _dynamic_feed_result(
     source: dict[str, Any],
-    uid: str,
+    scope_label: str,
     page_url: str,
     items: list[dict[str, Any]],
     *,
     stage: str,
     stop_reason: str = "",
+    item_author_as_name: bool = False,
 ) -> FeedFetchResult:
-    """把解析后的动态条目拼成 FeedFetchResult（bsk 页内取数路径）。"""
+    """把解析后的动态条目拼成 FeedFetchResult（bsk 页内取数路径）。
+
+    item_author_as_name: 聚合关注流一个源里混着多个作者，条目级 source_name 取作者名
+    （缺失回落源名）；逐 UP 源仍用源名。
+    """
     entries: list[FeedEntry] = []
     for item in items:
         title = str(item.get("title") or "").strip()
@@ -253,10 +258,13 @@ def _dynamic_feed_result(
         link = str(item.get("link") or item.get("dynamic_link") or page_url).strip()
         summary = str(item.get("summary") or "").strip()
         published = str(item.get("published_at") or item.get("published_text") or "").strip()
+        item_source_name = source["name"]
+        if item_author_as_name:
+            item_source_name = str(item.get("author") or "").strip() or source["name"]
         entries.append(
             FeedEntry(
                 source_id=source["id"],
-                source_name=source["name"],
+                source_name=item_source_name,
                 title=title,
                 link=link,
                 published=published or datetime.now().strftime("%Y/%m/%d %H:%M"),
@@ -272,7 +280,7 @@ def _dynamic_feed_result(
             ok=False,
             status=0,
             entries=[],
-            error=f"B站抓取失败[uid={uid}][stage={stage}][kind=empty][attempt=1][url={page_url}]: 动态接口返回成功，但未产出条目",
+            error=f"B站抓取失败[{scope_label}][stage={stage}][kind=empty][attempt=1][url={page_url}]: 动态接口返回成功，但未产出条目",
         )
 
     return FeedFetchResult(
@@ -287,8 +295,9 @@ def _dynamic_feed_result(
     )
 
 
-# bsk 页内取数：bsk 无法手设 Origin/Referer（forbidden header），故先导航到 space 页建立同域
-# 上下文，再在页内用浏览器自带真实 cookie（credentials:include）直接 fetch 官方 API。
+# bsk 页内取数：bsk 无法手设 Origin/Referer（forbidden header），故先导航到同域页（space 源页 /
+# t.bilibili.com 关注页）建立上下文，再在页内用浏览器自带真实 cookie（credentials:include）
+# 直接 fetch 官方 API。apiPath/apiType 决定 feed/space（逐 UP）或 feed/all（关注流）。
 # 纯 GET 无需 WBI 签名与 bili_jct（已实测 code:0）。每次 evaluate 只取一页，翻页与停止判定在
 # Python 侧做（按已入库标题增量翻页）；页内只做字段投影——动态 item 原始载荷极大，全量经
 # CLI stdout 回传会爆量。只回传 _parse_dynamic_item / pick_bilibili_dynamic_link /
@@ -296,7 +305,6 @@ def _dynamic_feed_result(
 _BILIBILI_DYNAMIC_PAGE_JS = r"""
 async (argsJson) => {
   const args = JSON.parse(argsJson);
-  const base = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space";
   const pick = (obj, keys) => {
     const out = {};
     if (!obj || typeof obj !== "object") return out;
@@ -337,8 +345,14 @@ async (argsJson) => {
       },
     };
   };
-  const url = new URL(base);
-  url.searchParams.set("host_mid", String(args.uid));
+  const url = new URL("https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/" + args.apiPath);
+  // 逐 UP 源（space）按 host_mid 取数；聚合关注流（all）按“我关注的全部人”取数，不传 host_mid。
+  if (args.uid) {
+    url.searchParams.set("host_mid", String(args.uid));
+  }
+  if (args.apiType) {
+    url.searchParams.set("type", args.apiType);
+  }
   url.searchParams.set("offset", args.offset || "");
   url.searchParams.set("timezone_offset", "-480");
   url.searchParams.set("features", "itemOpusStyle");
@@ -372,41 +386,55 @@ async (argsJson) => {
 """
 
 
-def fetch_bilibili_dynamic_feed_with_page(
-    page, source: dict, limit: int = 12, timeout_ms: int = 60000
+BILIBILI_FOLLOWING_PAGE_URL = "https://t.bilibili.com/"
+BILIBILI_FOLLOWING_API_PATH = "all"
+BILIBILI_FOLLOWING_API_TYPE = "all"
+
+
+def _scope_label(uid: str, error_scope: str) -> str:
+    """错误前缀的定位标识：逐 UP 源沿用 uid=...，聚合源用 error_scope。"""
+    return f"uid={uid}" if uid else error_scope
+
+
+def _dynamic_error(
+    source: dict[str, Any], scope_label: str, page_url: str, *, kind: str, detail: str
 ) -> FeedFetchResult:
-    """bsk 页内取数版：先导航到 space 页拿同域上下文，再页内 fetch 官方接口。
+    return FeedFetchResult(
+        source_id=source["id"],
+        source_name=source["name"],
+        feed_url=page_url,
+        ok=False,
+        status=0,
+        entries=[],
+        error=f"B站抓取失败[{scope_label}][stage=bsk][kind={kind}][attempt=1][url={page_url}]: {detail}",
+    )
 
-    先导航到 space 页拿同域上下文/Referer，再页内 fetch 官方接口（带用户真实 cookie）。
+
+def _fetch_bilibili_feed_with_page(
+    page,
+    source: dict,
+    *,
+    uid: str,
+    page_url: str,
+    api_path: str,
+    api_type: str,
+    error_scope: str,
+    aggregate: bool = False,
+    limit: int = 12,
+    timeout_ms: int = 60000,
+) -> FeedFetchResult:
+    """bsk 页内取数（逐 UP 的 feed/space 与关注流的 feed/all 共用这一处驱动）。
+
+    uid 为空即聚合关注流：不传 host_mid，错误前缀用 error_scope。
     """
-    uid = _bilibili_uid_from_source(source)
-    if not uid:
-        return FeedFetchResult(
-            source_id=source["id"],
-            source_name=source["name"],
-            feed_url=source.get("feed_url", ""),
-            ok=False,
-            status=0,
-            entries=[],
-            error="暂不支持的 B 站网页源",
-        )
-
-    page_url = f"https://space.bilibili.com/{uid}/dynamic"
+    scope_label = _scope_label(uid, error_scope)
     eval_timeout = max(
         BILIBILI_BSK_EVALUATE_TIMEOUT_SECONDS, timeout_ms / 1000.0 + 30.0
     )
     try:
         page.goto(page_url, wait_until="domcontentloaded")
     except Exception as exc:
-        return FeedFetchResult(
-            source_id=source["id"],
-            source_name=source["name"],
-            feed_url=page_url,
-            ok=False,
-            status=0,
-            entries=[],
-            error=f"B站抓取失败[uid={uid}][stage=bsk][kind=unknown][attempt=1][url={page_url}]: {exc}",
-        )
+        return _dynamic_error(source, scope_label, page_url, kind="unknown", detail=str(exc))
 
     # 已知键约定已是归一化标题键（应用层用 normalize_dedupe_title_key 生成），此处不再二次归一化。
     known = set(source.get("known_entry_keys") or ())
@@ -425,6 +453,8 @@ def fetch_bilibili_dynamic_feed_with_page(
                 json.dumps(
                     {
                         "uid": uid,
+                        "apiPath": api_path,
+                        "apiType": api_type,
                         "offset": offset,
                         "requestTimeoutMs": BILIBILI_PAGE_REQUEST_TIMEOUT_MS,
                     }
@@ -432,50 +462,26 @@ def fetch_bilibili_dynamic_feed_with_page(
                 timeout=eval_timeout,
             )
         except Exception as exc:
-            return FeedFetchResult(
-                source_id=source["id"],
-                source_name=source["name"],
-                feed_url=page_url,
-                ok=False,
-                status=0,
-                entries=[],
-                error=f"B站抓取失败[uid={uid}][stage=bsk][kind=unknown][attempt=1][url={page_url}]: {exc}",
-            )
+            return _dynamic_error(source, scope_label, page_url, kind="unknown", detail=str(exc))
 
         if not isinstance(payload, dict):
-            return FeedFetchResult(
-                source_id=source["id"],
-                source_name=source["name"],
-                feed_url=page_url,
-                ok=False,
-                status=0,
-                entries=[],
-                error=f"B站抓取失败[uid={uid}][stage=bsk][kind=payload][attempt=1][url={page_url}]: 页内 fetch 返回异常（非对象）",
+            return _dynamic_error(
+                source,
+                scope_label,
+                page_url,
+                kind="payload",
+                detail="页内 fetch 返回异常（非对象）",
             )
         if payload.get("error"):
-            return FeedFetchResult(
-                source_id=source["id"],
-                source_name=source["name"],
-                feed_url=page_url,
-                ok=False,
-                status=0,
-                entries=[],
-                error=f"B站抓取失败[uid={uid}][stage=bsk][kind=request][attempt=1][url={page_url}]: {payload['error']}",
+            return _dynamic_error(
+                source, scope_label, page_url, kind="request", detail=str(payload["error"])
             )
         code = payload.get("code")
         if str(code) != "0":
-            return FeedFetchResult(
-                source_id=source["id"],
-                source_name=source["name"],
-                feed_url=page_url,
-                ok=False,
-                status=0,
-                entries=[],
-                error=(
-                    f"B站抓取失败[uid={uid}][stage=bsk][kind=api][attempt=1][url={page_url}]: "
-                    f"code={code} message={payload.get('message')}"
-                ),
-            )
+            detail = f"code={code} message={payload.get('message')}"
+            if str(code) == "-101":
+                detail += " B站登录态失效（-101），请在日常 Chrome 登录 B站后重试"
+            return _dynamic_error(source, scope_label, page_url, kind="api", detail=detail)
 
         for raw_item in payload.get("items") or []:
             parsed = _parse_dynamic_item(raw_item)
@@ -511,5 +517,57 @@ def fetch_bilibili_dynamic_feed_with_page(
         stop_reason = BILIBILI_STOP_MAX_PAGES
 
     return _dynamic_feed_result(
-        source, uid, page_url, collected, stage="bsk", stop_reason=stop_reason
+        source,
+        scope_label,
+        page_url,
+        collected,
+        stage="bsk",
+        stop_reason=stop_reason,
+        item_author_as_name=aggregate,
+    )
+
+
+def fetch_bilibili_dynamic_feed_with_page(
+    page, source: dict, limit: int = 12, timeout_ms: int = 60000
+) -> FeedFetchResult:
+    """逐 UP 源：先导航到该源 space 页拿同域上下文/Referer，再页内 fetch feed/space。"""
+    uid = _bilibili_uid_from_source(source)
+    if not uid:
+        return FeedFetchResult(
+            source_id=source["id"],
+            source_name=source["name"],
+            feed_url=source.get("feed_url", ""),
+            ok=False,
+            status=0,
+            entries=[],
+            error="暂不支持的 B 站网页源",
+        )
+    return _fetch_bilibili_feed_with_page(
+        page,
+        source,
+        uid=uid,
+        page_url=f"https://space.bilibili.com/{uid}/dynamic",
+        api_path="space",
+        api_type="",
+        error_scope="uid",
+        limit=limit,
+        timeout_ms=timeout_ms,
+    )
+
+
+def fetch_bilibili_following_feed_with_page(
+    page, source: dict, limit: int = 12, timeout_ms: int = 60000
+) -> FeedFetchResult:
+    """聚合关注流：导航到 t.bilibili.com，页内 fetch feed/all（不传 host_mid）。"""
+    return _fetch_bilibili_feed_with_page(
+        page,
+        source,
+        uid="",
+        page_url=BILIBILI_FOLLOWING_PAGE_URL,
+        api_path=BILIBILI_FOLLOWING_API_PATH,
+        api_type=BILIBILI_FOLLOWING_API_TYPE,
+        error_scope="following",
+        aggregate=True,
+        limit=limit,
+        timeout_ms=timeout_ms,
     )

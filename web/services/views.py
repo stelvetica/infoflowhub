@@ -25,7 +25,7 @@ from apps.subscriptions.rss_db import (
     sanitize_db_text,
 )
 from apps.subscriptions.source_ids import canonicalize_source_id, legacy_source_ids, merge_source_health_rows
-from connectors._shared.common import parse_published_datetime, resolve_web_target
+from connectors._shared.common import is_aggregate_source, parse_published_datetime, resolve_web_target
 from connectors.auth import list_auth_statuses, resolve_auth
 from infra.text_normalizer import normalize_text_lines, normalize_utf8_obj, normalize_utf8_text
 from infra.utf8_json import dump_json_utf8, load_json_utf8
@@ -352,7 +352,9 @@ def save_source(payload: dict[str, str]) -> None:
         return
     next_sources = [target if str(item.get("id") or "").strip() == target["id"] else item for item in raw_sources] if existing else [*raw_sources, target]
     save_sources(next_sources)
-    if existing and previous_name != target["name"]:
+    # 聚合源条目的 source_name 是作者名（逐条不同），批量改名会抹掉作者信息，
+    # 因此聚合源只在配置里换显示名，不改写已入库条目。
+    if existing and previous_name != target["name"] and not is_aggregate_source(existing):
         rename_source(target["id"], target["name"])
 
 
@@ -751,10 +753,23 @@ def build_news_state_params(query: Mapping[str, Any]) -> dict[str, str]:
     }
 
 
-def _build_entry_row(item: dict[str, Any], current_name_map: dict[str, str], current_site_map: dict[str, str]) -> dict[str, Any]:
-    """把一条原始条目构建为可渲染行(链接规范化/read_key/本地正文改写/时间)。"""
+def _build_entry_row(
+    item: dict[str, Any],
+    current_name_map: dict[str, str],
+    current_site_map: dict[str, str],
+    prefer_entry_name_ids: set[str] = frozenset(),
+) -> dict[str, Any]:
+    """把一条原始条目构建为可渲染行(链接规范化/read_key/本地正文改写/时间)。
+
+    prefer_entry_name_ids：聚合源 id 集合。这些源的条目 source_name 是作者名，
+    应优先展示条目自带值（配置名只作空值回落）。
+    """
     current_name = current_name_map.get(item["source_id"], "").strip()
-    display_source_name = current_name or normalize_utf8_text(item.get("source_name")) or ""
+    entry_name = normalize_utf8_text(item.get("source_name")) or ""
+    if item["source_id"] in prefer_entry_name_ids:
+        display_source_name = entry_name or current_name
+    else:
+        display_source_name = current_name or entry_name
     display_time_raw = item.get("published_at") or item.get("published") or item.get("created_at") or ""
     sort_time = to_sortable_time(display_time_raw)
     source_site_url = current_site_map.get(item["source_id"], "").strip()
@@ -793,6 +808,7 @@ def _iter_entry_rows(
     enabled_ids = {item["id"] for item in current_sources if item.get("enabled")}
     current_name_map = {item["id"]: str(item.get("name") or "").strip() for item in current_sources}
     current_site_map = {item["id"]: str(item.get("site_url") or "").strip() for item in current_sources}
+    aggregate_ids = {item["id"] for item in current_sources if is_aggregate_source(item)}
     excluded_ids = {
         source_id
         for source_id, name in current_name_map.items()
@@ -808,7 +824,7 @@ def _iter_entry_rows(
             continue
         if keyword and not any(keyword in normalize_text(str(item.get(field) or "")) for field in ("source_name", "title", "summary")):
             continue
-        row = _build_entry_row(item, current_name_map, current_site_map)
+        row = _build_entry_row(item, current_name_map, current_site_map, aggregate_ids)
         if unread_only and (row["default_read"] or row["sort_time"] < ENTRIES_READ_CUTOFF or row["read_key"] in effective_read_keys):
             continue
         rows.append(row)

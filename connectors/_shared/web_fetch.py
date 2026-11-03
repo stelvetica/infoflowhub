@@ -12,16 +12,28 @@ from connectors._shared.common import (
     validate_x_login_prerequisite,
 )
 from connectors.alphapai import fetch_alphapai_social_with_page, fetch_alphapai_with_page
-from connectors.bilibili import fetch_bilibili_dynamic_feed_with_page
+from connectors.bilibili import (
+    fetch_bilibili_dynamic_feed_with_page,
+    fetch_bilibili_following_feed_with_page,
+)
 from connectors.douyin import fetch_douyin_subscription_with_page
 from connectors.jiuyangongshe import fetch_jiuyangongshe_with_page
 from connectors.x import fetch_x_with_page
 from connectors.xiaoheihe import fetch_xiaoheihe_profile_with_page
-from connectors.youtube import fetch_youtube_with_page
+from connectors.youtube import fetch_youtube_subscriptions_with_page, fetch_youtube_with_page
 
 WEB_RETRY_DELAYS = (0.0, 2.0)
 
-_SHARED_RUNNER_SITES = {"x", "youtube", "douyin", "alphapai", "alphapai_social", "xiaoheihe"}
+_SHARED_RUNNER_SITES = {
+    "x",
+    "youtube",
+    "douyin",
+    "alphapai",
+    "alphapai_social",
+    "xiaoheihe",
+    "bilibili_following",
+    "youtube_subscriptions",
+}
 
 
 def _needs_profile_rebuild(result: FeedFetchResult) -> bool:
@@ -98,15 +110,17 @@ def _fetch_one_via_session(session: BskRunnerSession, source: dict, *, limit: in
     if target.site == "jiuyangongshe":
         return fetch_jiuyangongshe_with_page(None, source, limit=limit, timeout_ms=timeout_ms)
 
-    if target.site in {"x", "youtube", "douyin", "xiaoheihe"}:
+    if target.site in {"x", "youtube", "youtube_subscriptions", "douyin", "xiaoheihe", "bilibili_following"}:
         login_error = _preflight_login_check(source, target.site)
         if login_error:
             return result_error(source, login_error)
         fetch_fn = {
             "x": fetch_x_with_page,
             "youtube": fetch_youtube_with_page,
+            "youtube_subscriptions": fetch_youtube_subscriptions_with_page,
             "douyin": fetch_douyin_subscription_with_page,
             "xiaoheihe": fetch_xiaoheihe_profile_with_page,
+            "bilibili_following": fetch_bilibili_following_feed_with_page,
         }[target.site]
         return _fetch_via_shared_runner(session, source, fetch_fn, limit=limit, timeout_ms=timeout_ms)
 

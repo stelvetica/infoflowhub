@@ -8,7 +8,11 @@ from typing import Any
 from apps.subscriptions.models import FeedFetchResult
 from apps.subscriptions.rss_db import list_entries, save_entries
 from apps.subscriptions.source_ids import canonicalize_source_id, merge_source_health_rows
-from connectors._shared.common import normalize_dedupe_title_key, resolve_web_target
+from connectors._shared.common import (
+    BILIBILI_DYNAMIC_SITES,
+    normalize_dedupe_title_key,
+    resolve_web_target,
+)
 from connectors.rss.fetch import fetch_many
 from infra.text_normalizer import normalize_utf8_obj, normalize_utf8_text
 from infra.utf8_json import dump_json_utf8, load_json_utf8
@@ -128,7 +132,7 @@ def _bilibili_known_entry_keys(source: dict) -> list[str]:
     """取该源已入库标题的归一化键（仅 B 站源）；任何异常降级为空列表，不阻断抓取。"""
     try:
         target = resolve_web_target(source)
-        if not target or target.site != "bilibili":
+        if not target or target.site not in BILIBILI_DYNAMIC_SITES:
             return []
         source_id = str(source.get("id") or "").strip()
         if not source_id:
@@ -176,7 +180,7 @@ def run_source_fetch(
             fetch_sources: list[dict] = []
             for source in sources:
                 target = resolve_web_target(source)
-                if target and target.site == "bilibili":
+                if target and target.site in BILIBILI_DYNAMIC_SITES:
                     fetch_sources.append({**source, "known_entry_keys": _bilibili_known_entry_keys(source)})
                 else:
                     fetch_sources.append(dict(source))

@@ -42,6 +42,17 @@ class WebSourceTarget:
     page_url: str
 
 
+# 聚合流（无单一 UID，而是「我关注的全部人」）：一个源对应整个时间线。
+AGGREGATE_SITES = frozenset({"bilibili_following", "youtube_subscriptions"})
+# 动态流（逐 UP/频道）：沿用同一套页内 fetch + 增量翻页 + known_entry_keys 注入。
+BILIBILI_DYNAMIC_SITES = frozenset({"bilibili", "bilibili_following"})
+
+
+def is_aggregate_source(source: dict) -> bool:
+    target = resolve_web_target(source)
+    return bool(target and target.site in AGGREGATE_SITES)
+
+
 def is_macromargin_source(source: dict) -> bool:
     auth_key = str(source.get("auth_key") or "").strip().lower()
     if auth_key == "x_profile2":
@@ -72,9 +83,28 @@ def validate_douyin_login_prerequisite(source: dict) -> str:
     return DOUYIN_LOGIN_HINT
 
 
+def _host_path(url: str) -> tuple[str, str]:
+    parsed = urlparse(url or "")
+    return (parsed.hostname or ""), (parsed.path or "")
+
+
 def resolve_web_target(source: dict) -> WebSourceTarget | None:
     site_url = (source.get("site_url") or "").strip()
     feed_url = (source.get("feed_url") or "").strip()
+    # 聚合流先判（hostname/path 精确匹配，避免子串误伤）：
+    # t.bilibili.com 的任意路径都是「我的关注动态」页；YouTube 必须是 /feed/subscriptions。
+    for url in (site_url, feed_url):
+        host, path = _host_path(url)
+        if host == "t.bilibili.com":
+            return WebSourceTarget(
+                site="bilibili_following", uid="", page_url="https://t.bilibili.com/"
+            )
+        if (host == "youtube.com" or host.endswith(".youtube.com")) and "/feed/subscriptions" in path:
+            return WebSourceTarget(
+                site="youtube_subscriptions",
+                uid="",
+                page_url="https://www.youtube.com/feed/subscriptions",
+            )
     match = re.search(r"space\.bilibili\.com/(\d+)", site_url)
     if match:
         uid = match.group(1)
