@@ -307,12 +307,11 @@ def test_batch_bilibili_reuses_single_bsk_session(settings_file, monkeypatch):
 def test_bilibili_sources_split_between_following_and_legacy():
     settings = json.loads((REPO_ROOT / "config" / "rss_settings.json").read_text(encoding="utf-8"))
     sources = json.loads((REPO_ROOT / "config" / "subscription_sources.json").read_text(encoding="utf-8"))["sources"]
-    # 旧逐 UP 源保留配置但停用；关注流是唯一的启用入口。
+    # 逐 UP 源按「是否已关注」分流：已关注的由关注流覆盖，未关注的保留独立抓取。
     legacy = [s for s in sources if "space.bilibili.com" in str(s.get("site_url") or "")]
     following = [s for s in sources if s.get("id") == "bilibili_following"]
 
     assert len(legacy) == 12
-    assert all(not s.get("enabled") for s in legacy)
     # B站没有独立认证资产：auth_key 必须为空，登录态全部来自 bsk 复用的日常 Chrome
     assert all(not s.get("auth_key") for s in legacy)
     assert len(following) == 1
