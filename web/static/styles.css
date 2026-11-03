@@ -507,6 +507,9 @@ td { font-size: var(--fs-sm); }
 .laterhub-action-cell { white-space: nowrap; }
 .laterhub-action-cell form { display: flex; justify-content: flex-start; }
 
+/* 认证资产：仅展示当前源涉及到的登录站点，内容随源配置自动汇总 */
+.auth-sites { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
 /* ============================================================
    模态框
    ============================================================ */

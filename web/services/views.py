@@ -565,7 +565,7 @@ def get_laterhub_management_sources() -> list[dict[str, Any]]:
                 "enabled_text": "生效" if enabled else "停用",
                 "channel_label": source.channel,
                 "provider_label": source.fetch_mode,
-                "login_site": source.login_site,
+                "login_site": login_site_label(source.auth_key) or normalize_utf8_text(source.channel),
                 "entry_count": int(stat.get("total_count") or 0),
                 "last_error": normalize_text_lines(source_health.get("last_error") or ""),
                 "last_success_at": str(source_health.get("last_success_at") or ""),
@@ -1059,6 +1059,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
     sort = query.get("sort", "name")
     direction = query.get("dir", "asc")
     rows = []
+    auth_sites: list[str] = []
     for item in normalize_sources(include_auth=False):
         stat = stats.get(item["id"], {})
         source_health = source_runtime_health(item["id"])
@@ -1069,6 +1070,9 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         if failed_at and (not success_at or failed_at > success_at):
             invalid_days = str(max((datetime.now() - failed_at).days, 0))
         web_target = resolve_web_target(item)
+        channel_label = source_channel_label(str(item.get("feed_url") or ""), str(item.get("site_url") or ""), str(item.get("provider") or ""))
+        # 登录站点随源自动推导：有认证资产取其展示名，否则用渠道名兜底；纯 RSS 源不参与。
+        login_site = login_site_label(str(item.get("auth_key") or "")) or (channel_label if web_target else "")
         row = {
             **item,
             "provider_label": provider_label(
@@ -1076,7 +1080,7 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
                 str(item.get("fetch_via") or ""),
                 site=web_target.site if web_target else "",
             ),
-            "channel_label": source_channel_label(str(item.get("feed_url") or ""), str(item.get("site_url") or ""), str(item.get("provider") or "")),
+            "channel_label": channel_label,
             "entry_count": int(stat.get("entry_count") or 0),
             "last_error": last_error,
             "last_success_at": str(source_health.get("last_success_at") or ""),
@@ -1085,21 +1089,26 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
             "invalid_sort": int(invalid_days) if invalid_days else -1,
             "enabled_sort": 1 if item.get("enabled") else 0,
             "enabled_text": "生效" if item.get("enabled") else "停用",
-            "login_site": login_site_label(str(item.get("auth_key") or "")) or (
-                "B站" if web_target and web_target.site == "bilibili" else ""
-            ),
+            "login_site": login_site,
         }
+        if login_site and login_site not in auth_sites:
+            auth_sites.append(login_site)
         if keyword and not any(keyword in normalize_text(str(row.get(field) or "")) for field in ("name", "feed_url", "site_url")):
             continue
         if source_filter == "failed" and not row["is_failed"]:
             continue
         rows.append(row)
     rows.sort(key=cmp_to_key(lambda a, b: compare_value(a.get(sort), b.get(sort), direction)))
+    laterhub_management_sources = get_laterhub_management_sources()
+    for row in laterhub_management_sources:
+        if row["login_site"] and row["login_site"] not in auth_sites:
+            auth_sites.append(row["login_site"])
     return {
         "status": status,
         "summary": summary,
         "laterhub_sources": laterhub_sources,
-        "laterhub_management_sources": get_laterhub_management_sources(),
+        "laterhub_management_sources": laterhub_management_sources,
+        "auth_sites": auth_sites,
         "sources": rows,
         "laterhub_log_text": laterhub_log_text,
         "q": query.get("source_q", ""),

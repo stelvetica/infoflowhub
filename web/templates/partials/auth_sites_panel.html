@@ -1,0 +1,15 @@
+<section class="card">
+  <div class="panel-title">
+    <div class="panel-title-inline">
+      <h2>认证资产</h2>
+      <span class="subtle">随源配置自动汇总</span>
+    </div>
+  </div>
+  <div class="auth-sites">
+    {% for site in settings.auth_sites %}
+    <span class="requirement-badge">{{ site }}</span>
+    {% else %}
+    <span class="subtle">-</span>
+    {% endfor %}
+  </div>
+</section>

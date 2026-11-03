@@ -87,16 +87,28 @@ def client(tmp_path, monkeypatch) -> TestClient:
     registry.invalidate_auth_status_cache()
 
 
-def test_settings_page_shows_login_sites_without_auth_panel(client: TestClient, bsk_invocations) -> None:
+def test_settings_page_lists_involved_login_sites(client: TestClient, bsk_invocations) -> None:
     response = client.get("/?view=settings")
 
     assert response.status_code == 200
     html = response.text
-    # 认证资产面板已退役，登录依赖直接写在源表里。
-    assert "认证资产" not in html
-    assert html.count('<span class="requirement-badge">Alpha派</span>') >= 2
-    # 渲染源表全程不创建任何 bsk 会话。
+    assert "认证资产" in html
+    panel = html.split('id="auth-sites-panel"', 1)[1].split('id="laterhub-sources-panel"', 1)[0]
+    # 面板只列当前源实际涉及的登录站点，随源配置自动汇总。
+    for site in ("Bilibili", "抖音", "小黑盒", "YouTube", "X (Twitter)", "韭研公社", "Alpha派", "微信读书"):
+        assert f'<span class="requirement-badge">{site}</span>' in panel, site
+    # 渲染源表与面板全程不创建任何 bsk 会话。
     assert bsk_invocations() == []
+
+
+def test_auth_sites_are_derived_from_source_catalogs(client: TestClient) -> None:
+    settings = views.get_settings_view({})
+    expected = [row["login_site"] for row in settings["sources"] if row["login_site"]]
+    expected += [row["login_site"] for row in settings["laterhub_management_sources"] if row["login_site"]]
+
+    # 站点集合与两张源表完全一致；新增源无需改代码，站点自动进面板。
+    assert settings["auth_sites"] == list(dict.fromkeys(settings["auth_sites"]))
+    assert set(settings["auth_sites"]) == set(expected)
 
 
 def test_settings_sections_order_log_before_source_management(client: TestClient) -> None:

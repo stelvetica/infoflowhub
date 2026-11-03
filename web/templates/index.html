@@ -23,6 +23,9 @@
 
     {% if view == 'settings' %}
       <div class="stack">
+        <div id="auth-sites-panel">
+          {% include "partials/auth_sites_panel.html" %}
+        </div>
         <section class="card">
           <div class="panel-title">
             <h2>稍后处理运行日志</h2>
