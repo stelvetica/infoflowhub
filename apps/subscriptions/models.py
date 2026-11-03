@@ -35,12 +35,14 @@ class FeedFetchResult:
     status: int
     entries: List[FeedEntry]
     error: str = ""
+    stop_reason: str = ""
 
     def __post_init__(self) -> None:
         self.source_id = normalize_utf8_text(self.source_id)
         self.source_name = normalize_utf8_text(self.source_name)
         self.feed_url = str(self.feed_url or "").strip()
         self.error = normalize_utf8_text(self.error)
+        self.stop_reason = str(self.stop_reason or "").strip()
         self.entries = list(self.entries or [])
 
 

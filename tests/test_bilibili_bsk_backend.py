@@ -10,10 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from apps.subscriptions import rss_config
+from apps.subscriptions import rss_config, rss_db, runtime_health
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
 from connectors._shared import web_fetch
 from connectors._shared.bsk_session import BskRunnerSession
+from connectors._shared.common import normalize_dedupe_title_key
 from connectors.bilibili import api as bili_api
 from connectors.bilibili import fetch_bilibili_dynamic_feed_with_page
 
@@ -313,3 +314,199 @@ def test_twelve_bilibili_sources_are_bsk_only():
     assert all(not s.get("auth_key") for s in bili_sources)
     # copy 后端已删除：配置里不再有可切换后端的字段
     assert "sources" not in settings["browser_backend"]
+
+# ---- 增量翻页：按已入库标题连续命中 K 条停止 ----
+
+
+class SequencedFakePage(FakeBskPage):
+    """按序返回多页 payload 的假 page；超出后重复最后一页。"""
+
+    def __init__(self, payloads: list) -> None:
+        super().__init__(payloads[0])
+        self.payloads = list(payloads)
+        self.evaluated = []
+
+    def evaluate(self, js, arg=None, **kwargs):
+        index = len(self.evaluated)
+        self.evaluated.append((js, arg, kwargs))
+        return self.payloads[min(index, len(self.payloads) - 1)]
+
+
+def _projected(n: int, title: str | None = None) -> dict:
+    item = json.loads(json.dumps(PROJECTED_ITEM))
+    item["id_str"] = item["id"] = f"id{n}"
+    item["modules"]["module_dynamic"]["major"]["archive"]["title"] = title or f"动态标题 {n}"
+    return item
+
+
+def _payload(items: list, *, offset: str = "", has_more: bool = False, code: int = 0, message: str = "0") -> dict:
+    return {"code": code, "message": message, "items": items, "offset": offset, "has_more": has_more}
+
+
+def _with_known(keys: list[str]) -> dict:
+    return {**SOURCE, "known_entry_keys": keys}
+
+
+def test_fresh_library_scans_to_max_pages():
+    pages = []
+    n = 0
+    for page_index in range(6):
+        items = []
+        for _ in range(20):
+            n += 1
+            items.append(_projected(n))
+        pages.append(_payload(items, offset=f"offset-{page_index + 1}", has_more=True))
+    page = SequencedFakePage(pages)
+
+    result = fetch_bilibili_dynamic_feed_with_page(page, SOURCE, limit=200)
+
+    assert len(page.evaluated) == 6  # 达到安全上限
+    assert result.ok and len(result.entries) == 120
+    assert result.stop_reason == bili_api.BILIBILI_STOP_MAX_PAGES
+
+
+def test_duplicate_streak_stops_on_first_page():
+    items = [_projected(1, "旧 A"), _projected(2, "旧 B"), _projected(3, "旧 C")]
+    page = SequencedFakePage([_payload(items, offset="next", has_more=True)])
+
+    result = fetch_bilibili_dynamic_feed_with_page(page, _with_known(["旧 a", "旧 b", "旧 c"]))
+
+    assert len(page.evaluated) == 1
+    assert result.stop_reason == bili_api.BILIBILI_STOP_DUPLICATE_STREAK
+    assert len(result.entries) == 3
+
+
+def test_duplicate_streak_reached_across_pages():
+    first = [_projected(1, "新 1"), _projected(2, "新 2"), _projected(3, "旧"), _projected(4, "旧")]
+    second = [_projected(5, "旧"), _projected(6, "旧"), _projected(7, "旧")]
+    page = SequencedFakePage(
+        [
+            _payload(first, offset="next", has_more=True),
+            _payload(second, offset="next2", has_more=True),
+        ]
+    )
+
+    result = fetch_bilibili_dynamic_feed_with_page(page, _with_known(["旧"]))
+
+    assert len(page.evaluated) == 2
+    assert result.stop_reason == bili_api.BILIBILI_STOP_DUPLICATE_STREAK
+    assert len(result.entries) == 7
+
+
+def test_pinned_duplicate_id_does_not_touch_streak():
+    pinned = _projected(1, "新")
+    items = [pinned, dict(pinned), _projected(2, "旧 1"), _projected(3, "旧 2"), _projected(4, "旧 3")]
+    page = SequencedFakePage([_payload(items, offset="next", has_more=True)])
+
+    result = fetch_bilibili_dynamic_feed_with_page(page, _with_known(["旧 1", "旧 2", "旧 3"]))
+
+    assert len(page.evaluated) == 1
+    assert result.stop_reason == bili_api.BILIBILI_STOP_DUPLICATE_STREAK
+    assert len(result.entries) == 4  # 重复 id 只入一条
+
+
+def test_end_of_feed_stops_without_more_pages():
+    page = SequencedFakePage([_payload([_projected(1), _projected(2)], has_more=False)])
+
+    result = fetch_bilibili_dynamic_feed_with_page(page, SOURCE)
+
+    assert len(page.evaluated) == 1
+    assert result.stop_reason == bili_api.BILIBILI_STOP_END_OF_FEED
+    assert len(result.entries) == 2
+
+
+def test_limit_truncates_entries_and_stops():
+    page = SequencedFakePage([_payload([_projected(1), _projected(2), _projected(3)], offset="next", has_more=True)])
+
+    result = fetch_bilibili_dynamic_feed_with_page(page, SOURCE, limit=2)
+
+    assert len(page.evaluated) == 1
+    assert result.stop_reason == bili_api.BILIBILI_STOP_LIMIT
+    assert len(result.entries) == 2
+
+
+def test_second_page_api_error_fails_whole_source():
+    page = SequencedFakePage(
+        [
+            _payload([_projected(1)], offset="next", has_more=True),
+            _payload([], code=-352, message="风控校验失败"),
+        ]
+    )
+
+    result = fetch_bilibili_dynamic_feed_with_page(page, SOURCE)
+
+    assert not result.ok
+    assert "code=-352" in result.error
+    assert result.stop_reason == ""
+
+
+def test_dedupe_title_key_has_single_definition():
+    sample = "  A   b "
+    assert rss_db.normalize_title_key(sample) == normalize_dedupe_title_key(sample) == "a b"
+
+
+# ---- 应用层：抓取前注入已入库标题键 ----
+
+
+def _install_fetch_stubs(tmp_path, monkeypatch, list_entries) -> list[dict]:
+    monkeypatch.setattr(runtime_health, "HEALTH_PATH", tmp_path / "health.json")
+    monkeypatch.setattr(runtime_health, "STATUS_PATH", tmp_path / "status.json")
+    monkeypatch.setattr(runtime_health, "save_entries", lambda entries: 0)
+    monkeypatch.setattr(runtime_health, "list_entries", list_entries)
+    captured: list[dict] = []
+
+    def fake_fetch_many(sources, settings=None, timeout=45, **kwargs):
+        captured.extend(sources)
+        return [_ok_result(source) for source in sources]
+
+    monkeypatch.setattr(runtime_health, "fetch_many", fake_fetch_many)
+    return captured
+
+
+RSS_SOURCE = {
+    "id": "rss-demo",
+    "name": "RSS 演示",
+    "feed_url": "https://example.com/feed.xml",
+    "site_url": "https://example.com/news",
+}
+
+
+def test_run_source_fetch_injects_known_keys_only_for_bilibili(tmp_path, monkeypatch):
+    captured = _install_fetch_stubs(
+        tmp_path, monkeypatch, lambda limit=200, source_id="": [{"title": "  旧   标题 "}]
+    )
+
+    runtime_health.run_source_fetch([SOURCE, RSS_SOURCE], persist_global=False)
+
+    bili = next(source for source in captured if source["id"] == SRC_ID)
+    assert bili["known_entry_keys"] == ["旧 标题"]
+    rss = next(source for source in captured if source["id"] == "rss-demo")
+    assert "known_entry_keys" not in rss
+    # 注入走浅拷贝，调用方入参不被污染
+    assert "known_entry_keys" not in SOURCE
+
+
+def test_run_source_fetch_degrades_to_empty_keys_on_db_error(tmp_path, monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("db down")
+
+    captured = _install_fetch_stubs(tmp_path, monkeypatch, boom)
+
+    outcome = runtime_health.run_source_fetch([SOURCE], persist_global=False)
+
+    assert not outcome.fatal_error
+    bili = next(source for source in captured if source["id"] == SRC_ID)
+    assert bili["known_entry_keys"] == []
+
+
+def test_known_entry_keys_skips_lookup_when_source_id_missing(monkeypatch):
+    calls: list = []
+    monkeypatch.setattr(
+        runtime_health,
+        "list_entries",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or [{"title": "跨源标题"}],
+    )
+    source = {key: value for key, value in SOURCE.items() if key != "id"}
+
+    assert runtime_health._bilibili_known_entry_keys(source) == []
+    assert calls == []  # 空 id 不得触发 list_entries（空串语义是全部源）
