@@ -148,6 +148,63 @@ def test_fetch_youtube_on_copy_page_still_sets_cookie():
     assert result.ok and page.context.cookies
 
 
+def _lockup_initial_data_html() -> str:
+    payload = {
+        "contents": {
+            "richGridRenderer": {
+                "contents": [
+                    {
+                        "richItemRenderer": {
+                            "content": {
+                                "lockupViewModel": {
+                                    "contentId": "jjcfvreYmVw",
+                                    "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+                                    "metadata": {
+                                        "lockupMetadataViewModel": {
+                                            "title": {"content": "「巴克莱」20261029：省部级官员集中换届"},
+                                            "metadata": {
+                                                "contentMetadataViewModel": {
+                                                    "metadataRows": [
+                                                        {
+                                                            "metadataParts": [
+                                                                {"text": {"content": "13K"}},
+                                                                {"text": {"content": "11h ago"}},
+                                                            ]
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                        }
+                                    },
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    }
+    return "<html><script>var ytInitialData = " + json.dumps(payload, ensure_ascii=False) + ";</script></html>"
+
+
+class _HtmlPage:
+    def __init__(self, html: str) -> None:
+        self._html = html
+
+    def content(self) -> str:
+        return self._html
+
+
+def test_initial_data_parses_lockup_view_model():
+    """2026-11 起频道页视频网格改用 lockupViewModel；旧提取器一条都拿不到（线上报错即此）。"""
+    entries = yt_feed.extract_youtube_entries_from_initial_data(_HtmlPage(_lockup_initial_data_html()), SOURCE)
+
+    assert [entry.link for entry in entries] == ["https://www.youtube.com/watch?v=jjcfvreYmVw"]
+    assert entries[0].title.startswith("「巴克莱」20261029")
+    assert entries[0].published != ""
+    assert "13K" in entries[0].summary
+
+
 # ---- 分派 ----
 
 

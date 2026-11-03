@@ -5,8 +5,8 @@ idle_secs=600`），而本模块所有命令都带 BSK_AUTO_START=0，所以它�
 exit=2 让整源跳过——2026-09-29 08:12 的抖音/小黑盒就是这样被双双跳过的。daemon 起来而
 用户没开 Chrome 时同样全灭，故再补一层「拉起用户 Chrome」自愈。
 
-不触真实 daemon/Chrome：`_run` 被打桩成按 argv 分派的假实现，`_launch_user_chrome` 一律
-monkeypatch 掉（测试里绝不允许真启动 Chrome）。
+不触真实 daemon/Chrome：`_run` 被打桩成按 argv 分派的假实现，`_spawn_daemon_foreground`
+（autouse 夹具）与 `_launch_user_chrome` 一律打桩（测试里绝不允许真启动进程/Chrome）。
 """
 
 from __future__ import annotations
@@ -30,11 +30,10 @@ DAEMON_DOWN = {
 
 
 class FakeRun:
-    """按 argv 分派的假 `_run`：status 依次返回预设结果，daemon start 可设为抛错。"""
+    """按 argv 分派的假 `_run`：status 依次返回预设结果。"""
 
-    def __init__(self, statuses, *, daemon_error=None, session_result=None) -> None:
+    def __init__(self, statuses, *, session_result=None) -> None:
         self.statuses = list(statuses)
-        self.daemon_error = daemon_error
         self.session_result = session_result if session_result is not None else (0, {"session_id": "s-1"})
         self.calls: list[list[str]] = []
 
@@ -58,14 +57,23 @@ class FakeRun:
         if argv[0] == "status":
             code, payload = self._next_status()
             return BskResult(returncode=code, stdout=json.dumps(payload) if payload is not None else "", stderr="")
-        if argv[0] == "daemon":
-            if self.daemon_error is not None:
-                raise self.daemon_error
-            return BskResult(returncode=0, stdout="daemon started", stderr="")
         if argv[0] == "session" and len(argv) > 1 and argv[1] == "start":
             code, payload = self.session_result
             return BskResult(returncode=code, stdout=json.dumps(payload), stderr="")
         return BskResult(returncode=0, stdout="", stderr="")
+
+
+@pytest.fixture(autouse=True)
+def spawned_daemons(monkeypatch) -> list[tuple[str, ...]]:
+    """daemon 拉起已改走 `_spawn_daemon_foreground`；测试里一律打桩，绝不真起子进程。"""
+    spawned: list[tuple[str, ...]] = []
+
+    def fake_spawn(command, log) -> None:
+        spawned.append(tuple(command))
+        log("cmd=daemon start --foreground 已派发（测试桩）")
+
+    monkeypatch.setattr(bsk_browser, "_spawn_daemon_foreground", fake_spawn)
+    return spawned
 
 
 def _browser(fake: FakeRun, logs: list[str]) -> BskBrowser:
@@ -78,7 +86,7 @@ def _kinds(calls: list[list[str]]) -> list[str]:
     return [c[0] for c in calls]
 
 
-def test_daemon_down_is_started_then_session_runs(monkeypatch):
+def test_daemon_down_is_started_then_session_runs(monkeypatch, spawned_daemons):
     """daemon 不在 → 自动拉起 → 会话照常建立（这条就是今早 08:12 缺失的自愈）。"""
     monkeypatch.setattr(bsk_browser, "DAEMON_POLL_INTERVAL_SECONDS", 0.01)
     fake = FakeRun([(2, DAEMON_DOWN), (0, READY)])
@@ -86,7 +94,8 @@ def test_daemon_down_is_started_then_session_runs(monkeypatch):
     browser = _browser(fake, logs)
 
     assert browser.start() == "s-1"
-    assert _kinds(fake.calls) == ["status", "daemon", "status", "session"]
+    assert spawned_daemons == [("bsk",)]
+    assert _kinds(fake.calls) == ["status", "status", "session"]
     assert fake.calls[-1][0:3] == ["session", "start", "--json"]
     assert any("bsk daemon 不在" in line for line in logs)
     assert any("已拉起并就绪" in line for line in logs)
@@ -238,7 +247,12 @@ def test_session_failure_includes_no_browser_hint(monkeypatch):
 def test_daemon_start_exception_does_not_block_session_start(monkeypatch):
     """拉起命令本身抛错也不能炸：继续走 session start，并把原因记下来。"""
     monkeypatch.setattr(bsk_browser, "DAEMON_POLL_INTERVAL_SECONDS", 0.01)
-    fake = FakeRun([(2, DAEMON_DOWN)], daemon_error=RuntimeError("bsk 不在 PATH"))
+
+    def boom(command, log):
+        raise RuntimeError("bsk 不在 PATH")
+
+    monkeypatch.setattr(bsk_browser, "_spawn_daemon_foreground", boom)
+    fake = FakeRun([(2, DAEMON_DOWN)])
     logs: list[str] = []
     browser = _browser(fake, logs)
 

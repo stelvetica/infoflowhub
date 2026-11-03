@@ -23,7 +23,7 @@ _TIME_UNITS_AGO = re.compile(
 )
 
 
-def normalize_youtube_published(text: str) -> str:
+def normalize_youtube_published(text: str, *, warn: bool = True) -> str:
     value = clean_line(text).replace("•", "").strip()
     if not value:
         return ""
@@ -49,7 +49,8 @@ def normalize_youtube_published(text: str) -> str:
 
     match = _TIME_UNITS_AGO.search(lowered)
     if not match:
-        logger.warning("unrecognized youtube published text: %r", text[:120])
+        if warn:
+            logger.warning("unrecognized youtube published text: %r", text[:120])
         return ""
 
     amount = int(match.group(1))
@@ -89,7 +90,7 @@ def extract_video_id_from_url(url: str) -> str:
 
 def _walk_renderer_items(node):
     if isinstance(node, dict):
-        for key in ("gridVideoRenderer", "videoRenderer", "reelItemRenderer"):
+        for key in ("gridVideoRenderer", "videoRenderer", "reelItemRenderer", "lockupViewModel"):
             if key in node:
                 yield node[key]
         if "richItemRenderer" in node:
@@ -128,7 +129,45 @@ def _extract_published_text(renderer: dict) -> str:
     return ""
 
 
+def _entry_from_lockup(source: dict, lockup: dict) -> FeedEntry | None:
+    """解析 lockupViewModel（2026-11 起 YouTube 频道页视频网格的主力结构）。
+
+    contentId 即 videoId；标题在 metadata.lockupMetadataViewModel.title.content；
+    发布时间与播放量合并进 contentMetadataViewModel.metadataRows 的 text.content
+    （如 "13K"、"11h ago"），只能按文本形态区分，故逐条试 normalize。
+    """
+    content_type = str(lockup.get("contentType") or "")
+    if content_type and content_type != "LOCKUP_CONTENT_TYPE_VIDEO":
+        return None
+    video_id = str(lockup.get("contentId") or "").strip()
+    meta = ((lockup.get("metadata") or {}).get("lockupMetadataViewModel") or {})
+    title = clean_line(str((meta.get("title") or {}).get("content") or ""))
+    if not video_id or not title:
+        return None
+    rows = ((meta.get("metadata") or {}).get("contentMetadataViewModel") or {}).get("metadataRows") or []
+    parts = [
+        str((part.get("text") or {}).get("content") or "").strip()
+        for row in rows
+        if isinstance(row, dict)
+        for part in (row.get("metadataParts") or [])
+        if isinstance(part, dict)
+    ]
+    parts = [part for part in parts if part]
+    published_text = next((part for part in parts if normalize_youtube_published(part, warn=False)), "")
+    view_text = " ".join(part for part in parts if part != published_text)
+    return FeedEntry(
+        source_id=source["id"],
+        source_name=source["name"],
+        title=title,
+        link=f"https://www.youtube.com/watch?v={video_id}",
+        published=normalize_youtube_published(published_text) or now_text(),
+        summary=clean_line(" ".join(part for part in (published_text, view_text) if part)),
+    )
+
+
 def _entry_from_renderer(source: dict, renderer: dict) -> FeedEntry | None:
+    if isinstance((renderer.get("metadata") or {}).get("lockupMetadataViewModel"), dict):
+        return _entry_from_lockup(source, renderer)
     video_id = str(renderer.get("videoId") or "").strip()
     title_runs = ((renderer.get("title") or {}).get("runs") or [])
     title = clean_line(" ".join(str(part.get("text") or "") for part in title_runs))

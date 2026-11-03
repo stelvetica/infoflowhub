@@ -145,7 +145,7 @@
       "fetch_via": "web",
       "kind": "web",
       "enabled": true,
-      "note": "2026-05-13 核验 feed 返回 404，先停用待更换有效频道源",
+      "note": "videos.xml 返回 404，实际走 site_url 的 /videos 页 bsk 抓取；2026-11-03 修复频道页 lockupViewModel 解析",
       "channel": "youtube",
       "auth_key": "youtube_main",
       "fallback_mode": "web"
