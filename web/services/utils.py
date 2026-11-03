@@ -190,11 +190,12 @@ def take_after_cursor(
     return batch, encode_cursor(last.get(sort), last.get(identity_key))
 
 
-def provider_label(provider: str, fetch_via: str) -> str:
+def provider_label(provider: str, fetch_via: str, *, site: str = "") -> str:
     if provider == "rsshub":
         return "RSSHub 公开" if fetch_via == "rsshub-public" else "RSSHub"
     if provider == "web":
-        return "网页直抓"
+        # 浏览器抓取只有 bsk 一条路；韭研公社是唯一仍走纯 HTTP 的网页源。
+        return "网页直抓（HTTP）" if site == "jiuyangongshe" else "网页抓取（bsk）"
     return "原生 RSS"
 
 

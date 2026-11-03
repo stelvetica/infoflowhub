@@ -15,7 +15,7 @@ from connectors.auth.providers import (
 
 
 AUTH_REGISTRY: dict[str, AuthRegistration] = {
-    # 方式1：bsk 后端复用日常 Chrome 登录会话（copy 后端已禁用，失败只报错/重试）
+    # 方式1：走 bsk，复用日常 Chrome 登录会话（失败只重试并报错，不回退其他后端）
     "douyin_shared": AuthRegistration(
         auth_key="douyin_shared",
         platform="douyin",
@@ -45,7 +45,7 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         storage_ref="复用本机 Chrome 会话，不导出 token",
         renew_strategy="login_daily_chrome",
         display_name="小黑盒",
-        description="laterhub 小黑盒收藏。抓取走 bsk，复用日常 Chrome 登录会话。",
+        description="订阅小黑盒周报 + laterhub 小黑盒收藏。抓取走 bsk，复用日常 Chrome 登录会话。",
         login_method="日常 Chrome 登录会话",
         renew_label="请在日常 Chrome 登录小黑盒",
     ),
@@ -56,7 +56,7 @@ AUTH_REGISTRY: dict[str, AuthRegistration] = {
         storage_ref="复用本机 Chrome 会话，不导出 token",
         renew_strategy="login_daily_chrome",
         display_name="YouTube",
-        description="订阅 YouTube 频道。公开内容无需登录；抓取走 bsk 复用日常 Chrome 登录会话。",
+        description="订阅 YouTube 频道。抓取走 bsk，复用日常 Chrome 登录会话（公开内容无需登录也可抓）。",
         login_method="日常 Chrome 登录会话",
         renew_label="请在日常 Chrome 登录 YouTube",
     ),

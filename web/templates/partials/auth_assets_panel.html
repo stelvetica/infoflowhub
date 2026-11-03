@@ -47,7 +47,8 @@
             {% endif %}
           </td>
           <td title="{{ item.hint }}">
-            <div class="auth-desc-text line-clamp-2">{{ item.description }}{% if item.hint %} {{ item.hint }}{% endif %}</div>
+            <div class="auth-desc-text line-clamp-2">{{ item.description }}</div>
+            {% if item.hint %}<div class="subtle">{{ item.hint }}</div>{% endif %}
             {% if item.storage_ref %}<div class="subtle">存储：{{ item.storage_ref }}</div>{% endif %}
           </td>
         </tr>

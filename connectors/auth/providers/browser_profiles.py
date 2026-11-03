@@ -98,7 +98,7 @@ def _validate_auth_profile_cookie(
         }
     # Chrome 运行时锁定 Cookies，读打不开；此时挖不到登录态信息、也降级为"可用"。
     if not _cookies_db_readable(cookies):
-        return {"is_available": True, "status_level": "ok", "status_text": "可用", "hint": "常用 Chrome 运行中，未精确校验登录态；抓取走 bsk 复用其实时会话。"}
+        return {"is_available": True, "status_level": "ok", "status_text": "可用", "hint": "常用 Chrome 运行中，无法精确校验登录态；抓取直接复用其已登录会话。"}
     try:
         import sqlite3
 
@@ -116,9 +116,9 @@ def _validate_auth_profile_cookie(
         conn.close()
     except Exception:
         # Chrome 运行时会排他锁定 Default profile 的 Cookies SQLite，无法精确校验。
-        # 抓取走 bsk 复用其实时会话，不受此锁影响，且有失效检测兜底；故读不了时
+        # 抓取直接复用其已登录会话，不受此锁影响，且有失效检测兜底；故读不了时
         # 降级为"可用"——profile 存在即视为可用。
-        return {"is_available": True, "status_level": "ok", "status_text": "可用", "hint": "常用 Chrome 运行中，未精确校验登录态；抓取走 bsk 复用其实时会话。"}
+        return {"is_available": True, "status_level": "ok", "status_text": "可用", "hint": "常用 Chrome 运行中，无法精确校验登录态；抓取直接复用其已登录会话。"}
     if auth_count <= 0:
         return {
             "is_available": False,
@@ -130,7 +130,7 @@ def _validate_auth_profile_cookie(
         "is_available": True,
         "status_level": "ok",
         "status_text": "可用",
-        "hint": "登录态来自日常 Chrome 会话；抓取走 bsk 复用其实时登录态，不导出 token。",
+        "hint": "登录态来自日常 Chrome 会话；抓取直接复用它，不导出 token。",
     }
 
 
@@ -168,7 +168,7 @@ def validate_alphapai_auth() -> dict[str, object]:
 
     只检查日常 Chrome 是否含 Alpha派域名会话这一**非敏感**状态：只做 COUNT，
     绝不读取、返回或打印任何 cookie 名或值。Chrome 运行时其 Cookies SQLite 被
-    排他锁定，读不到就降级为「可用」——bsk 直接复用其实时会话，无需复制副本，
+    排他锁定，读不到就降级为「可用」——bsk 直接复用其已登录会话，无需复制副本，
     且有失效检测兜底；状态检查失败时只回可读状态文案，不外泄任何敏感信息。
     """
     cookies = _default_chrome_profile_dir() / "Network" / "Cookies"
@@ -185,7 +185,7 @@ def validate_alphapai_auth() -> dict[str, object]:
             "is_available": True,
             "status_level": "ok",
             "status_text": "可用",
-            "hint": "日常 Chrome 运行中，复用其实时登录会话（bsk 后端）。",
+            "hint": "日常 Chrome 运行中，抓取直接复用其已登录会话（bsk）。",
         }
     try:
         import sqlite3
@@ -201,7 +201,7 @@ def validate_alphapai_auth() -> dict[str, object]:
             "is_available": True,
             "status_level": "ok",
             "status_text": "可用",
-            "hint": "日常 Chrome 运行中，复用其实时登录会话（bsk 后端）。",
+            "hint": "日常 Chrome 运行中，抓取直接复用其已登录会话（bsk）。",
         }
     if count <= 0:
         return {

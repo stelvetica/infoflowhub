@@ -176,6 +176,8 @@ def default_auth_key(channel: str, site_url: str, feed_url: str = "") -> str:
         return ""
     if "x.com/" in combined:
         return "x_profile2"
+    if "youtube.com" in combined or "youtu.be" in combined:
+        return "youtube_main"
     if channel == "douyin":
         return "douyin_shared"
     if channel == "jiuyangongshe":
@@ -1093,9 +1095,14 @@ def get_settings_view(query: dict[str, str]) -> dict[str, Any]:
         invalid_days = ""
         if failed_at and (not success_at or failed_at > success_at):
             invalid_days = str(max((datetime.now() - failed_at).days, 0))
+        web_target = resolve_web_target(item)
         row = {
             **item,
-            "provider_label": provider_label(str(item.get("provider") or ""), str(item.get("fetch_via") or "")),
+            "provider_label": provider_label(
+                str(item.get("provider") or ""),
+                str(item.get("fetch_via") or ""),
+                site=web_target.site if web_target else "",
+            ),
             "channel_label": source_channel_label(str(item.get("feed_url") or ""), str(item.get("site_url") or ""), str(item.get("provider") or "")),
             "entry_count": int(stat.get("entry_count") or 0),
             "last_error": last_error,

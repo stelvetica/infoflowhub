@@ -147,7 +147,7 @@
       "enabled": true,
       "note": "2026-05-13 核验 feed 返回 404，先停用待更换有效频道源",
       "channel": "youtube",
-      "auth_key": "",
+      "auth_key": "youtube_main",
       "fallback_mode": "web"
     },
     {
