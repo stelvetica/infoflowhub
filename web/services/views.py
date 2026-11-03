@@ -832,6 +832,9 @@ def _iter_entry_rows(
 
 
 ENTRIES_LOAD_LIMIT = 500
+# 搜索必须覆盖全量历史：默认只读最新 500 条时，老源/老作者（如 8-9 月更新）会搜不到。
+# ponytail: 关键字搜索一次载入全表（当前约 5k 行，毫秒级）；条目量级上来后改 SQL LIKE 过滤。
+ENTRIES_SEARCH_LOAD_LIMIT = 50000
 
 
 def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
@@ -849,7 +852,7 @@ def get_entries_view(query: dict[str, str]) -> dict[str, Any]:
         keyword=keyword,
         unread_only=unread_only,
         effective_read_keys=effective_read_keys,
-        load_limit=ENTRIES_LOAD_LIMIT,
+        load_limit=ENTRIES_SEARCH_LOAD_LIMIT if keyword else ENTRIES_LOAD_LIMIT,
     )
     sort_rows_with_tiebreak(rows, sort, direction, "read_key")
     batch, next_cursor = take_after_cursor(rows, cursor, sort, direction, "read_key", ENTRIES_BATCH_SIZE)
