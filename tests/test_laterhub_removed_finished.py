@@ -100,10 +100,12 @@ def test_pipeline_completes_missing_items_when_batch_complete(tmp_path):
     assert _state(db, REMOVED)[0] == 1
 
 
-def test_pipeline_leaves_missing_items_alone_when_batch_incomplete(tmp_path):
+def test_pipeline_leaves_missing_items_alone_when_batch_incomplete(tmp_path, monkeypatch):
     db = DBManager(tmp_path / "laterhub.sqlite3")
     _add(db, PRESENT, BILI_SOURCE)
     _add(db, REMOVED, BILI_SOURCE)
+    logs: list[str] = []
+    monkeypatch.setattr(pipeline, "log_line", logs.append)
 
     pipeline._fetch_source(
         source=SOURCE_BY_ID[BILI_SOURCE],
@@ -112,6 +114,8 @@ def test_pipeline_leaves_missing_items_alone_when_batch_incomplete(tmp_path):
     )
 
     assert _state(db, REMOVED)[0] == 0
+    # 跳过必须可见：否则翻页退化时功能会悄悄失效。
+    assert any("未拿到完整列表" in line for line in logs)
 
 
 def test_pipeline_skips_sources_without_finish_on_removed(tmp_path):

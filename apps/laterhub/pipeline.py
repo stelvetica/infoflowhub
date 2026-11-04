@@ -257,13 +257,17 @@ def _fetch_source(*, source, fetcher, db: DBManager, session=None, owns_session:
         else:
             log_line(f"[3/6][WARN] {source.name}抓取完成但 0 条，可能是登录态失效或页面结构变更，请核对")
         # 只有确认拿到完整列表才敢按「源里没有 = 已移除」判定，抓取半途而废一律不动。
-        if source.finish_on_removed and batch.complete:
-            finished_rows = db.mark_missing_finished(
-                source.id, {item["url"] for item in batch.items}
-            )
-            for row in finished_rows:
-                log_line(f"[3/6][自动完成] {_brief_title(row)} | {source.name} | 源内已移除")
-            log_line(f"[3/6][自动完成] {source.name} 源内已移除 {len(finished_rows)} 条，已标记完成")
+        if source.finish_on_removed:
+            if not batch.complete:
+                # 不完整时静默跳过会让功能悄悄失效，必须留痕才能发现翻页/接口退化。
+                log_line(f"[3/6][WARN] {source.name} 未拿到完整列表，跳过源内移除判定")
+            else:
+                finished_rows = db.mark_missing_finished(
+                    source.id, {item["url"] for item in batch.items}
+                )
+                for row in finished_rows:
+                    log_line(f"[3/6][自动完成] {_brief_title(row)} | {source.name} | 源内已移除")
+                log_line(f"[3/6][自动完成] {source.name} 源内已移除 {len(finished_rows)} 条，已标记完成")
     except _SourceFetchTimeout as exc:
         log_line(f"[3/6] {source.name}抓取失败: {exc}")
         record_result(source.id, ok=False, error=str(exc))

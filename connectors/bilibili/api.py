@@ -76,6 +76,11 @@ async (argsJson) => {
     return null;
   };
   const all = [];
+  const seen = new Set();
+  // 用接口自报的 count 做完整性校验；字段缺失时为 null，退回「短页即到底」判断。
+  let total = null;
+  const itemKey = (it) =>
+    String(it && (it.bvid || it.bv_id || it.aid || it.id || "")) || JSON.stringify(it).slice(0, 200);
   for (let pn = 1; pn <= args.maxPages; pn++) {
     let resp;
     try {
@@ -97,9 +102,25 @@ async (argsJson) => {
     }
     const pageItems = extract(data);
     if (pageItems === null) return { unrecognized: true };
-    for (const item of pageItems) all.push(item);
-    // 本页不足一页（含 0 条）即到底：此时才是完整列表。
-    if (pageItems.length < args.ps) return { items: all, complete: true };
+    if (total === null) {
+      const container = data && data.data;
+      if (container && typeof container.count === "number") total = container.count;
+    }
+    let added = 0;
+    for (const item of pageItems) {
+      const key = itemKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      all.push(item);
+      added++;
+    }
+    if (total !== null && all.length >= total) return { items: all, complete: true };
+    // 短页通常意味着到底；但若接口自报 count 还没拿够，或整页零新增（pn 被忽略），
+    // 都不能当完整列表——否则会把源里仍在的条目误判成「已移除」。
+    if (pageItems.length < args.ps) {
+      return { items: all, complete: total === null || all.length >= total };
+    }
+    if (added === 0) return { items: all, complete: false };
   }
   // 撞上限仍每页满：只拿到部分数据，不得据此判定条目已被移除。
   return { items: all, complete: false };
