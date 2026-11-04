@@ -11,8 +11,8 @@
   互换底层均为股票，按股票计入；仅臻享1期存在互换。
 - 净值与仓位只取最新一日估值表；加减一律换算为「占最新净值%」。
 - 回购（GC001 等）不计入股票加减，单独统计。
-- 行业取标的信息库 industry 的一级（「半导体-晶圆代工」→「半导体」），
-  信息库缺失的标的由 config 的 industry_overrides 补齐；仍未归类的写进输出待 AI 处理。
+- 行业表内置在 config 的 industry_overrides（code → [名称, 行业]），不依赖标的信息库；
+  新标的出现时归「未归类」，由 AI 查证后补进 config。
 
 产物（写 config.output_dir）：
 - 操作分析_YYYY-MM-DD.md   表格 + 「解读」占位（AI 填写）
@@ -57,27 +57,17 @@ def load_config(path: Path) -> dict:
     cfg.setdefault("top_n", 8)
     cfg.setdefault("windows", {"week": 5, "month": 20})
     cfg.setdefault("industry_overrides", {})
-    cfg.setdefault("info_db", "")
     for p in cfg["products"]:
         p.setdefault("valuation_dir", p["position_dir"])
     return cfg
 
 
-def load_info_db(path: str) -> dict:
-    if not path:
-        return {}
-    fp = Path(path)
-    if not fp.is_file():
-        print(f"[warn] 标的信息库不存在，行业全部回退 overrides: {fp}", file=sys.stderr)
-        return {}
-    return {x["code"]: x for x in json.loads(fp.read_text(encoding="utf-8"))["stocks"]}
-
-
-def load_trades(path: str) -> list[dict]:
+def load_trades(path: str, products: set[str]) -> list[dict]:
+    """只读观察产品的买卖记录：CSV 是公司全量流水（30 万行），先过滤再聚合。"""
     rows = []
     with open(path, encoding="utf-8-sig", errors="replace", newline="") as f:
         for r in csv.DictReader(f):
-            if r.get("委托方向") not in (BUY, SELL):
+            if r.get("委托方向") not in (BUY, SELL) or r.get("产品名称") not in products:
                 continue
             try:
                 amt = float(r.get("成交金额") or 0)
@@ -98,11 +88,8 @@ def load_trades(path: str) -> list[dict]:
     return rows
 
 
-def resolve(code: str, info: dict, overrides: dict) -> tuple[str, str]:
+def resolve(code: str, overrides: dict) -> tuple[str, str]:
     """返回 (名称, 行业一级)。"""
-    e = info.get(code)
-    if e and e.get("industry"):
-        return e.get("name") or code, e["industry"].split("-")[0]
     if code in overrides:
         name, industry = overrides[code]
         return name, industry.split("-")[0]
@@ -122,13 +109,13 @@ def build_windows(dates: list[str], end: str, windows: dict) -> dict[str, tuple[
 
 
 def aggregate(trades: list[dict], csv_names: set[str], start: str, end: str,
-              info: dict, overrides: dict) -> dict:
+              overrides: dict) -> dict:
     picked = [t for t in trades if t["prod"] in csv_names and start <= t["date"] <= end]
     stocks: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
     repo_amt = 0.0
     buy = sell = 0.0
     for t in picked:
-        _, industry = resolve(t["code"], info, overrides)
+        _, industry = resolve(t["code"], overrides)
         if industry == REPO:
             repo_amt += t["amt"]
             continue
@@ -141,7 +128,7 @@ def aggregate(trades: list[dict], csv_names: set[str], start: str, end: str,
     industries: dict[str, float] = defaultdict(float)
     items = []
     for code, (b, s) in stocks.items():
-        name, industry = resolve(code, info, overrides)
+        name, industry = resolve(code, overrides)
         net = b - s
         industries[industry] += net
         items.append({"code": code, "name": name, "industry": industry,
@@ -329,7 +316,7 @@ def render_md(report: dict, cfg: dict) -> str:
     L.append("- **净值与仓位只取最新一日估值表**；所有加减按「占最新净值%」呈现，金额留在《操作底稿》JSON 供核对。")
     L.append("- 回购（GC001 等）不计入个股加减，单独列出。")
     L.append("- 成交截至报告日、估值截至上一估值日；«近一月净买卖» 可近似看作仓位变化（未扣市场损益）。")
-    L.append("- 行业为标的信息库一级分类；未覆盖标的按 config 的 industry_overrides 补齐。")
+    L.append("- 行业取 config 内置行业表的一级分类；新标的未归类时先补进 config 再重跑。")
     for p in report["products"]:
         if p.get("note"):
             own = f"（自身净值约 {amount(p['own_nav'])}；个股操作与仓位按母基金口径）" if p.get("own_nav") else ""
@@ -392,9 +379,8 @@ def print_report(report: dict) -> None:
 # ---------- 主流程 ----------
 
 def build_report(cfg: dict, end_date: str | None = None) -> dict:
-    trades = load_trades(cfg["trades_csv"])
-    info = load_info_db(cfg.get("info_db", ""))
     overrides = cfg["industry_overrides"]
+    trades = load_trades(cfg["trades_csv"], {n for p in cfg["products"] for n in p["csv_names"]})
     end = end_date or max(t["date"] for t in trades)
     windows = build_windows([t["date"] for t in trades], end, cfg["windows"])
     val_end = max(
@@ -423,7 +409,7 @@ def build_report(cfg: dict, end_date: str | None = None) -> dict:
             "swap": pos_v.get("swap_pct"),
         }
         for key, (a, b) in windows.items():
-            agg = aggregate(trades, names, a, b, info, overrides)
+            agg = aggregate(trades, names, a, b, overrides)
             entry[key] = agg
             t = tot[key]
             t["buy"] += agg["buy"]; t["sell"] += agg["sell"]; t["net"] += agg["net"]; t["repo"] += agg["repo"]
@@ -483,8 +469,8 @@ def main() -> int:
 def selftest() -> int:
     overrides = {"204001.SH": ["GC001", "回购"], "510300.SH": ["沪深300ETF", "ETF"],
                  "603806.SH": ["福斯特", "电力设备-光伏胶膜"]}
-    info = {"603259.SH": {"name": "药明康德", "industry": "医药生物-CXO"},
-            "002475.SZ": {"name": "立讯精密", "industry": "消费电子-精密制造"}}
+    info = {"603259.SH": ["药明康德", "医药生物-CXO"],
+            "002475.SZ": ["立讯精密", "消费电子-精密制造"]}
     # 9 个交易日；窗口 = 最近 5 / 最近 20（不足则取全部）
     cal = ["20261102", "20261103", "20261104", "20261105", "20261106",
            "20261107", "20261110", "20261111", "20261112"]
@@ -501,7 +487,7 @@ def selftest() -> int:
     assert wins["week"] == (cal[-5], cal[-1]), wins
     assert wins["month"] == (cal[0], cal[-1]), wins  # 不足 20 天取全部
 
-    agg = aggregate(trades, {"A"}, *wins["week"], info, overrides)
+    agg = aggregate(trades, {"A"}, *wins["week"], {**overrides, **info})
     assert agg["buy"] == 450 and agg["sell"] == 1500, agg   # 400 买 + 50 未归类买 / 1000+500 卖
     assert agg["repo"] == 0, agg                            # 回购在窗口外
     assert agg["industries"]["医药生物"] == -600, agg        # 1000-400
@@ -509,7 +495,7 @@ def selftest() -> int:
     assert agg["industries"][UNKNOWN] == 50, agg
     assert agg["unresolved"] == ["999999.SH"], agg
 
-    month = aggregate(trades, {"A"}, *wins["month"], info, overrides)
+    month = aggregate(trades, {"A"}, *wins["month"], {**overrides, **info})
     assert month["repo"] == 888, month                      # 回购单独计，不进买卖
     assert month["industries"]["医药生物"] == -600 + 7000, month
 

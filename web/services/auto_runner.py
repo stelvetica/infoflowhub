@@ -18,6 +18,8 @@ from infra.market_calendar import (
     VERDICT_UNKNOWN,
     SOURCE_ASSUMED,
     MarketVerdict,
+    is_last_trading_day_of_week,
+    local_trading_days,
     market_gate,
     refresh_local_calendar,
 )
@@ -85,6 +87,13 @@ MORNING_START_MINUTE = 10
 # 窗口 [7:10, 8:10) 内当天跑一次；过了 8:10 不补跑——晨间流程自己会抓，补一遍纯属白抓。
 PREFETCH_START_HOUR = 7
 PREFETCH_START_MINUTE = 10
+# 操作分析（portfolio-operations）是**独立于晨间 skill 链**的周任务：每周最后一个交易日 7:30 跑一次，
+# 不放进 SKILLS（放进链里会每天多跑一轮模型）。当天进程不在线时当天内补跑。
+OPS_SKILL = "portfolio-operations"
+OPS_START_HOUR = 7
+OPS_START_MINUTE = 30
+# 20 分钟上限：ops 与晨间流程共用 _lock，跑太久会把 8:10 的晨间流程往后拖。
+OPS_SKILL_TIMEOUT_SECONDS = 1200
 CHECK_INTERVAL_SECONDS = 600
 CHECK_INTERVAL_SECONDS_MORNING = 60
 DT_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -201,6 +210,10 @@ class AutoRunner:
                 await self._maybe_run_prefetch()
             except Exception:
                 logger.exception("前置抓取槽单次执行失败，已跳过本轮")
+            try:
+                await self._maybe_run_operations()
+            except Exception:
+                logger.exception("操作分析周任务单次执行失败，已跳过本轮")
             try:
                 await self._maybe_run_morning()
             except Exception:
@@ -386,6 +399,56 @@ class AutoRunner:
             return
 
         await self._do_run_morning(now, today)
+
+    async def _maybe_run_operations(self) -> None:
+        """每周最后一个交易日 7:30 跑一次操作分析（独立 skill，不并入晨间流程）。
+
+        为什么独立：操作数据来自成交流水与估值表，与订阅抓取/新闻分析无关；每周一次足够
+        反映调仓，天天跑只是重复同一批成交。
+
+        「最后一个交易日」取本地交易日历（周五休市则前推到周四）；日历不可用时退回周五。
+        当天没跑成因进程未启动而错过时，当天内补跑一次；跨天不补——下一周会重新算。
+        """
+        now = datetime.now()
+        if (now.hour, now.minute) < (OPS_START_HOUR, OPS_START_MINUTE):
+            return
+        today = now.date().isoformat()
+        if str(self._slot("operations").get("last_attempt_date") or "") == today:
+            return
+        if not is_last_trading_day_of_week(now.date(), local_trading_days()):
+            return
+        await self._do_run_operations(today)
+
+    async def _do_run_operations(self, today: str) -> None:
+        async with self._lock:
+            if str(self._slot("operations").get("last_attempt_date") or "") == today:
+                return
+            payload: dict[str, Any] = {
+                "last_attempt_date": today,
+                "started_at": self._format_dt(datetime.now()),
+                "finished_at": "",
+                "status": "running",
+                "error": "",
+                "result": {},
+            }
+            # 开工即落 attempt：失败当天不重试（每 60 秒 tick 重试只会反复烧模型）。
+            self._write_slot("operations", dict(payload))
+            try:
+                outcome = await asyncio.to_thread(
+                    run_skill, OPS_SKILL, cwd=BASE_DIR, timeout=OPS_SKILL_TIMEOUT_SECONDS
+                )
+                payload["result"] = outcome
+                payload["status"] = str(outcome.get("status") or "error")
+                payload["error"] = str(outcome.get("error") or "")
+            except Exception as exc:  # noqa: BLE001
+                payload["status"] = "error"
+                payload["error"] = normalize_utf8_text(str(exc))
+            payload["finished_at"] = self._format_dt(datetime.now())
+            self._write_slot("operations", payload)
+            if payload["status"] == "error":
+                logger.warning("操作分析周任务失败：%s", payload["error"])
+            else:
+                logger.info("操作分析周任务完成：%s", payload["result"])
 
     def _maybe_check_bsk_update(self, *, force: bool = False) -> None:
         """跑一次 bsk 更新检查（复用 scripts\\check_bsk_update.ps1，逻辑不重写）。
