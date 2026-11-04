@@ -131,7 +131,8 @@ def test_following_feed_navigates_and_calls_feed_all():
 
     fetch_bilibili_following_feed_with_page(page, BILIBILI_FOLLOWING_SOURCE)
 
-    assert page.goto_url == "https://t.bilibili.com/"
+    # 落脚在稳定页（t.bilibili.com 自更新，evaluate 的整页基线校验会被反复拒）
+    assert page.goto_url == "https://www.bilibili.com/watchlater/list"
     _js, arg, _kwargs = page.evaluated[0]
     args = json.loads(arg)
     assert args["apiPath"] == "all"

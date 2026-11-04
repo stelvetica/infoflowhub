@@ -420,19 +420,22 @@ def _fetch_bilibili_feed_with_page(
     api_type: str,
     error_scope: str,
     aggregate: bool = False,
+    context_url: str = "",
     limit: int = 12,
     timeout_ms: int = 60000,
 ) -> FeedFetchResult:
     """bsk 页内取数（逐 UP 的 feed/space 与关注流的 feed/all 共用这一处驱动）。
 
     uid 为空即聚合关注流：不传 host_mid，错误前缀用 error_scope。
+    context_url：实际导航的落脚页，默认 page_url。页内 fetch 只要同站 Origin + 登录 cookie，
+    所以关注流改用稳定页（见 fetch_bilibili_following_feed_with_page）。
     """
     scope_label = _scope_label(uid, error_scope)
     eval_timeout = max(
         BILIBILI_BSK_EVALUATE_TIMEOUT_SECONDS, timeout_ms / 1000.0 + 30.0
     )
     try:
-        page.goto(page_url, wait_until="domcontentloaded")
+        page.goto(context_url or page_url, wait_until="domcontentloaded")
     except Exception as exc:
         return _dynamic_error(source, scope_label, page_url, kind="unknown", detail=str(exc))
 
@@ -558,12 +561,20 @@ def fetch_bilibili_dynamic_feed_with_page(
 def fetch_bilibili_following_feed_with_page(
     page, source: dict, limit: int = 12, timeout_ms: int = 60000
 ) -> FeedFetchResult:
-    """聚合关注流：导航到 t.bilibili.com，页内 fetch feed/all（不传 host_mid）。"""
+    """聚合关注流：在稳定页落脚，页内 fetch feed/all（不传 host_mid）。
+
+    不在 t.bilibili.com 上落脚：那是自更新页（计时器/轮播/推荐卡片持续变化），而
+    evaluate 属无目标动作，bsk 对它就保持整页基线校验，sync 后页面一变即
+    `permission_denied: The action's observed content changed`；实测该页反复拒（3 连拒
+    后整源失败），稳定页 0/5 次拒。页内 fetch 只需同站 Origin + 登录 cookie，故复用稍后看
+    的稳定页（同一约定见 video.py 的 BILIBILI_STABLE_PAGE_URL）。
+    """
     return _fetch_bilibili_feed_with_page(
         page,
         source,
         uid="",
         page_url=BILIBILI_FOLLOWING_PAGE_URL,
+        context_url=BILIBILI_WATCHLATER_PAGE_URL,
         api_path=BILIBILI_FOLLOWING_API_PATH,
         api_type=BILIBILI_FOLLOWING_API_TYPE,
         error_scope="following",

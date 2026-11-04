@@ -129,6 +129,29 @@ def test_page_path_parses_projected_items():
     assert page.goto_url == "https://space.bilibili.com/424405794/dynamic"
 
 
+def test_following_feed_fetches_from_stable_page():
+    """关注流在稳定页落脚取数（日志仍标 t.bilibili.com 这个逻辑源）。
+
+    t.bilibili.com 是自更新页，evaluate 的整页基线校验会被反复拒；页内 fetch 只需同站
+    Origin + 登录 cookie，故改用稍后看的稳定页。
+    """
+    source = {
+        "id": "bilibili_following",
+        "name": "B站关注动态",
+        "feed_url": bili_api.BILIBILI_FOLLOWING_PAGE_URL,
+        "site_url": bili_api.BILIBILI_FOLLOWING_PAGE_URL,
+        "provider": "web",
+        "fetch_via": "web",
+    }
+    page = FakeBskPage({"code": 0, "message": "0", "items": [dict(PROJECTED_ITEM)]})
+
+    result = bili_api.fetch_bilibili_following_feed_with_page(page, source)
+
+    assert result.ok and len(result.entries) == 1
+    assert page.goto_url == bili_api.BILIBILI_WATCHLATER_PAGE_URL
+    assert result.feed_url == bili_api.BILIBILI_FOLLOWING_PAGE_URL
+
+
 def test_page_projection_preserves_every_field_the_parser_reads():
     """投影必须保留解析器读到的全部字段：同一动态，HTTP 原样与页内投影解析结果一致。"""
     full = bili_api._parse_dynamic_item(json.loads(json.dumps(FULL_ITEM)))
