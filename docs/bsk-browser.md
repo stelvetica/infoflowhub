@@ -6,6 +6,16 @@
 
 bsk 是一个通过浏览器扩展驱动**本机日常 Chrome** 的抓取工具：浏览器抓取**只走 bsk**，抓取时直接复用你日常 Chrome 里已登录的会话，不复制 profile、不导出 token。copy（复制 profile）后端已整体禁用，没有任何配置或按钮能切回它。
 
+## 0.4 之后为什么开始失败（以前跑得好好的）
+
+- **时间线**：2026-11-02 bsk 自动升级 `0.3.3 → 0.4.1`（`bsk doctor` 的 `auto-update` 行可查）。0.3.x 的动作**没有任何协作校验**，自更新页面（B 站动态、抖音收藏）怎么读都行；0.4 起每个动作前必须有 `cooperate sync` 的 control context，且**脚本（evaluate）与无目标动作（wheel、未指定 ref 的键）走 strict 整页基线校验**——sync 之后页面有任何变化就回 `permission_denied: The action's observed content changed`（媒体在播时是 `The media source changed`）。仓库代码没变、页面没变，是工具的行为变了。
+- **target 策略不是解药**：它只豁免**有 DOM 目标**的动作（click/fill/scroll-to 等带 ref/selector）；脚本仍要求「未被用过的 strict 观测」——实测 target 会话里 evaluate 一律回 `requires an unused strict observation`，`--depends-on` 也不能豁免（实测仍约半数被拒）。
+- 所以只有两条结构性出路：
+  1. **换稳定落脚页**：页内取数不要求落脚页有内容，只要同站 Origin + 登录 cookie。B 站关注流落在 `watchlater/list`（原 `t.bilibili.com`），视频摘要早已如此。
+  2. **压住变化源**：必须留在原页时，动作前先注入停播/冻结。抖音收藏在滚动前暂停预览视频。
+- **passive reads 不需要协作上下文**：`bsk get-html` / `snapshot` / `observe` / `network` 实测无 context、无 sync 也能读，且不受页面变化影响。只读 DOM 的抓取优先走这条路。
+- **2026-11-04 全量审计**（每页 5 次 sync+evaluate）：B 站关注流修复前约半数被拒（连拒 6 次即整源失败），抖音收藏裸滚 8/8 被拒；X 时间线、抖音用户页、B 站 UP 空间页、稍后看页均 0/5。同一时刻只有那两页属「持续变化」，其余不受影响。
+
 ## 稍后处理（laterhub）四源
 
 - 抖音收藏、小黑盒收藏、B站稍后看、微信读书书架：**全部走 bsk**，复用日常 Chrome 实时登录会话。

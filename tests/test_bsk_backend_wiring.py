@@ -155,6 +155,25 @@ def test_bsk_failure_error_reports_no_copy_fallback(settings_file, fake_bsk, mon
     assert "session start 失败" in result.error
 
 
+def test_content_change_failure_carries_remedy_hint(monkeypatch):
+    """整页基线校验被拒时，失败文案直接带处置办法（换稳定页/压住变化源）。"""
+    from connectors._shared.bsk_session import _bsk_failure_error
+
+    denied = _bsk_failure_error(
+        2,
+        "B站抓取失败[following][stage=bsk]: evaluate 失败 "
+        "(exit=1, code=permission_denied): The action's observed content changed",
+    )
+    assert "换稳定落脚页" in denied and "docs/bsk-browser.md" in denied
+
+    media = _bsk_failure_error(2, "wheel 失败 (exit=1, code=permission_denied) The media source changed")
+    assert "压住变化源" in media
+
+    # 其他错误不加提示：别把无关故障也指向同一个处置办法
+    unrelated = _bsk_failure_error(2, "navigate 失败 (exit=1, code=not_found)")
+    assert "docs/bsk-browser.md" not in unrelated
+
+
 def test_non_ok_bsk_result_also_retries_and_reports_no_copy(settings_file, fake_bsk, monkeypatch):
     """feed.py 会把页面异常吞成非 ok 结果，重试判定不能只认异常。"""
     settings_file({"sources": {"alphapai": "bsk"}})

@@ -150,5 +150,21 @@ def run_bsk_with_retry(
     return result_error(source, error)
 
 
+# bsk 0.4 起，脚本(evaluate)与无目标动作(wheel 等)走 strict **整页**基线校验：sync 之后页面
+# 有任何变化就判 `observed content changed`，重试也治不了持续变化（时钟/轮播/自动播放/通知数）。
+# 这两类错误至今已踩过两次，故把处置办法直接写进失败文案，省掉从零排查。
+_CONTENT_CHANGE_HINT = (
+    "；页面在动作期间持续变化（bsk strict 整页校验）→ "
+    "换稳定落脚页，或在动作前压住变化源（见 docs/bsk-browser.md「0.4 之后的失败模式」）"
+)
+
+
 def _bsk_failure_error(attempts: int, bsk_error: str) -> str:
-    return f"{BSK_FAILURE_MARKER}（已尝试 {attempts} 次）：{bsk_error}"
+    hint = ""
+    if "permission_denied" in bsk_error and (
+        "observed content changed" in bsk_error
+        or "media source changed" in bsk_error
+        or "unused strict observation" in bsk_error
+    ):
+        hint = _CONTENT_CHANGE_HINT
+    return f"{BSK_FAILURE_MARKER}（已尝试 {attempts} 次）：{bsk_error}{hint}"
