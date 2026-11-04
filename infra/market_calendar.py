@@ -220,6 +220,42 @@ def local_calendar_state(path: Path, today: date) -> tuple[bool | None, str]:
     return None, f"本地交易日历未覆盖今日（最大 {latest}，更新于 {updated}）"
 
 
+def local_trading_days(path: Path | None = None) -> list[str]:
+    """读本地交易日历里的合法日期（ISO 串，升序）。不可读/无合法日期返回空列表。
+
+    与 local_calendar_state 共用同一份信任边界校验：日历是用户本机脚本的产物，
+    非 ISO 串一律丢弃，避免字典序比较把垃圾数据当成日期。
+    """
+    try:
+        payload = json.loads(Path(path or local_calendar_file()).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    days = payload.get("交易日") if isinstance(payload, dict) else None
+    if not isinstance(days, list):
+        return []
+    return sorted({str(day).strip() for day in days if _ISO_DAY_RE.match(str(day).strip())})
+
+
+def is_last_trading_day_of_week(day: date, days: Iterable[str]) -> bool:
+    """今天是所在 ISO 周最后一个交易日？
+
+    日历覆盖到今天之后 → 看「下一个交易日是否落在下周」；覆盖只到本周末尾 → 退回周五。
+    今天不在日历里（休市）一律 False——元组里的周五休市日不能因为「下一个交易日是下周一」而误判。
+    完全没有日历时退回「周五」，宁可多跑一次，也不能整周不跑。
+    """
+    valid = [d for d in days if _ISO_DAY_RE.match(str(d))]
+    iso = day.isoformat()
+    if not valid:
+        return day.weekday() == 4
+    if iso not in valid:
+        return False
+    later = [d for d in valid if d > iso]
+    if not later:
+        return day.weekday() == 4
+    nxt = date.fromisoformat(min(later))
+    return nxt.isocalendar()[:2] != day.isocalendar()[:2]
+
+
 def refresh_local_calendar(now: datetime | None = None) -> str:
     """按需调用用户本机的更新脚本刷新交易日历；返回一句中文说明，**永不抛异常**（调用方不设 try）。
 

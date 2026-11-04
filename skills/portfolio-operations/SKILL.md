@@ -11,10 +11,9 @@ description: 按产品汇总近期（近一周/近一月）调仓——主要加
 
 | 用途 | 路径 |
 |---|---|
-| 运行配置（产品、窗口、行业覆盖） | `C:\Users\ETT\Playground\infoflowhub\config\portfolio_operations.json` |
+| 运行配置（产品、窗口、行业表） | `C:\Users\ETT\Playground\infoflowhub\config\portfolio_operations.json` |
 | 成交汇总 CSV | `C:\预估值_PB系统\数据\交易系统数据\最近_交易系统汇总数据\历史成交汇总.csv` |
 | 估值表根目录 | `C:\预估值_PB系统\产品\<产品>\` |
-| 标的信息库（行业一级来源） | `C:\Users\ETT\Playground\infoflowhub\data\reports\标的信息库.json` |
 | 产物根 | `C:\Users\ETT\Playground\infoflowhub\data\reports\` |
 | 报告 | `<产物根>\操作分析_YYYY-MM-DD.md` |
 | 底稿（AI 读它，不读 md） | `<产物根>\操作底稿_YYYY-MM-DD.json` |
@@ -30,7 +29,7 @@ description: 按产品汇总近期（近一周/近一月）调仓——主要加
 - **成交截至报告日、估值截至上一估值日**，净卖出额与仓位变化不完全对齐属正常。
 - **FOF 产品按母基金口径**：金享1号自身净值约 591 万，100% 持有母基金「大朴金享」；个股操作与仓位取母基金，脚注写明自身规模。
 - **产品清单在 config 里**（当前：臻享1期、金享1号、多维度24号、未来1号），增删产品只改 `config/portfolio_operations.json`。
-- **行业取标的信息库一级**（`半导体-晶圆代工` → `半导体`）；信息库没有的走 config 的 `industry_overrides`；仍未归类的进底稿 `unresolved`，由 AI 补齐后重跑。
+- **行业表内置在 config 的 `industry_overrides`**（code → [名称, 行业]），不依赖标的信息库；只收录观察产品出现过的标的。新标的出现时归「未归类」进底稿 `unresolved`，由 AI 查证后补进 config 再重跑。
 
 ## 流程
 
@@ -42,6 +41,10 @@ description: 按产品汇总近期（近一周/近一月）调仓——主要加
 | 4 | 交付 | AI | 对话里给结论摘要；不改表格里的任何数字 |
 
 > 同日重跑脚本会重置「解读」（脚本只写占位），重跑后需重写；换日运行则是新文件。
+
+## 调度
+
+每周**最后一个交易日 7:30** 跑一次，由 `web/services/auto_runner.py` 的 `_maybe_run_operations` 触发——独立任务，不进晨间 `SKILLS` 链（否则每天多跑一轮模型）。「最后一个交易日」取本地交易日历，周五休市自动前推到周四；当天没跑成会在当天内补跑，失败当天不重试。状态写 `runtime/health/automation_runtime.json` 的 `slots.operations`。
 
 **运行命令**（无参数全默认；改脚本后先 `--selftest`）：
 
