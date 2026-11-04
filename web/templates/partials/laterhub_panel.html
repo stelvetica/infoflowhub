@@ -53,15 +53,15 @@
         <colgroup>
           <col class="col-time">
           <col class="col-title">
-          <col class="col-action">
           <col class="col-digest">
+          <col class="col-action">
         </colgroup>
         <thead>
           <tr>
             <th>时间</th>
             <th>链接</th>
-            <th>完成</th>
             <th>解析</th>
+            <th>完成</th>
           </tr>
         </thead>
         <tbody>
@@ -81,15 +81,15 @@
                 </div>
                 <div class="subtle cell-ellipsis" title="{{ item.tags_text or '-' }}">{{ item.tags_text or '-' }}</div>
               </td>
+              <td class="laterhub-digest-cell">
+                {% include "partials/laterhub_digest_cell.html" %}
+              </td>
               <td class="laterhub-action-cell laterhub-action-cell-small">
                 {# 提交交给 app.js 就地换行:整块重绘面板会丢掉已续载的行与滚动位置 #}
                 <form data-toggle-url="/actions/laterhub/{{ item.id }}/toggle-finished?{{ params|urlencode }}&{{ laterhub.state_query }}">
                   <input type="hidden" name="finished" value="{{ 0 if item.is_finished else 1 }}">
                   <button class="btn {% if item.is_finished %}secondary{% endif %}" type="submit">{{ '未完成' if item.is_finished else '完成' }}</button>
                 </form>
-              </td>
-              <td class="laterhub-digest-cell">
-                {% include "partials/laterhub_digest_cell.html" %}
               </td>
             </tr>
             {% endfor %}
