@@ -27,13 +27,15 @@ class LaterhubSource:
     flag: str            # argparse 属性名
     fetcher_name: str    # pipeline 模块内的函数名（保留单测 monkeypatch 打桩点）
     needs_browser: bool
+    # 源能拉全量、且「消失即已处理」的源才置 True：本轮抓全后，源里不再出现的未完成条目自动完成。
+    finish_on_removed: bool
 
 
 SOURCES: tuple[LaterhubSource, ...] = (
-    LaterhubSource("bilibili_watchlater", "B站稍后看", "收藏/稍后处理", "Bilibili", "网页抓取（bsk）", "", "fetch_bilibili", "fetch_bilibili_watchlater", True),
-    LaterhubSource("douyin_favorite", "抖音收藏", "收藏/稍后处理", "抖音", "网页抓取（bsk）", "douyin_shared", "fetch_douyin", "fetch_douyin_favorites", True),
-    LaterhubSource("xiaoheihe_favor", "小黑盒收藏", "收藏/稍后处理", "小黑盒", "网页抓取（bsk）", "xiaoheihe_shared", "fetch_xiaoheihe", "fetch_xiaoheihe_favorites", True),
-    LaterhubSource("weread_shelf", "微信读书书架", "待读/稍后处理", "微信读书", "网页抓取（bsk）", "", "fetch_weread", "fetch_weread_shelf", True),
+    LaterhubSource("bilibili_watchlater", "B站稍后看", "收藏/稍后处理", "Bilibili", "网页抓取（bsk）", "", "fetch_bilibili", "fetch_bilibili_watchlater", True, True),
+    LaterhubSource("douyin_favorite", "抖音收藏", "收藏/稍后处理", "抖音", "网页抓取（bsk）", "douyin_shared", "fetch_douyin", "fetch_douyin_favorites", True, False),
+    LaterhubSource("xiaoheihe_favor", "小黑盒收藏", "收藏/稍后处理", "小黑盒", "网页抓取（bsk）", "xiaoheihe_shared", "fetch_xiaoheihe", "fetch_xiaoheihe_favorites", True, True),
+    LaterhubSource("weread_shelf", "微信读书书架", "待读/稍后处理", "微信读书", "网页抓取（bsk）", "", "fetch_weread", "fetch_weread_shelf", True, False),
 )
 SOURCE_BY_ID = {source.id: source for source in SOURCES}
 

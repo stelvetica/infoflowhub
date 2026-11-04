@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.subscriptions.models import FeedEntry, FeedFetchResult
-from connectors._shared.common import normalize_dedupe_title_key
+from connectors._shared.common import FetchBatch, normalize_dedupe_title_key
 
 # 稍后看与订阅动态同一姿势：bsk 页内 fetch 官方接口，复用日常 Chrome 登录态。
 # 先导航到 watchlater 页拿同域上下文/Referer，再带 credentials 调接口。
@@ -18,6 +18,8 @@ BILIBILI_DYNAMIC_API = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/s
 BILIBILI_BSK_EVALUATE_TIMEOUT_SECONDS = 120.0
 # 单次 fetch 的页内超时（毫秒）：任一页卡住时快速失败，而不是拖满整个 evaluate 预算。
 BILIBILI_PAGE_REQUEST_TIMEOUT_MS = 20000
+# 稍后看全量翻页的安全上限：翻到上限仍每页满 = 没拿全，complete 置 False 不做按源比对。
+BILIBILI_WATCHLATER_MAX_PAGES = 50
 # 增量翻页：连续命中已入库标题达到该条数即认为已追上历史，停止继续翻页。
 BILIBILI_DUPLICATE_STOP_STREAK = 3
 # 安全上限：全新库/无已知键时最多翻这么多页，避免无限翻历史。
@@ -31,20 +33,6 @@ BILIBILI_STOP_LIMIT = "limit_reached"
 def _bilibili_uid_from_source(source: dict[str, Any]) -> str:
     match = re.search(r"space\.bilibili\.com/(\d+)", str(source.get("site_url") or ""))
     return match.group(1) if match else ""
-
-
-def _extract_watchlater_items(data: dict[str, Any]) -> list[dict[str, Any]] | None:
-    """从稍后看接口载荷里取出条目并归一化；结构无法识别返回 None。"""
-    container = data.get("data")
-    if isinstance(container, dict):
-        for key in ("list", "items"):
-            if isinstance(container.get(key), list):
-                return [_normalize_watchlater_item(x) for x in container[key]]
-        if isinstance(container.get("list"), dict) and isinstance(container["list"].get("list"), list):
-            return [_normalize_watchlater_item(x) for x in container["list"]["list"]]
-    if isinstance(container, list):
-        return [_normalize_watchlater_item(x) for x in container]
-    return None
 
 
 def _normalize_watchlater_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -69,38 +57,69 @@ def _normalize_watchlater_item(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# 同一页内一次 evaluate 翻完全部页：翻页必须在页内做，才能拿全完整列表供「源内已移除」比对。
+# 每页仍带 credentials（复用真实登录 cookie）。complete 只在确认拿到最后一页时为 true。
 _BILIBILI_WATCHLATER_PAGE_JS = r"""
 async (argsJson) => {
   const args = JSON.parse(argsJson);
-  let resp;
-  try {
-    resp = await fetch(args.url, {
-      credentials: "include",
-      signal: AbortSignal.timeout(args.requestTimeoutMs),
-    });
-  } catch (e) {
-    return { error: "接口请求失败: " + String(e) };
+  const extract = (data) => {
+    const container = data ? data.data : null;
+    if (Array.isArray(container)) return container;
+    if (container && typeof container === "object") {
+      for (const key of ["list", "items"]) {
+        if (Array.isArray(container[key])) return container[key];
+      }
+      if (container.list && typeof container.list === "object" && Array.isArray(container.list.list)) {
+        return container.list.list;
+      }
+    }
+    return null;
+  };
+  const all = [];
+  for (let pn = 1; pn <= args.maxPages; pn++) {
+    let resp;
+    try {
+      resp = await fetch(args.url + "?ps=" + args.ps + "&pn=" + pn, {
+        credentials: "include",
+        signal: AbortSignal.timeout(args.requestTimeoutMs),
+      });
+    } catch (e) {
+      return { error: "接口请求失败: " + String(e) };
+    }
+    let data;
+    try {
+      data = await resp.json();
+    } catch (e) {
+      return { error: "接口返回非 JSON（可能登录态失效）" };
+    }
+    if (String(data.code) !== "0") {
+      return { code: data.code, message: data.message, items: [] };
+    }
+    const pageItems = extract(data);
+    if (pageItems === null) return { unrecognized: true };
+    for (const item of pageItems) all.push(item);
+    // 本页不足一页（含 0 条）即到底：此时才是完整列表。
+    if (pageItems.length < args.ps) return { items: all, complete: true };
   }
-  try {
-    return await resp.json();
-  } catch (e) {
-    return { error: "接口返回非 JSON（可能登录态失效）" };
-  }
+  // 撞上限仍每页满：只拿到部分数据，不得据此判定条目已被移除。
+  return { items: all, complete: false };
 }
 """
 
 
 def fetch_bilibili_watchlater_with_page(
     page, *, ps: int = 20, timeout_ms: int = 60000
-) -> list[dict[str, Any]]:
-    """bsk 页内取数版：先导航到稍后看页拿同域上下文，再页内 fetch 官方接口。"""
+) -> FetchBatch:
+    """bsk 页内取数版：先导航到稍后看页拿同域上下文，再页内 fetch 官方接口并翻全量。"""
     eval_timeout = max(BILIBILI_BSK_EVALUATE_TIMEOUT_SECONDS, timeout_ms / 1000.0 + 30.0)
     page.goto(BILIBILI_WATCHLATER_PAGE_URL, wait_until="domcontentloaded")
     payload = page.evaluate(
         _BILIBILI_WATCHLATER_PAGE_JS,
         json.dumps(
             {
-                "url": f"{BILIBILI_WATCHLATER_API}?ps={ps}",
+                "url": BILIBILI_WATCHLATER_API,
+                "ps": ps,
+                "maxPages": BILIBILI_WATCHLATER_MAX_PAGES,
                 "requestTimeoutMs": BILIBILI_PAGE_REQUEST_TIMEOUT_MS,
             }
         ),
@@ -110,23 +129,29 @@ def fetch_bilibili_watchlater_with_page(
         raise RuntimeError("B站稍后看页内 fetch 返回异常（非对象）")
     if payload.get("error"):
         raise RuntimeError(str(payload["error"]))
+    if payload.get("unrecognized"):
+        raise RuntimeError("无法识别 B站稍后看返回结构")
+    # 成功载荷只有 items/complete；只有翻页失败时页内才带 code，故 code 缺省即 0。
     code = payload.get("code")
-    if str(code) != "0":
+    if code is not None and str(code) != "0":
         message = str(payload.get("message") or "")
         if str(code) == "-101":
             raise RuntimeError("B站登录态失效（-101），请在日常 Chrome 登录 B站后重试")
         raise RuntimeError(f"B站稍后看接口异常: code={code} message={message}")
-    items = _extract_watchlater_items(payload)
-    if items is None:
+    items = payload.get("items")
+    if not isinstance(items, list):
         raise RuntimeError("无法识别 B站稍后看返回结构")
-    # 空列表是合法结果（用户把稍后看清空）：返回 []，由 pipeline 的「0 条」WARN
+    # 空列表是合法结果（用户把稍后看清空）：返回空批次，由 pipeline 的「0 条」WARN
     # 承担可见性，不能抛错——否则会把真实清空的用户每轮记成一条抓取失败。
-    return items
+    return FetchBatch(
+        items=[_normalize_watchlater_item(item) for item in items],
+        complete=bool(payload.get("complete")),
+    )
 
 
 def fetch_bilibili_watchlater(
     env_path: str | Path | None = None, *, session=None
-) -> list[dict[str, Any]]:
+) -> FetchBatch:
     """抓取 B 站「稍后看」：bsk 页内 fetch，复用日常 Chrome 登录态。
 
     env_path 仅为兼容 laterhub 的 `fetcher(ENV_PATH, session=...)` 调用姿势，已不使用。

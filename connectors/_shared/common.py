@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from apps.subscriptions.models import FeedFetchResult
@@ -33,6 +34,14 @@ TRANSIENT_FETCH_ERROR_KEYWORDS = (
     "timeout",
     "10054",
 )
+
+
+@dataclass(frozen=True, slots=True)
+class FetchBatch:
+    """一次抓取的批次结果：条目 + 本次是否拿到该源的完整列表。"""
+
+    items: list[dict[str, Any]]
+    complete: bool
 
 
 @dataclass

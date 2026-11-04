@@ -7,6 +7,7 @@ from typing import Any
 
 from apps.laterhub.config import DEBUG_DIR
 from connectors._shared.bsk_session import BskRunnerSession
+from connectors._shared.common import FetchBatch
 
 
 XIAOHEIHE_HOME_URL = "https://www.xiaoheihe.cn/"
@@ -151,7 +152,7 @@ async (argsJson) => {
 """
 
 
-def _fetch_favour_via_api(page) -> list[dict[str, Any]]:
+def _fetch_favour_via_api(page) -> tuple[list[dict[str, Any]], bool]:
     """页内借 $hbRequest 拿签名 → 手动 fetch 翻页拉全量收藏。
 
     $hbRequest 自动算 hkey 签名但吞没 query 参数（page/offset 均不进 URL），
@@ -174,25 +175,27 @@ def _fetch_favour_via_api(page) -> list[dict[str, Any]]:
         raise RuntimeError(f"收藏 API 调用失败: {payload['error']}")
     items = payload.get("items") or []
     _log(f"API 翻页完成，total_page={payload.get('total_page')} 获取 {len(items)} 条")
-    if payload.get("truncated"):
+    truncated = bool(payload.get("truncated"))
+    if truncated:
         _log(
             f"[WARN] 收藏未取全：已抓 {payload.get('pages_fetched')} 页"
             f"（total_page={payload.get('total_page')}，上限 {FAVOUR_MAX_PAGES}），仅返回部分数据"
         )
-    return items
+    return items, truncated
 
 
 def fetch_xiaoheihe_favorites(
     env_path: str | Path | None = None,
     *,
     session: BskRunnerSession | None = None,
-) -> list[dict[str, Any]]:
+) -> FetchBatch:
     own_session = session is None
     if own_session:
         session = BskRunnerSession(start_url="about:blank")
         session.start()
 
     items: list[dict[str, Any]] = []
+    truncated = True
     try:
         page = session.acquire_page()
 
@@ -222,7 +225,7 @@ def fetch_xiaoheihe_favorites(
         if not login_ok:
             raise RuntimeError("小黑盒登录态失效（restore_login 未返回 ok），请在日常 Chrome 中重新登录小黑盒")
 
-        items = _fetch_favour_via_api(page)
+        items, truncated = _fetch_favour_via_api(page)
 
         DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         DEBUG_JSON_PATH.write_text(
@@ -249,4 +252,4 @@ def fetch_xiaoheihe_favorites(
             continue
         seen.add(url)
         result.append(normalized)
-    return result
+    return FetchBatch(items=result, complete=not truncated)

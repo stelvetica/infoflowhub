@@ -82,7 +82,8 @@ def test_normal_path_uses_page_evaluate_and_does_not_touch_external_session():
     )
     session = FakeExternalSession(page)
 
-    result = feed.fetch_xiaoheihe_favorites(session=session)
+    batch = feed.fetch_xiaoheihe_favorites(session=session)
+    result = batch.items
 
     assert [r["url"] for r in result] == [
         "https://www.xiaoheihe.cn/app/bbs/link/111",
@@ -90,11 +91,32 @@ def test_normal_path_uses_page_evaluate_and_does_not_touch_external_session():
     ]
     assert all(r["source"] == "xiaoheihe_favor" for r in result)
     assert result[1]["title"] == "小黑盒帖子_222"
+    # 未截断 = 拿到完整收藏列表，可按「源内已移除」比对。
+    assert batch.complete is True
     # 外部会话只使用：不 start / 不 shutdown。
     assert session.started == 0 and session.shutdowns == 0
     # 假 page 无 on，结构上不可能走网络拦截。
     assert not hasattr(page, "on")
     assert any(arg and "/bbs/app/favour/list" in arg for _, arg in page.evaluated)
+
+
+def test_truncated_fetch_reports_incomplete_batch():
+    """撞翻页上限（truncated）时只拿到部分数据：complete 必须为 False，禁止据此判定条目已移除。"""
+    page = FakeBskPage(
+        favour_payload={
+            "total_page": 5,
+            "pages_fetched": 50,
+            "truncated": True,
+            "count": 1,
+            "items": [{"linkid": 333, "title": "标题 C"}],
+        }
+    )
+    session = FakeExternalSession(page)
+
+    batch = feed.fetch_xiaoheihe_favorites(session=session)
+
+    assert [r["url"] for r in batch.items] == ["https://www.xiaoheihe.cn/app/bbs/link/333"]
+    assert batch.complete is False
 
 
 def test_self_built_session_starts_and_shuts_down_once(monkeypatch):
@@ -121,12 +143,13 @@ def test_self_built_session_starts_and_shuts_down_once(monkeypatch):
 
     monkeypatch.setattr(feed, "BskRunnerSession", FakeBskSession)
 
-    result = feed.fetch_xiaoheihe_favorites()
+    batch = feed.fetch_xiaoheihe_favorites()
 
     assert len(created) == 1
     assert created[0].start_url == "about:blank"
     assert created[0].started == 1 and created[0].shutdowns == 1
-    assert result[0]["url"].endswith("/999")
+    assert batch.items[0]["url"].endswith("/999")
+    assert batch.complete is True
 
 
 def test_self_built_session_shuts_down_on_exception(monkeypatch):

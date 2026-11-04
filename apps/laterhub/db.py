@@ -199,6 +199,31 @@ class DBManager:
             )
             return int(cursor.lastrowid)
 
+    def mark_missing_finished(self, source: str, present_urls: set[str]) -> list[sqlite3.Row]:
+        """把该源下本轮完整列表里已不存在的未完成条目标为完成。
+
+        差集在 Python 侧做：条目量大时 SQL 的 NOT IN 会拼出超长参数列表且不可读。
+        """
+        now = self._now_iso()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM links WHERE source = ? AND is_finished = 0",
+                (source,),
+            ).fetchall()
+            missing = [row for row in rows if row["url"] not in present_urls]
+            for row in missing:
+                conn.execute(
+                    """
+                    UPDATE links
+                    SET is_finished = 1,
+                        finished_at = COALESCE(finished_at, ?),
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, now, row["id"]),
+                )
+        return missing
+
     def find_url(self, url: str) -> int | None:
         with self._connect() as conn:
             row = conn.execute("SELECT id FROM links WHERE url = ?", (url,)).fetchone()
