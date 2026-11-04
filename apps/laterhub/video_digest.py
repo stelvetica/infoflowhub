@@ -76,16 +76,32 @@ def _srt_to_text(srt_path: Path) -> str:
     return "\n".join(lines)
 
 
-def _transcribe_with_videocaptioner(video_path: Path, workdir: Path) -> Path:
-    """调用 videocaptioner 转录，返回 SRT 路径。外部 CLI 缺失/失败抛 RuntimeError。
+def _asr_min_chars(duration_seconds: int | None) -> int:
+    """判定「有效语音」的最低字数：按 0.3 字/秒留余量，低于此视为无人声/仅 BGM。
+
+    0.3 字/秒远低于正常语速（中文约 3~5 字/秒），只用来拦住空结果与纯歌词，
+    不误杀慢速讲解；时长未知时只要非空即可（≥3 字）。
+    """
+    if duration_seconds and duration_seconds > 0:
+        return max(3, int(duration_seconds * 0.3))
+    return 3
+
+
+def _transcribe_with_videocaptioner(
+    video_path: Path, workdir: Path, *, duration_seconds: int | None = None
+) -> Path:
+    """调用 videocaptioner 转录，返回有效 SRT 路径。外部 CLI 缺失/失败抛 RuntimeError。
 
     bijian（必剪）与 jianying（剪映）同源互备：bijian 对无 cookie 高频访问会限流
     （实测任务创建成功、查结果 412），换 jianying 通常即成，两引擎依次尝试。
+    空 SRT / 仅 BGM 的极短结果不算成功，必须继续试下一个引擎——上游会以 exit=0
+    返回 0 字节文件（2026-11 实测），只看 returncode 会把空结果当成功。
     """
     exe = shutil.which("videocaptioner")
     if not exe:
         raise RuntimeError("未找到 videocaptioner 命令（uv tool install videocaptioner）")
     srt_path = workdir / "asr.srt"
+    min_chars = _asr_min_chars(duration_seconds)
     errors: list[str] = []
     for asr in ("bijian", "jianying"):
         srt_path.unlink(missing_ok=True)
@@ -96,10 +112,14 @@ def _transcribe_with_videocaptioner(video_path: Path, workdir: Path) -> Path:
             timeout=ASR_TIMEOUT_SECONDS,
         )
         if result.returncode == 0 and srt_path.exists():
-            return srt_path
+            text = _srt_to_text(srt_path)
+            if len(text) >= min_chars:
+                return srt_path
+            errors.append(f"{asr}: 结果过短({len(text)}字，需≥{min_chars})")
+            continue
         tail = (result.stderr or result.stdout or "").strip().splitlines()
         errors.append(f"{asr}: exit={result.returncode} {tail[-1] if tail else '无输出'}")
-    raise RuntimeError(f"videocaptioner 转录失败（bijian/jianying 均失败）: {'; '.join(errors)}")
+    raise RuntimeError(f"videocaptioner 未识别到有效语音（bijian/jianying 均失败）: {'; '.join(errors)}")
 
 
 def _format_duration(seconds: int | None) -> str:
@@ -170,7 +190,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
             workdir.mkdir(parents=True, exist_ok=True)
             video_path, duration_seconds = download_douyin_video(url, dest_dir=workdir)
             step = "语音转写"
-            srt_path = _transcribe_with_videocaptioner(video_path, workdir)
+            srt_path = _transcribe_with_videocaptioner(video_path, workdir, duration_seconds=duration_seconds)
             subtitle_text = _srt_to_text(srt_path)
             step = "生成简报"
             digest = llm.generate_from_subtitle(title=title, owner=None, subtitle_text=subtitle_text)
@@ -230,7 +250,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
             try:
                 workdir.mkdir(parents=True, exist_ok=True)
                 video_path = bili_video.download_bilibili_video(meta.bvid, meta.cid, page=page, dest_dir=workdir)
-                srt_path = _transcribe_with_videocaptioner(video_path, workdir)
+                srt_path = _transcribe_with_videocaptioner(video_path, workdir, duration_seconds=meta.duration_seconds)
                 subtitle_text = _srt_to_text(srt_path)
                 subtitle_source = "videocaptioner_bijian"
             except Exception as exc:  # noqa: BLE001

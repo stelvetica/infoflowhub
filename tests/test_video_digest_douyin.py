@@ -68,7 +68,7 @@ def _fake_download(duration: int = 65):
 
 
 def _fake_transcribe(text: str = "抖音字幕正文"):
-    def fake(video_path, workdir):
+    def fake(video_path, workdir, **kwargs):
         srt = workdir / "asr.srt"
         srt.write_text(f"1\n00:00:00,000 --> 00:00:01,000\n{text}\n", encoding="utf-8")
         return srt
