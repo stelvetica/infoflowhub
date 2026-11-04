@@ -10,12 +10,13 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 
 from apps.laterhub.config import DB_PATH
-from apps.laterhub.db import DBManager, LinkRecord
+from apps.laterhub.db import DBManager, LinkRecord, is_digest_video_url
 from apps.laterhub.sources import set_enabled as set_laterhub_source_enabled
 from web.services import md_render
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
 from web.services.views import (
     build_entries_state_params,
+    build_laterhub_digest_item,
     build_laterhub_state_params,
     build_news_state_params,
     delete_source,
@@ -48,6 +49,7 @@ MARKDOWN_DIRS = {
     "jiuyangongshe": BASE_DIR / "data" / "jiuyangongshe_markdown",
 }
 REPORTS_DIR = BASE_DIR / "data" / "reports"
+DIGEST_REPORTS_DIR = REPORTS_DIR / "video_digest"
 ENTRIES_STATE_COOKIE = "ifh_entries_state_v1"
 NEWS_STATE_COOKIE = "ifh_news_state_v1"
 
@@ -370,6 +372,70 @@ async def mark_laterhub_opened_action(request: Request, link_id: int):
     mark_laterhub_opened(link_id, True)
     params = query_dict(request)
     return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params, "laterhub_params": build_laterhub_state_params(params)})
+
+
+def _digest_job(link_id: int) -> None:
+    """后台跑单条视频解析。状态由 run_video_digest 回写；这里只兜底进程级异常。
+
+    路由已先原子领取（pending/failed → running），故传 claimed=True 跳过重复 claim。
+    """
+    try:
+        from apps.laterhub.video_digest import run_video_digest
+
+        run_video_digest(db_path=DB_PATH, link_id=link_id, claimed=True)
+    except Exception as exc:  # noqa: BLE001
+        try:
+            DBManager(DB_PATH).mark_digest_failed(link_id, error_message=f"{type(exc).__name__}: {exc}")
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@router.post("/actions/laterhub/{link_id}/digest", response_class=HTMLResponse)
+async def start_laterhub_digest_action(request: Request, link_id: int):
+    """点「解析」：原子领取后立刻返回「解析中」单元格，真正流程在后台线程跑。"""
+    db = DBManager(DB_PATH)
+    row = db.get_digest_row(link_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="条目不存在")
+    if not is_digest_video_url(row["url"]):
+        raise HTTPException(status_code=400, detail="仅支持 B站/抖音视频")
+    # claim 是唯一并发闸门：已 running/succeeded 时领不到，不会重复起任务
+    if str(row["digest_status"]) in ("pending", "failed") and db.claim_digest(link_id, retry_failed=True):
+        threading.Thread(
+            target=_digest_job,
+            args=(link_id,),
+            name=f"laterhub-digest-{link_id}",
+            daemon=True,
+        ).start()
+        row = db.get_digest_row(link_id)
+    return templates.TemplateResponse(
+        request,
+        "partials/laterhub_digest_cell.html",
+        {"item": build_laterhub_digest_item(dict(row))},
+    )
+
+
+@router.get("/fragments/laterhub/{link_id}/digest", response_class=HTMLResponse)
+async def laterhub_digest_fragment(request: Request, link_id: int):
+    """轮询单个条目的解析状态；终态（succeeded/failed/unsupported）由前端据此停轮询。"""
+    row = DBManager(DB_PATH).get_digest_row(link_id)
+    if row is None:
+        return PlainTextResponse("Digest not found", status_code=404)
+    return templates.TemplateResponse(
+        request,
+        "partials/laterhub_digest_cell.html",
+        {"item": build_laterhub_digest_item(dict(row))},
+    )
+
+
+@router.get("/digest/view/{filename}", response_class=HTMLResponse)
+async def digest_report_view(request: Request, filename: str):
+    """解析报告：限制在 data/reports/video_digest 单目录内，防目录穿越。"""
+    target = _resolve_inside(DIGEST_REPORTS_DIR, filename, (".md",))
+    if target is None:
+        return PlainTextResponse("Digest not found", status_code=404)
+    body_html = md_render.render(target.read_text(encoding="utf-8", errors="replace"))
+    return templates.TemplateResponse(request, "report_view.html", {"title": target.stem, "body_html": body_html})
 
 
 @router.post("/actions/laterhub/bulk-finish", response_class=HTMLResponse)

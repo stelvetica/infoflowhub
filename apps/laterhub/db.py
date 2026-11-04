@@ -14,6 +14,12 @@ UTC = timezone.utc
 VIDEO_URL_CONDITION = "(url LIKE '%bilibili.com/video/%' OR url LIKE '%douyin.com/video/%')"
 
 
+def is_digest_video_url(url: str | None) -> bool:
+    """与 VIDEO_URL_CONDITION 同口径的 Python 版，供 UI/路由判断是否展示「解析」。"""
+    text = str(url or "").lower()
+    return "bilibili.com/video/" in text or "douyin.com/video/" in text
+
+
 @dataclass(slots=True)
 class LinkRecord:
     url: str

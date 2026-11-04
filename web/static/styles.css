@@ -400,6 +400,13 @@ td { font-size: var(--fs-sm); }
 .laterhub-table .col-time { width: 96px; }
 .laterhub-table .col-title { width: auto; }
 .laterhub-table .col-action { width: 72px; }
+.laterhub-table .col-digest { width: 72px; }
+/* 「解析」列：灰(ghost)未解析 / 蓝(btn)已解析，尺寸跟随行内小按钮 */
+.laterhub-digest-cell { white-space: nowrap; }
+.laterhub-digest-cell .btn {
+  font-size: var(--fs-xs);
+  padding: 4px 8px;
+}
 
 /* 单元格 */
 .cell-time { white-space: nowrap; font-variant-numeric: tabular-nums; }

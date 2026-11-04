@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
+from apps.laterhub.db import is_digest_video_url
 from apps.laterhub.health import load_health as load_laterhub_source_health
 from apps.laterhub.sources import SOURCE_BY_ID, SOURCES as LATERHUB_SOURCES, load_enabled_map
 from apps.laterhub.tagger import TAG_OPTIONS
@@ -428,7 +429,8 @@ def _load_laterhub_items(limit: int | None = None) -> list[dict[str, Any]]:
         if limit is None:
             rows = conn.execute(
                 """
-                SELECT id, url, title, tags, created_at, updated_at, is_finished, is_opened, opened_at, source
+                SELECT id, url, title, tags, created_at, updated_at, is_finished, is_opened, opened_at, source,
+                       digest_status, digest_path, digest_at, digest_error
                 FROM links
                 ORDER BY id DESC
                 """
@@ -436,7 +438,8 @@ def _load_laterhub_items(limit: int | None = None) -> list[dict[str, Any]]:
         else:
             rows = conn.execute(
                 """
-                SELECT id, url, title, tags, created_at, updated_at, is_finished, is_opened, opened_at, source
+                SELECT id, url, title, tags, created_at, updated_at, is_finished, is_opened, opened_at, source,
+                       digest_status, digest_path, digest_at, digest_error
                 FROM links
                 ORDER BY id DESC
                 LIMIT ?
@@ -642,6 +645,19 @@ def mark_laterhub_finished_bulk(link_ids: list[int], finished: bool) -> int:
     return _write_laterhub_finished(link_ids, finished)
 
 
+def build_laterhub_digest_item(item: Mapping[str, Any]) -> dict[str, Any]:
+    """把一条链接的 digest 字段整理成「解析」按钮渲染上下文（行渲染与轮询片段共用）。"""
+    digest_path = str(item.get("digest_path") or "")
+    return {
+        "id": int(item.get("id") or 0),
+        "is_video": is_digest_video_url(item.get("url")),
+        "digest_status": str(item.get("digest_status") or "pending"),
+        "digest_path": digest_path,
+        "digest_name": Path(digest_path).name,
+        "digest_error": normalize_utf8_text(item.get("digest_error") or ""),
+    }
+
+
 def _build_laterhub_rows() -> tuple[list[dict[str, Any]], str, dict[str, int]]:
     all_rows: list[dict[str, Any]] = []
     latest_batch_key = ""
@@ -669,6 +685,7 @@ def _build_laterhub_rows() -> tuple[list[dict[str, Any]], str, dict[str, int]]:
             "batch_key": batch_key,
             "is_today": bool(local_created_date == today),
             "is_opened": bool(item.get("is_opened")),
+            **build_laterhub_digest_item(item),
         }
         all_rows.append(row)
         scope_counts["all"] += 1

@@ -169,15 +169,33 @@ def get_bilibili_video_meta(url: str, *, page, timeout: float = 30) -> BilibiliV
     )
 
 
-def get_bilibili_cc_subtitle_text(bvid: str, cid: int | None = None, *, page, timeout: float = 30) -> str | None:
-    """取第一条 CC 字幕轨道文本。
+# player/v2 在登录态下会随机返回**其他视频**的 AI 字幕轨道（2026-11 实测同一请求
+# 约半数串号），必须重试到拿到本视频的轨道；6 次后仍失败按"无可用 CC"处理，由调用方回退 ASR。
+CC_TRACK_MAX_ATTEMPTS = 6
 
-    无字幕轨道返回 None；接口错误抛 RuntimeError（不能把接口错误包装成"无字幕"）。
+
+def _subtitle_track_belongs_to(track: dict, aid: int | None, cid: int | None) -> bool:
+    """校验字幕轨道确实属于本次请求的视频。
+
+    AI 字幕 URL 形如 `/bfs/ai_subtitle/prod/<aid><cid><hash>?auth_key=...`，内嵌 aid+cid
+    可直接比对；人工上传字幕不遵循该命名，无法校验时放行（避免误杀）。
     """
-    aid: int | None = None
+    url = str(track.get("subtitle_url") or "").strip()
+    if not url:
+        return False
+    if "ai_subtitle" in url and aid is not None and cid is not None:
+        return f"{aid}{cid}" in url
+    return True
+
+
+def get_bilibili_cc_subtitle_text(bvid: str, cid: int | None = None, *, page, timeout: float = 30) -> str | None:
+    """取本视频的 CC 字幕文本。
+
+    无可用字幕轨道返回 None；接口错误抛 RuntimeError（不能把接口错误包装成"无字幕"）。
+    """
+    payload = _view_payload(page, bvid, timeout=timeout)
+    aid: int | None = payload.get("aid")
     if cid is None:
-        payload = _view_payload(page, bvid, timeout=timeout)
-        aid = payload.get("aid")
         cid = payload.get("cid")
     if cid is None:
         raise RuntimeError(f"无法获取视频 cid: bvid={bvid}")
@@ -185,22 +203,22 @@ def get_bilibili_cc_subtitle_text(bvid: str, cid: int | None = None, *, page, ti
     params: dict[str, Any] = {"bvid": bvid, "cid": cid}
     if aid is not None:
         params["aid"] = aid
-    player = _page_api_json(page, PLAYER_V2_API, params, timeout=timeout)
-    subtitles = ((player.get("data") or {}).get("subtitle") or {}).get("subtitles") or []
-    if not subtitles:
-        return None
-
-    subtitle_url = str(subtitles[0].get("subtitle_url") or "").strip()
-    if not subtitle_url:
-        return None
-    if subtitle_url.startswith("//"):
-        subtitle_url = f"https:{subtitle_url}"
-
-    body = _request_json(subtitle_url, timeout=timeout)
-    cues = (body or {}).get("body") or []
-    # 每条 cue 以换行连接，保留字幕的自然断句
-    text = "\n".join(str(cue.get("content") or "") for cue in cues).strip()
-    return text or None
+    for _ in range(CC_TRACK_MAX_ATTEMPTS):
+        player = _page_api_json(page, PLAYER_V2_API, params, timeout=timeout)
+        subtitles = ((player.get("data") or {}).get("subtitle") or {}).get("subtitles") or []
+        for track in subtitles:
+            if not _subtitle_track_belongs_to(track, aid, cid):
+                continue
+            subtitle_url = str(track.get("subtitle_url") or "").strip()
+            if subtitle_url.startswith("//"):
+                subtitle_url = f"https:{subtitle_url}"
+            body = _request_json(subtitle_url, timeout=timeout)
+            cues = (body or {}).get("body") or []
+            # 每条 cue 以换行连接，保留字幕的自然断句
+            text = "\n".join(str(cue.get("content") or "") for cue in cues).strip()
+            if text:
+                return text
+    return None
 
 
 def get_bilibili_full_mp4_url(bvid: str, cid: int | None = None, *, page, timeout: float = 30) -> str | None:

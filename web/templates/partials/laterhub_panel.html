@@ -54,12 +54,14 @@
           <col class="col-time">
           <col class="col-title">
           <col class="col-action">
+          <col class="col-digest">
         </colgroup>
         <thead>
           <tr>
             <th>时间</th>
             <th>链接</th>
             <th>完成</th>
+            <th>解析</th>
           </tr>
         </thead>
         <tbody>
@@ -86,10 +88,13 @@
                   <button class="btn {% if item.is_finished %}secondary{% endif %}" type="submit">{{ '未完成' if item.is_finished else '完成' }}</button>
                 </form>
               </td>
+              <td class="laterhub-digest-cell">
+                {% include "partials/laterhub_digest_cell.html" %}
+              </td>
             </tr>
             {% endfor %}
           {% else %}
-            <tr><td colspan="3" class="empty">没有匹配内容</td></tr>
+            <tr><td colspan="4" class="empty">没有匹配内容</td></tr>
           {% endif %}
         </tbody>
       </table>

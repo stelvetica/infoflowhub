@@ -288,7 +288,9 @@ def run_video_digest(
     dry_run: bool = False,
     keep_temp: bool = False,
     env_path: Path | None = None,
+    claimed: bool = False,
 ) -> DigestRunSummary:
+    """claimed=True 供 Web 端使用：路由已原子领取（pending/failed→running），这里不再重复 claim。"""
     from apps.laterhub.tagger import LLMConfig, load_project_env
 
     load_project_env(env_path or ENV_PATH)
@@ -307,7 +309,7 @@ def run_video_digest(
         if str(row["digest_status"]) == "succeeded" and (not digest_file or not (REPORTS_DIR / digest_file).is_file()):
             db.mark_digest_failed(link_id, error_message="报告文件缺失，已重新排队")
             row = db.get_digest_row(link_id)
-        if not db.claim_digest(link_id, retry_failed=True):
+        if not claimed and not db.claim_digest(link_id, retry_failed=True):
             status = str(row["digest_status"])
             summary.outcomes.append(DigestOutcome(link_id, str(row["url"]), str(row["title"]), "skipped", f"状态 {status} 不可领取"))
             return summary

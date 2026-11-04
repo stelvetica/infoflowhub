@@ -22,9 +22,12 @@ bsk 是一个通过浏览器扩展驱动**本机日常 Chrome** 的抓取工具�
 
 ## 视频摘要（video_digest）
 
-- 手动 CLI 子流程（`python -m apps.laterhub.video_digest`），不进主抓取流水线。
+- 入口：稍后处理面板每条视频右侧的「解析」按钮（灰=未解析，蓝=已解析可点开报告）；后台跑单条，前端轮询状态。
+  也可手动 CLI（`python -m apps.laterhub.video_digest`），不进主抓取流水线。
 - B站素材全部走 bsk：在**稳定的 watchlater 页**内 fetch `x/web-interface/view`、`x/player/v2`（字幕轨道）、`x/player/playurl`（dash/durl）。
   不用视频播放页取数——弹幕/计时器持续自更新，整页基线校验必然判 changed，evaluate 会被拒。
+- **`player/v2` 会串号**：登录态下同一请求约半数返回其他视频的 AI 字幕轨道（2026-11 实测）。
+  `get_bilibili_cc_subtitle_text` 用 URL 内嵌的 `<aid><cid>` 校验轨道归属，最多重试 6 次；仍失败回退 ASR。
 - 字幕 JSON（签名 URL）与媒体 CDN 流不需要 Cookie：前者直接 HTTP 拉取，后者只需浏览器 UA + Referer（实测 206）。
 - 抖音分支仍是免签直链下载 + 本地 ASR，与 B站无关。
 

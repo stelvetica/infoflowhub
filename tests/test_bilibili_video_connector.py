@@ -170,7 +170,10 @@ def test_meta_reads_view_api_through_page():
 
 def test_cc_subtitle_joins_cues_with_newline(monkeypatch):
     page = FakePage(
-        [("player/v2", {"code": 0, "data": {"subtitle": {"subtitles": [{"lan": "zh", "subtitle_url": "//aisubtitle.test/sub.json"}]}}})]
+        [
+            ("web-interface/view", {"code": 0, "data": {"aid": 1, "cid": 222}}),
+            ("player/v2", {"code": 0, "data": {"subtitle": {"subtitles": [{"lan": "zh", "subtitle_url": "//aisubtitle.test/sub.json"}]}}}),
+        ]
     )
     http = _use_http(
         monkeypatch,
@@ -185,9 +188,55 @@ def test_cc_subtitle_joins_cues_with_newline(monkeypatch):
 
 
 def test_cc_subtitle_empty_returns_none():
-    page = FakePage([("player/v2", {"code": 0, "data": {"subtitle": {"subtitles": []}}})])
+    page = FakePage(
+        [
+            ("web-interface/view", {"code": 0, "data": {"aid": 1, "cid": 222}}),
+            ("player/v2", {"code": 0, "data": {"subtitle": {"subtitles": []}}}),
+        ]
+    )
 
     assert video_mod.get_bilibili_cc_subtitle_text(BVID, 222, page=page) is None
+
+
+def test_cc_subtitle_track_validation_rejects_foreign_ai_track():
+    """player/v2 会串号：AI 字幕 URL 内嵌的 aid+cid 不匹配时必须丢弃。"""
+    assert video_mod._subtitle_track_belongs_to(
+        {"subtitle_url": "//x/bfs/ai_subtitle/prod/1222abc.json"}, 1, 222
+    )
+    assert not video_mod._subtitle_track_belongs_to(
+        {"subtitle_url": "//x/bfs/ai_subtitle/prod/999222abc.json"}, 1, 222
+    )
+    # 人工上传字幕不走 ai_subtitle 命名，无法校验时放行
+    assert video_mod._subtitle_track_belongs_to({"subtitle_url": "//x/bfs/subtitle/manual.json"}, 1, 222)
+    assert not video_mod._subtitle_track_belongs_to({"subtitle_url": ""}, 1, 222)
+
+
+def test_cc_subtitle_skips_foreign_track_then_takes_own(monkeypatch):
+    page = FakePage(
+        [
+            ("web-interface/view", {"code": 0, "data": {"aid": 1, "cid": 222}}),
+            (
+                "player/v2",
+                {
+                    "code": 0,
+                    "data": {
+                        "subtitle": {
+                            "subtitles": [
+                                {"lan": "ai-zh", "subtitle_url": "//cdn.test/bfs/ai_subtitle/prod/999222foreign.json"},
+                                {"lan": "ai-zh", "subtitle_url": "//cdn.test/bfs/ai_subtitle/prod/1222own.json"},
+                            ]
+                        }
+                    },
+                },
+            ),
+        ]
+    )
+    http = _use_http(monkeypatch, [("1222own.json", {"body": [{"content": "本视频字幕"}]})])
+
+    text = video_mod.get_bilibili_cc_subtitle_text(BVID, 222, page=page)
+
+    assert text == "本视频字幕"
+    assert [c["url"] for c in http.calls] == ["https://cdn.test/bfs/ai_subtitle/prod/1222own.json"]
 
 
 # --- 5) 完整 mp4 直链 ---------------------------------------------------------

@@ -334,6 +334,72 @@
     });
   }
 
+  // 「解析」按钮：POST 起后台任务，再轮询该条目单元格直到终态。
+  // 状态判定只看单元格里的 data-digest-state，后端 DB 是唯一真源。
+  const DIGEST_POLL_MS = 3000;
+  const DIGEST_POLL_LIMIT = 600; // 最多 30 分钟（下载 + 长视频 ASR 可能很久）
+
+  function setupLaterhubDigestButtons() {
+    document.querySelectorAll(".laterhub-digest-cell [data-digest-url]").forEach((button) => {
+      if (button.dataset.digestReady === "1") return;
+      button.dataset.digestReady = "1";
+      button.addEventListener("click", async () => {
+        const cell = button.closest(".laterhub-digest-cell");
+        const linkId = button.closest("tr[data-link-id]")?.dataset.linkId || "";
+        button.dataset.digestLabel = button.textContent;
+        button.disabled = true;
+        button.textContent = "解析中…";
+        try {
+          const response = await fetch(button.dataset.digestUrl, {
+            method: "POST",
+            credentials: "same-origin",
+          });
+          if (!response.ok) throw new Error(String(response.status));
+          if (cell) cell.innerHTML = await response.text();
+        } catch {
+          button.disabled = false;
+          button.textContent = button.dataset.digestLabel || "解析";
+          return;
+        }
+        setupLaterhubDigestButtons();
+        if (cell && linkId) startLaterhubDigestPolling(cell, linkId);
+      });
+    });
+    // 刷新/续载后，已在运行的条目要接着轮询（行被就地替换时旧轮询随节点断开而停）
+    document.querySelectorAll(".laterhub-digest-cell").forEach((cell) => {
+      const state = cell.querySelector("[data-digest-state]")?.dataset.digestState || "";
+      const linkId = cell.closest("tr[data-link-id]")?.dataset.linkId || "";
+      if (state === "running" && linkId) startLaterhubDigestPolling(cell, linkId);
+    });
+  }
+
+  function startLaterhubDigestPolling(cell, linkId) {
+    if (!cell.isConnected || cell.dataset.digestPolling === "1") return;
+    const attempt = Number(cell.dataset.digestAttempt || 0);
+    if (attempt >= DIGEST_POLL_LIMIT) return;
+    cell.dataset.digestPolling = "1";
+    cell.dataset.digestAttempt = String(attempt + 1);
+    window.setTimeout(async () => {
+      if (!cell.isConnected) return; // 行被移除/替换，停止
+      try {
+        const response = await fetch(`/fragments/laterhub/${linkId}/digest`, {
+          credentials: "same-origin",
+        });
+        if (response.ok) cell.innerHTML = await response.text();
+      } catch {
+        // 网络抖动：继续轮询，下次再试
+      }
+      delete cell.dataset.digestPolling;
+      const state = cell.querySelector("[data-digest-state]")?.dataset.digestState || "";
+      if (state === "running") {
+        setupLaterhubDigestButtons();
+        startLaterhubDigestPolling(cell, linkId);
+      } else {
+        setupLaterhubDigestButtons();
+      }
+    }, DIGEST_POLL_MS);
+  }
+
   function applyLaterhubToggle(html, linkId) {
     const row = document.querySelector(`.pane-right-stack tr[data-link-id="${linkId}"]`);
     if (!row) return;
@@ -353,6 +419,7 @@
     const tbody = document.querySelector(".pane-right-stack tbody");
     if (count && tbody && total) count.textContent = countText(loadedRowCount(tbody), total);
     setupLaterhubFinishForms();
+    setupLaterhubDigestButtons();
     setupLaterhubOpenedTracking();
     applyReadState();
     const descriptor = autoLoadPanels.find((item) => item.key === "laterhub");
@@ -407,6 +474,7 @@
       applyReadState();
       setupLaterhubOpenedTracking();
       setupLaterhubFinishForms();
+      setupLaterhubDigestButtons();
       return true;
     } catch {
       // 失败不打断浏览:计数行提示,继续滚动会再试
@@ -872,6 +940,7 @@
     setupLaterhubTagsToggle();
     setupSplitResizer();
     setupLaterhubFinishForms();
+    setupLaterhubDigestButtons();
     setupScrollbarReveal();
     autoLoadPanels.forEach((descriptor) => {
       bindAutoLoadScroll(descriptor);
