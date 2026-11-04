@@ -1,0 +1,76 @@
+{
+  "_说明": "portfolio-operations 的运行配置。路径为绝对路径，换机或目录搬迁时只改这里。",
+  "trades_csv": "C:\\预估值_PB系统\\数据\\交易系统数据\\最近_交易系统汇总数据\\历史成交汇总.csv",
+  "valuation_root": "C:\\预估值_PB系统\\产品",
+  "info_db": "C:\\Users\\ETT\\Playground\\infoflowhub\\data\\reports\\标的信息库.json",
+  "output_dir": "C:\\Users\\ETT\\Playground\\infoflowhub\\data\\reports",
+  "windows": {
+    "week": 5,
+    "month": 20
+  },
+  "top_n": 8,
+  "products": [
+    {
+      "name": "臻享1期",
+      "csv_names": [
+        "臻享1期",
+        "大朴臻享1期"
+      ],
+      "position_dir": "臻享1期"
+    },
+    {
+      "name": "金享1号",
+      "csv_names": [
+        "大朴金享"
+      ],
+      "position_dir": "大朴金享",
+      "note": "FOF：自身净值 100% 持有母基金「大朴金享」",
+      "own_valuation_dir": "金享1号"
+    },
+    {
+      "name": "外贸博盈",
+      "csv_names": [
+        "外贸博盈"
+      ],
+      "position_dir": "外贸博盈"
+    }
+  ],
+  "industry_overrides": {
+    "510300.SH": [
+      "沪深300ETF",
+      "ETF"
+    ],
+    "588000.SH": [
+      "科创50ETF",
+      "ETF"
+    ],
+    "204001.SH": [
+      "GC001逆回购",
+      "回购"
+    ],
+    "603806.SH": [
+      "福斯特",
+      "电力设备-光伏胶膜"
+    ],
+    "603293.SH": [
+      "埃泰克",
+      "汽车零部件-汽车电子"
+    ],
+    "603459.SH": [
+      "红板科技",
+      "电子-PCB"
+    ],
+    "688781.SH": [
+      "视涯科技",
+      "电子-硅基OLED"
+    ],
+    "688811.SH": [
+      "有研金属复材",
+      "有色金属-金属复材"
+    ],
+    "301660.SZ": [
+      "粤芯半导体",
+      "半导体-晶圆代工"
+    ]
+  }
+}
