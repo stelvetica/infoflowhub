@@ -348,7 +348,7 @@
         const linkId = button.closest("tr[data-link-id]")?.dataset.linkId || "";
         button.dataset.digestLabel = button.textContent;
         button.disabled = true;
-        button.textContent = "解析中…";
+        button.textContent = "解析中";
         try {
           const response = await fetch(button.dataset.digestUrl, {
             method: "POST",

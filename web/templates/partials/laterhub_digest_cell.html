@@ -4,7 +4,7 @@
   {% if item.digest_status == 'succeeded' and item.digest_name %}
     <a class="btn digest-done" href="/digest/view/{{ item.digest_name|urlencode }}" target="_blank" rel="noreferrer" data-digest-state="succeeded" title="打开 AI 解析报告">已解析</a>
   {% elif item.digest_status == 'running' %}
-    <button class="btn ghost" type="button" disabled data-digest-state="running">解析中…</button>
+    <button class="btn ghost" type="button" disabled data-digest-state="running">解析中</button>
   {% elif item.digest_status == 'failed' %}
     <button class="btn ghost" type="button" data-digest-state="failed" data-digest-url="/actions/laterhub/{{ item.id }}/digest" title="{{ item.digest_error or '上次解析失败，点击重试' }}">重试</button>
   {% else %}

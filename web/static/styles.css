@@ -401,9 +401,12 @@ td { font-size: var(--fs-sm); }
 .laterhub-table .col-title { width: auto; }
 .laterhub-table .col-action { width: 62px; }
 .laterhub-table .col-digest { width: 58px; }
-/* 「解析」「完成」紧邻两列：各让半步内边距，避免按钮之间空出一道 */
-.laterhub-table .laterhub-digest-cell { padding-right: 0; }
+/* 「解析」「完成」紧邻两列：表头与单元格统一左内边距，按钮和标题对齐；另压紧列间空白 */
+.laterhub-table th:nth-child(3),
+.laterhub-table th:nth-child(4),
+.laterhub-table .laterhub-digest-cell,
 .laterhub-table .laterhub-action-cell { padding-left: 4px; }
+.laterhub-table .laterhub-digest-cell { padding-right: 0; }
 /* 「解析」列：灰(ghost)未解析 / 蓝(btn)已解析，尺寸跟随行内小按钮 */
 .laterhub-digest-cell { white-space: nowrap; }
 .laterhub-digest-cell .btn {
