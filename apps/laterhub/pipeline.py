@@ -11,6 +11,7 @@ from typing import Any
 
 import requests
 
+from apps.laterhub import scan_state
 from apps.laterhub import sources as source_registry
 from apps.laterhub.config import DB_PATH, ENV_PATH, LOG_PATH, LOGS_DIR
 from apps.laterhub.db import DBManager, LinkRecord
@@ -174,6 +175,9 @@ class LaterhubRunSummary:
 # 各源抓取超时（秒）。bsk 复用用户日常 Chrome，页面/CDP 假死时浏览器端超时可能失效，
 # 超过此上限不再等待该源：停会话并隔离它，后续源各自新建会话继续，避免卡死整轮。
 SOURCE_FETCH_TIMEOUT_SECONDS = 180
+# 深度全量滚到底需要十几分钟（每轮还有递增等待），只能给深度模式单独放宽；
+# 普通抓取仍用 180s，防止浏览器假死拖垮整轮。
+SOURCE_DEEP_SCAN_TIMEOUT_SECONDS = 1800
 
 
 class _SourceFetchTimeout(RuntimeError):
@@ -194,7 +198,14 @@ def _save_items(db: DBManager, items: list[dict[str, Any]]) -> None:
 
 
 def _run_fetcher_with_timeout(
-    label: str, fetcher, session=None, *, owns_session: bool = False
+    label: str,
+    fetcher,
+    session=None,
+    *,
+    owns_session: bool = False,
+    deep: bool = False,
+    supports_deep: bool = False,
+    timeout_seconds: int | None = None,
 ) -> list[dict[str, Any]]:
     """守护线程执行 fetcher，超时则停会话并抛 _SourceFetchTimeout。
 
@@ -203,11 +214,20 @@ def _run_fetcher_with_timeout(
     """
     from queue import Empty, Queue
 
+    # 运行时读取常量而非默认参数绑定：测试/配置可 monkeypatch 收紧整轮预算。
+    wait_seconds = timeout_seconds or SOURCE_FETCH_TIMEOUT_SECONDS
     result_queue: "Queue[tuple[str, object]]" = Queue(maxsize=1)
+    # 只有声明支持深度的抓取器才认 deep：否则会把关键字传给不认识它的旧抓取器。
+    deep_mode = deep and supports_deep
 
     def _worker() -> None:
         try:
-            fetched = fetcher(ENV_PATH, session=session) if session is not None else fetcher(ENV_PATH)
+            if deep_mode:
+                fetched = fetcher(ENV_PATH, session=session, deep=True)
+            elif session is not None:
+                fetched = fetcher(ENV_PATH, session=session)
+            else:
+                fetched = fetcher(ENV_PATH)
             result_queue.put(("ok", fetched))
         except BaseException as exc:  # noqa: BLE001
             result_queue.put(("err", exc))
@@ -215,7 +235,7 @@ def _run_fetcher_with_timeout(
     worker = threading.Thread(target=_worker, name=f"fetch-{label}", daemon=True)
     worker.start()
     try:
-        kind, payload = result_queue.get(timeout=SOURCE_FETCH_TIMEOUT_SECONDS)
+        kind, payload = result_queue.get(timeout=wait_seconds)
     except Empty as exc:
         # 外部传入的会话归调用方所有，不得 shutdown；自建会话则停掉，避免复用状态不明的会话。
         if owns_session and session is not None:
@@ -232,18 +252,38 @@ def _run_fetcher_with_timeout(
             # 自建、已在上游超时中被自动停止。两种情况都停不了，也不该谎称停了。
             stop_note = "本层无会话句柄可停（HTTP 直连源，或会话归抓取器自建），直接跳过该源"
         raise _SourceFetchTimeout(
-            f"{label}抓取超过 {SOURCE_FETCH_TIMEOUT_SECONDS}s 未完成，{stop_note}"
+            f"{label}抓取超过 {wait_seconds}s 未完成，{stop_note}"
         ) from exc
     if kind == "err":
         raise payload  # type: ignore[misc]
     return payload  # type: ignore[return-value]
 
 
-def _fetch_source(*, source, fetcher, db: DBManager, session=None, owns_session: bool = False):
+def _fetch_source(
+    *,
+    source,
+    fetcher,
+    db: DBManager,
+    session=None,
+    owns_session: bool = False,
+    deep: bool = False,
+    supports_deep: bool = False,
+):
     """抓取单个源并落库；返回会话（超时置空，调用方据此让后续源自建会话）。"""
     log_line(f"[3/6] 开始抓取{source.name}")
+    timeout_seconds = (
+        SOURCE_DEEP_SCAN_TIMEOUT_SECONDS if deep else SOURCE_FETCH_TIMEOUT_SECONDS
+    )
     try:
-        fetched = _run_fetcher_with_timeout(source.name, fetcher, session, owns_session=owns_session)
+        fetched = _run_fetcher_with_timeout(
+            source.name,
+            fetcher,
+            session,
+            owns_session=owns_session,
+            deep=deep,
+            supports_deep=supports_deep,
+            timeout_seconds=timeout_seconds,
+        )
         # 兼容尚未切到 FetchBatch 的抓取器：裸 list 无法证明拿到全量，一律按 complete=False。
         batch = (
             fetched
@@ -268,6 +308,10 @@ def _fetch_source(*, source, fetcher, db: DBManager, session=None, owns_session:
                 for row in finished_rows:
                     log_line(f"[3/6][自动完成] {_brief_title(row)} | {source.name} | 源内已移除")
                 log_line(f"[3/6][自动完成] {source.name} 源内已移除 {len(finished_rows)} 条，已标记完成")
+        # 撞轮数上限（没滚到底）不记已扫时间：次日自动槽会重试，不能把没拿全当拿全。
+        if deep and batch.complete:
+            scan_state.record_deep_scan_done(source.id)
+            log_line(f"[3/6] {source.name} 深度全量扫描完成，已记录下次到期时间")
     except _SourceFetchTimeout as exc:
         log_line(f"[3/6] {source.name}抓取失败: {exc}")
         record_result(source.id, ok=False, error=str(exc))
@@ -288,7 +332,9 @@ def _session_alive(session) -> bool:
     return bool(getattr(browser, "session_id", None))
 
 
-def _fetch_enabled_sources(*, args: argparse.Namespace, db: DBManager, session=None) -> bool:
+def _fetch_enabled_sources(
+    *, args: argparse.Namespace, db: DBManager, session=None, deep_scan: bool | None = None
+) -> bool:
     """按注册表顺序抓取四源（停用源跳过），返回是否调度了任一源。
 
     会话生命周期（bsk 语义）：外部传入 session 时只复用、绝不 shutdown；否则自建一个共享
@@ -317,11 +363,26 @@ def _fetch_enabled_sources(*, args: argparse.Namespace, db: DBManager, session=N
                 log_line(f"[3/6] {source.name}已停用，跳过抓取")
                 continue
             scheduled = True
+            # deep_scan 三态：True 强制深度、False 强制增量（手动抓取）、None 按到期节奏。
+            deep = False
+            if source.deep_scan_interval_days:
+                deep = deep_scan is True or (
+                    deep_scan is None
+                    and scan_state.deep_scan_due(source.id, source.deep_scan_interval_days)
+                )
+            if deep:
+                log_line(f"[3/6] {source.name} 本轮为深度全量扫描")
             # globals() 解析保留单测 monkeypatch pipeline.<fetcher_name> 的打桩点
             fetcher = globals()[source.fetcher_name]
             if not source.needs_browser:
                 # HTTP 直连源（B站稍后看走官方 API）：不碰浏览器，bsk 会话起不起得来都照抓。
-                _fetch_source(source=source, fetcher=fetcher, db=db)
+                _fetch_source(
+                    source=source,
+                    fetcher=fetcher,
+                    db=db,
+                    deep=deep,
+                    supports_deep=source.deep_scan_interval_days is not None,
+                )
                 continue
             if start_failed:
                 log_line(f"[3/6] {source.name}抓取失败: bsk 会话启动失败，跳过抓取")
@@ -333,6 +394,8 @@ def _fetch_enabled_sources(*, args: argparse.Namespace, db: DBManager, session=N
                 db=db,
                 session=bsk_session,
                 owns_session=own_session and bsk_session is not None,
+                deep=deep,
+                supports_deep=source.deep_scan_interval_days is not None,
             )
             if bsk_session is not None and not _session_alive(bsk_session):
                 log_line("[3/6] bsk 会话已失效（上游超时自动停止），后续源将新建会话")
@@ -469,7 +532,7 @@ def _push_pending_rows(db: DBManager) -> int:
     return 0
 
 
-def run(args: argparse.Namespace, session=None) -> int:
+def run(args: argparse.Namespace, session=None, *, deep_scan: bool | None = None) -> int:
     load_project_env(ENV_PATH)
     log_line("[1/6] 初始化 laterhub")
     db = DBManager(DB_PATH)
@@ -478,14 +541,16 @@ def run(args: argparse.Namespace, session=None) -> int:
         reset_count = db.reset_failed_to_pending()
         log_line(f"[补偿] 已将 failed 重置回 pending {reset_count} 条")
     log_line("[2/6] 开始抓取稍后读来源")
-    scheduled = _fetch_enabled_sources(args=args, db=db, session=session)
+    scheduled = _fetch_enabled_sources(
+        args=args, db=db, session=session, deep_scan=deep_scan
+    )
     if not scheduled:
         log_line("[3/6] 本轮未启用任何抓取来源")
     _tag_pending_rows(db, tagger)
     return _push_pending_rows(db)
 
 
-def run_main_flow(*, fetch_bilibili: bool = True, fetch_douyin: bool = True, fetch_xiaoheihe: bool = True, fetch_weread: bool = True, retry_failed: bool = False, session=None) -> LaterhubRunSummary:
+def run_main_flow(*, fetch_bilibili: bool = True, fetch_douyin: bool = True, fetch_xiaoheihe: bool = True, fetch_weread: bool = True, retry_failed: bool = False, session=None, deep_scan: bool | None = None) -> LaterhubRunSummary:
     args = argparse.Namespace(
         retry_failed=retry_failed,
         fetch_bilibili=fetch_bilibili,
@@ -493,7 +558,7 @@ def run_main_flow(*, fetch_bilibili: bool = True, fetch_douyin: bool = True, fet
         fetch_xiaoheihe=fetch_xiaoheihe,
         fetch_weread=fetch_weread,
     )
-    run(args, session=session)
+    run(args, session=session, deep_scan=deep_scan)
     db = DBManager(DB_PATH)
     fetched_sources = sum(
         1

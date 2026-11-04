@@ -46,7 +46,7 @@ def fetch_news_now() -> dict:
     }
 
 
-def fetch_laterhub_now(session=None) -> dict[str, int]:
+def fetch_laterhub_now(session=None, *, deep_scan: bool | None = None) -> dict[str, int]:
     result = run_main_flow(
         fetch_bilibili=True,
         fetch_douyin=True,
@@ -54,6 +54,7 @@ def fetch_laterhub_now(session=None) -> dict[str, int]:
         fetch_weread=True,
         retry_failed=False,
         session=session,
+        deep_scan=deep_scan,
     )
     return {
         "fetched_sources": result.fetched_sources,

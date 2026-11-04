@@ -120,13 +120,13 @@ def test_pipeline_leaves_missing_items_alone_when_batch_incomplete(tmp_path, mon
 
 def test_pipeline_skips_sources_without_finish_on_removed(tmp_path):
     db = DBManager(tmp_path / "laterhub.sqlite3")
-    removed = "https://www.douyin.com/video/123"
-    _add(db, removed, "douyin_favorite")
+    removed = "https://weread.qq.com/web/reader/abc"
+    _add(db, removed, "weread_shelf")
 
     pipeline._fetch_source(
-        source=SOURCE_BY_ID["douyin_favorite"],
+        source=SOURCE_BY_ID["weread_shelf"],
         fetcher=lambda env_path, *, session=None: FetchBatch(
-            items=[{"url": "https://www.douyin.com/video/456", "title": "新视频", "source": "douyin_favorite"}],
+            items=[{"url": "https://weread.qq.com/web/reader/def", "title": "新书", "source": "weread_shelf"}],
             complete=True,
         ),
         db=db,

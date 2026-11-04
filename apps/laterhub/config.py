@@ -10,12 +10,14 @@ DEBUG_DIR = RUNTIME_DIR / "debug"
 BROWSER_PROFILES_DIR = RUNTIME_DIR / "browser_profiles"
 DB_PATH = DATA_DIR / "laterhub.sqlite3"
 LOG_PATH = LOGS_DIR / "laterhub.log"
+DEEP_SCAN_STATE_PATH = RUNTIME_DIR / "laterhub_deep_scan.json"
 
 __all__ = [
     "BROWSER_PROFILES_DIR",
     "DATA_DIR",
     "DB_PATH",
     "DEBUG_DIR",
+    "DEEP_SCAN_STATE_PATH",
     "ENV_PATH",
     "LOG_PATH",
     "LOGS_DIR",

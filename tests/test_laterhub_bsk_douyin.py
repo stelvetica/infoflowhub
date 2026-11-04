@@ -1,14 +1,16 @@
-"""laterhub「抖音收藏」抓取器 bsk 后端：会话所有权、登录墙可见失败与静态守卫。
+"""laterhub「抖音收藏」抓取器 bsk 后端：会话所有权、登录墙可见失败、增量/深度滚动契约。
 
 假 session / 假 page 打桩，不连真实 daemon 与 Chrome。
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
+from connectors._shared.common import FetchBatch
 from connectors.douyin import favorites
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -36,10 +38,23 @@ ITEMS = [
 ]
 
 
+def _video(n: int) -> dict:
+    return {
+        "video_id": str(n),
+        "url": f"https://www.douyin.com/video/{n}",
+        "title": f"作品{n}",
+        "raw_text": "",
+    }
+
+
 @pytest.fixture(autouse=True)
 def _isolate_debug(tmp_path, monkeypatch):
     """调试 JSON 落到 tmp_path，跑测试绝不写用户 runtime 目录。"""
     monkeypatch.setattr(favorites, "DEBUG_JSON_PATH", tmp_path / "dbg_douyin.json")
+
+
+def _debug() -> dict:
+    return json.loads(favorites.DEBUG_JSON_PATH.read_text(encoding="utf-8"))
 
 
 class FakeMouse:
@@ -55,15 +70,21 @@ class FakeMouse:
 
 
 class FakePage:
-    """记录 goto / wait_for_timeout / evaluate / wheel 调用并返回构造好的 items。"""
+    """记录 goto / wait_for_timeout / evaluate / wheel 调用并返回构造好的 items。
 
-    def __init__(self, items=None, body_text="", raise_on_goto=False) -> None:
+    round_items 可按提取轮次返回不同条目：列表（越界取最后一项）或 `idx -> list` 可调用对象。
+    提取轮次 0 是首屏，之后每滚一轮 +1。
+    """
+
+    def __init__(self, items=None, body_text="", raise_on_goto=False, round_items=None) -> None:
         self.items = ITEMS if items is None else items
         self.body_text = body_text
         self.raise_on_goto = raise_on_goto
+        self.round_items = round_items
         self.goto_calls: list = []
         self.wait_calls: list = []
         self.evaluate_calls: list = []
+        self.extract_rounds = 0
         self.ops: list = []
         self.mouse = FakeMouse(self.ops)
         self.closed = 0
@@ -78,6 +99,15 @@ class FakePage:
         self.wait_calls.append(ms)
         self.ops.append(("wait", ms))
 
+    def _round_items(self) -> list:
+        idx = self.extract_rounds
+        self.extract_rounds += 1
+        if self.round_items is None:
+            return self.items
+        if callable(self.round_items):
+            return self.round_items(idx)
+        return self.round_items[min(idx, len(self.round_items) - 1)]
+
     def evaluate(self, js, arg=None, **kwargs):
         self.evaluate_calls.append((js, arg, kwargs))
         self.ops.append(("evaluate", js))
@@ -85,7 +115,7 @@ class FakePage:
             return self.body_text
         if "__bskPauseVideos" in js:
             return "installed"
-        return self.items
+        return self._round_items()
 
     def close(self) -> None:
         self.closed += 1
@@ -111,17 +141,21 @@ def test_external_session_is_used_but_never_started_or_shutdown():
     page = FakePage()
     session = FakeSession(page)
 
-    result = favorites.fetch_douyin_favorites(session=session)
+    batch = favorites.fetch_douyin_favorites(session=session)
 
+    assert isinstance(batch, FetchBatch)
     # 归一化 + 去重：同视频 id 的重复项与 /note/ 链接被剔除
-    assert len(result) == 1
-    assert result[0]["url"] == "https://www.douyin.com/video/7687074567461915914"
-    assert result[0]["title"] == "破壁狗：AI叛乱下"
-    assert result[0]["source"] == "douyin_favorite"
+    assert len(batch.items) == 1
+    assert batch.items[0]["url"] == "https://www.douyin.com/video/7687074567461915914"
+    assert batch.items[0]["title"] == "破壁狗：AI叛乱下"
+    assert batch.items[0]["source"] == "douyin_favorite"
+    # 增量模式即使已滚到底也不参与移除判定
+    assert batch.complete is False
     # 页面操作确实发生
     assert page.goto_calls and page.goto_calls[0][0] == favorites.DOUYIN_FAVORITE_URL
-    # 首屏等待 → 停播器 → 提取 → 滚一轮（假 page 每轮条数不增长，故滚一轮即停）→ 取 body 文本
-    assert page.wait_calls == [5000, favorites.DOUYIN_SCROLL_WAIT_MS]
+    # 首屏等待 → 停播器 → 提取 → 连续两轮零新增才停 → 取 body 文本
+    assert page.wait_calls[0] == 5000
+    assert len(page.wait_calls) == 1 + favorites.DOUYIN_SCROLL_EMPTY_ROUNDS
     assert [op[0] for op in page.ops[:6]] == ["goto", "wait", "evaluate", "evaluate", "wheel", "wait"]
     assert page.ops[0][1] == favorites.DOUYIN_FAVORITE_URL
     assert page.ops[1][1] == 5000
@@ -132,42 +166,118 @@ def test_external_session_is_used_but_never_started_or_shutdown():
     # 停播器之后、滚动前后的 evaluate 都是抽取 JS，不是滚动表达式
     assert "querySelectorAll" in page.ops[3][1]
     assert "querySelectorAll" in page.ops[6][1]
-    assert page.evaluate_calls
     # 懒加载必须用 wheel：window.scrollTo 对抖音内层滚动容器几乎无效（实测 36 vs 134 锚点）
-    assert page.mouse.wheel_calls == [(0, favorites.DOUYIN_SCROLL_STEP_PX)]
+    assert page.mouse.wheel_calls == [(0, favorites.DOUYIN_SCROLL_STEP_PX)] * 2
     assert all("scrollTo" not in call[0] for call in page.evaluate_calls)
+    # 调试产物如实记录增量语义
+    debug = _debug()
+    assert debug["mode"] == "incremental"
+    assert debug["rounds"] == 2
+    assert debug["reached_bottom"] is True
+    assert debug["complete"] is False
     # 外部会话所有权：只使用，绝不 start/shutdown
     assert session.start_calls == 0
     assert session.shutdown_calls == 0
 
 
-def test_scroll_loop_stops_early_and_keeps_growing_until_rounds_exhausted():
-    """每轮条数增长就继续滚，直到上限；条数不再增长则提前停。"""
+def test_incremental_stops_only_after_two_consecutive_empty_rounds():
+    """追新增长一轮后连续两轮零新增才停：单轮零新增可能是虚拟列表抖动，不能据此收工。"""
+    # idx0 首屏；idx1 多一条；idx2、idx3 相同（连续两轮零新增）
+    rounds = [ITEMS, ITEMS + [_video(1)], ITEMS + [_video(1)], ITEMS + [_video(1)]]
+    page = FakePage(round_items=rounds)
 
-    class GrowingPage(FakePage):
-        def __init__(self) -> None:
-            super().__init__()
-            self.extract_rounds = 0
+    batch = favorites.fetch_douyin_favorites(session=FakeSession(page))
 
-        def evaluate(self, js, arg=None, **kwargs):
-            if "innerText" in js or "__bskPauseVideos" in js:
-                return super().evaluate(js, arg, **kwargs)
-            self.evaluate_calls.append((js, arg, kwargs))
-            self.ops.append(("evaluate", js))
-            self.extract_rounds += 1
-            # 每轮多一条，永远增长 → 必须恰好滚满上限轮数
-            return self.items + [
-                {"url": f"https://www.douyin.com/video/{i}", "title": f"t{i}"}
-                for i in range(self.extract_rounds)
-            ]
+    assert len(page.mouse.wheel_calls) == 3  # 增长轮 + 两轮零新增
+    assert page.extract_rounds == 4  # 首屏 + 3 轮
+    assert {item["url"] for item in batch.items} == {
+        "https://www.douyin.com/video/7687074567461915914",
+        "https://www.douyin.com/video/1",
+    }
+    debug = _debug()
+    assert debug["rounds"] == 3
+    assert debug["reached_bottom"] is True
+    assert batch.complete is False
 
-    page = GrowingPage()
+
+def test_incremental_growing_always_rolls_max_rounds():
+    """每轮都有新增 → 滚满增量上限即停，不无限滚。"""
+    page = FakePage(round_items=lambda idx: ITEMS + [_video(i) for i in range(idx)])
+
+    batch = favorites.fetch_douyin_favorites(session=FakeSession(page))
+
+    assert len(page.mouse.wheel_calls) == favorites.DOUYIN_SCROLL_ROUNDS
+    assert page.extract_rounds == 1 + favorites.DOUYIN_SCROLL_ROUNDS
+    assert batch.complete is False
+    # 累积去重：首屏 1 条有效 + 每轮各 1 条新增
+    assert len(batch.items) == 1 + favorites.DOUYIN_SCROLL_ROUNDS
+    debug = _debug()
+    assert debug["rounds"] == favorites.DOUYIN_SCROLL_ROUNDS
+    assert debug["reached_bottom"] is False
+
+
+def test_incremental_is_never_complete_even_when_reaching_bottom():
+    page = FakePage(round_items=[ITEMS, ITEMS])
+
+    batch = favorites.fetch_douyin_favorites(session=FakeSession(page))
+
+    debug = _debug()
+    assert debug["reached_bottom"] is True
+    assert batch.complete is False
+
+
+def test_deep_scan_collects_until_bottom_and_marks_complete():
+    """深度：增长几轮后连续零新增 = 到底 → complete=True，且逐步长（900）避免跳过卡片。"""
+    rounds = [
+        ITEMS,
+        ITEMS + [_video(1)],
+        ITEMS + [_video(1), _video(2)],
+        ITEMS + [_video(1), _video(2), _video(3)],
+    ]
+    page = FakePage(round_items=rounds)
+
+    batch = favorites.fetch_douyin_favorites(session=FakeSession(page), deep=True)
+
+    assert page.mouse.wheel_calls == [(0, favorites.DOUYIN_DEEP_SCROLL_STEP_PX)] * 5
+    # 首屏 1 条 + 新增 3 条，且必须全部保留（跨轮累积，不能每轮覆盖）
+    assert len(batch.items) == 4
+    assert batch.complete is True
+    debug = _debug()
+    assert debug["mode"] == "deep"
+    assert debug["rounds"] == 5
+    assert debug["reached_bottom"] is True
+    assert debug["complete"] is True
+
+
+def test_deep_scan_hitting_round_cap_is_incomplete():
+    """始终增长 → 撞 200 轮上限 = 没拿全 → complete=False（不参与移除判定）。"""
+    page = FakePage(round_items=lambda idx: ITEMS + [_video(i) for i in range(idx)])
+
+    batch = favorites.fetch_douyin_favorites(session=FakeSession(page), deep=True)
+
+    assert len(page.mouse.wheel_calls) == favorites.DOUYIN_DEEP_SCROLL_MAX_ROUNDS
+    assert batch.complete is False
+    debug = _debug()
+    assert debug["rounds"] == favorites.DOUYIN_DEEP_SCROLL_MAX_ROUNDS
+    assert debug["reached_bottom"] is False
+
+
+def test_scroll_wait_grows_with_round_and_is_capped(monkeypatch):
+    monkeypatch.setattr(favorites.random, "randint", lambda low, high: 0)
+    page = FakePage(round_items=lambda idx: ITEMS + [_video(i) for i in range(idx)])
+
     favorites.fetch_douyin_favorites(session=FakeSession(page))
 
-    # 首屏 1 次 + 每轮 1 次 = 1 + DOUYIN_SCROLL_ROUNDS
-    assert page.extract_rounds == 1 + favorites.DOUYIN_SCROLL_ROUNDS
-    wheel_ops = [op for op in page.ops if op[0] == "wheel"]
-    assert len(wheel_ops) == favorites.DOUYIN_SCROLL_ROUNDS
+    waits = page.wait_calls[1:]
+    expected = [
+        min(
+            favorites.DOUYIN_SCROLL_WAIT_BASE_MS + round_no * favorites.DOUYIN_SCROLL_WAIT_STEP_MS,
+            favorites.DOUYIN_SCROLL_WAIT_MAX_MS,
+        )
+        for round_no in range(favorites.DOUYIN_SCROLL_ROUNDS)
+    ]
+    assert waits == expected
+    assert waits == sorted(waits)
 
 
 def test_own_session_started_and_shutdown_once(monkeypatch):
@@ -180,9 +290,9 @@ def test_own_session_started_and_shutdown_once(monkeypatch):
 
     monkeypatch.setattr(favorites, "BskRunnerSession", fake_ctor)
 
-    result = favorites.fetch_douyin_favorites()
+    batch = favorites.fetch_douyin_favorites()
 
-    assert len(result) == 1
+    assert len(batch.items) == 1
     assert session.start_calls == 1
     assert session.shutdown_calls == 1
 
@@ -209,11 +319,14 @@ def test_login_wall_raises_visible_failure():
     assert "登录" in str(excinfo.value)
 
 
-def test_empty_without_login_wall_returns_empty_list():
+def test_empty_without_login_wall_returns_empty_batch():
     page = FakePage(items=[], body_text="我的收藏")
     session = FakeSession(page)
 
-    assert favorites.fetch_douyin_favorites(session=session) == []
+    batch = favorites.fetch_douyin_favorites(session=session)
+
+    assert batch.items == []
+    assert batch.complete is False
 
 
 def test_non_list_extract_result_fails_loudly():

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import random
 import re
 from typing import Any
 
 from apps.laterhub.config import DEBUG_DIR
 from connectors._shared.bsk_session import BskRunnerSession
+from connectors._shared.common import FetchBatch
 from connectors.douyin.feed import DOUYIN_LOGIN_WALL_MARKERS
 
 
@@ -15,11 +17,18 @@ DOUYIN_WEAK_TITLE_PATTERNS = [
 ]
 DOUYIN_FAVORITE_URL = "https://www.douyin.com/user/self?from_tab_name=main&showTab=favorite_collection"
 # 收藏列表懒加载：首屏只渲染一部分，要靠**真实滚轮事件**往下带（收藏页是内层滚动容器，
-# window.scrollTo 几乎无效——实测锚点 scrollTo 后 36 个，wheel×3 到 134 个）。轮数上限有意
-# 留着：不做全量，滚越多越慢、也越容易触发风控；滚到「本轮条数不再增长」即提前停。
-DOUYIN_SCROLL_ROUNDS = 3
-DOUYIN_SCROLL_STEP_PX = 3000
-DOUYIN_SCROLL_WAIT_MS = 2500
+# window.scrollTo 几乎无效——实测锚点 scrollTo 后 36 个，wheel×3 到 134 个）。
+# 两种节奏：日常增量只为抓新，滚大步长、轮数有上限；到期深度全量要拿到完整列表（据此判定
+# 「源内已移除」），步长必须小于一屏，否则虚拟列表会跳过未渲染的卡片。
+DOUYIN_SCROLL_ROUNDS = 10              # 增量模式轮数上限
+DOUYIN_DEEP_SCROLL_MAX_ROUNDS = 200    # 深度全量上限；撞上限视为没拿全
+DOUYIN_SCROLL_EMPTY_ROUNDS = 2         # 连续零新增轮数 = 到底/追上已知区域
+DOUYIN_SCROLL_STEP_PX = 3000           # 增量步长：只为抓新的，滚大一点快
+DOUYIN_DEEP_SCROLL_STEP_PX = 900       # 深度步长：小于一屏，避免虚拟列表跳过卡片
+DOUYIN_SCROLL_WAIT_BASE_MS = 2500
+DOUYIN_SCROLL_WAIT_STEP_MS = 300       # 越滚越慢：轮次基数递增
+DOUYIN_SCROLL_WAIT_JITTER_MS = 1500    # 在基数上叠加随机抖动
+DOUYIN_SCROLL_WAIT_MAX_MS = 10000
 # 收藏页卡片会在滚轮悬停时自动播放预览视频。bsk 的 wheel/evaluate 属无目标动作，strict 策略
 # 对它们保持整页基线校验：一旦有视频在播（媒体源持续变化），后续动作一律
 # `permission_denied: The media source changed` / `observed content changed`（实测裸滚 8/8 被拒，
@@ -110,11 +119,22 @@ def _body_text(page) -> str:
     return str(value or "")
 
 
+def _scroll_wait_ms(round_no: int) -> int:
+    # 随轮次递增的随机等待：连续快滚最容易触发风控，越往下越慢。
+    return min(
+        DOUYIN_SCROLL_WAIT_BASE_MS
+        + round_no * DOUYIN_SCROLL_WAIT_STEP_MS
+        + random.randint(0, DOUYIN_SCROLL_WAIT_JITTER_MS),
+        DOUYIN_SCROLL_WAIT_MAX_MS,
+    )
+
+
 def fetch_douyin_favorites(
     env_path: str | None = None,
     *,
     session: BskRunnerSession | None = None,
-) -> list[dict[str, Any]]:
+    deep: bool = False,
+) -> FetchBatch:
     # ponytail: env_path 仅为与 pipeline 的 fetcher(ENV_PATH, session=...) 调用姿势同形，
     # bsk 走用户已登录的浏览器，不需要 env 配置；若将来 bsk 需要 env 参数再接线。
     own_session = session is None
@@ -122,7 +142,9 @@ def fetch_douyin_favorites(
         session = BskRunnerSession(start_url="about:blank")
         session.start()
 
-    items: list[dict[str, Any]] = []
+    seen: dict[str, dict[str, Any]] = {}
+    rounds = 0
+    reached_bottom = False
     body_text = ""
     try:
         page = session.acquire_page()
@@ -130,15 +152,34 @@ def fetch_douyin_favorites(
         page.wait_for_timeout(5000)
         # 先停掉预览视频再滚：滚动会触发卡片自动播放，媒体源一变后续 wheel/evaluate 全被拒。
         page.evaluate(DOUYIN_STABILIZE_MEDIA_JS)
-        items = _extract_visible_items(page)
-        # 逐轮下滚让懒加载条目进入 DOM；某轮条数不再增长就停。
-        for _ in range(DOUYIN_SCROLL_ROUNDS):
-            page.mouse.wheel(0, DOUYIN_SCROLL_STEP_PX)
-            page.wait_for_timeout(DOUYIN_SCROLL_WAIT_MS)
-            grown = _extract_visible_items(page)
-            if len(grown) <= len(items):
-                break
-            items = grown
+
+        def _absorb(extracted: list[dict[str, Any]]) -> int:
+            # 必须跨轮累积：收藏页虚拟列表会把滚出视口的卡片从 DOM 摘掉，每轮覆盖会丢条目。
+            added = 0
+            for item in extracted:
+                key = str(item.get("video_id") or item.get("url") or "").strip()
+                if not key or key in seen:
+                    continue
+                seen[key] = item
+                added += 1
+            return added
+
+        _absorb(_extract_visible_items(page))
+        # 逐轮下滚让懒加载条目进入 DOM；连续多轮零新增才认定到底/追上已知区域。
+        limit = DOUYIN_DEEP_SCROLL_MAX_ROUNDS if deep else DOUYIN_SCROLL_ROUNDS
+        step = DOUYIN_DEEP_SCROLL_STEP_PX if deep else DOUYIN_SCROLL_STEP_PX
+        empty_rounds = 0
+        for round_no in range(limit):
+            page.mouse.wheel(0, step)
+            page.wait_for_timeout(_scroll_wait_ms(round_no))
+            rounds = round_no + 1
+            if _absorb(_extract_visible_items(page)) == 0:
+                empty_rounds += 1
+                if empty_rounds >= DOUYIN_SCROLL_EMPTY_ROUNDS:
+                    reached_bottom = True
+                    break
+            else:
+                empty_rounds = 0
         body_text = _body_text(page)
         try:
             page.close()
@@ -148,7 +189,12 @@ def fetch_douyin_favorites(
         if own_session:
             session.shutdown()
 
-    login_wall = not items and any(marker in body_text for marker in DOUYIN_LOGIN_WALL_MARKERS)
+    login_wall = not seen and any(marker in body_text for marker in DOUYIN_LOGIN_WALL_MARKERS)
+    # 只有深度全量滚到底才算拿到完整列表；增量模式即使滚到头也没扫全量，不能参与移除判定。
+    # ponytail: 底边靠「连续零新增」推断，若收藏页是无尽推荐流，深度扫描永远不完整（安全但功能失效）；
+    # 升级路径 = 改走收藏接口 cursor 分页拿独立底边信号。
+    complete = deep and reached_bottom
+    items = list(seen.values())
     # 调试产物的 ok 必须反映真实结论：登录墙时写 ok=false 并带失败原因，不能先写成功产物再抛错。
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
     DEBUG_JSON_PATH.write_text(
@@ -157,6 +203,10 @@ def fetch_douyin_favorites(
                 "ok": not login_wall,
                 "count": len(items),
                 "items": items,
+                "mode": "deep" if deep else "incremental",
+                "rounds": rounds,
+                "reached_bottom": reached_bottom,
+                "complete": complete,
                 **({"error": "命中登录墙标记，未能加载收藏列表"} if login_wall else {}),
             },
             ensure_ascii=False,
@@ -169,14 +219,14 @@ def fetch_douyin_favorites(
         raise RuntimeError("抖音收藏页面疑似未登录/登录态失效：命中登录墙标记，未能加载收藏列表")
 
     result: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    seen_urls: set[str] = set()
     for item in items:
         normalized = normalize_douyin_item(item)
         if not normalized:
             continue
         url = normalized["url"]
-        if url in seen:
+        if url in seen_urls:
             continue
-        seen.add(url)
+        seen_urls.add(url)
         result.append(normalized)
-    return result
+    return FetchBatch(items=result, complete=complete)

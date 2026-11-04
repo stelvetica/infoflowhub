@@ -355,7 +355,8 @@ async def fetch_now_action(request: Request):
 
 @router.post("/actions/laterhub/fetch-now", response_class=HTMLResponse)
 async def laterhub_fetch_now_action(request: Request):
-    await run_in_threadpool(fetch_laterhub_now)
+    # 手动抓取固定走增量：深度全量会让这个 HTTP 请求挂十几分钟。
+    await run_in_threadpool(fetch_laterhub_now, deep_scan=False)
     params = query_dict(request)
     return templates.TemplateResponse(request, "partials/laterhub_panel.html", {"laterhub": get_laterhub_view(params), "params": params, "laterhub_params": build_laterhub_state_params(params)})
 

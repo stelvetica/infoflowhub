@@ -23,6 +23,8 @@ PIPELINE_PATH = REPO_ROOT / "apps" / "laterhub" / "pipeline.py"
 def _isolate_laterhub_health(monkeypatch):
     """pipeline 抓取后会写健康文件：打桩模块级名字，避免污染真实 runtime。"""
     monkeypatch.setattr(pipeline, "record_result", lambda *args, **kwargs: None)
+    # 本文件测会话/超时生命周期，不关心深度调度：固定走增量，避免真实到期状态影响用例。
+    monkeypatch.setattr(pipeline.scan_state, "deep_scan_due", lambda *args, **kwargs: False)
 
 
 class FakeDB:
@@ -139,7 +141,7 @@ def test_timeout_does_not_block_next_source(monkeypatch):
             self.shutdown_calls += 1
             self.browser.session_id = None
 
-    def hang_fetcher(env_path, *, session=None):
+    def hang_fetcher(env_path, *, session=None, deep=False):
         received.append(session)
         time.sleep(60)
         return []
@@ -196,7 +198,7 @@ def test_dead_session_from_internal_timeout_is_rebuilt_for_next_source(monkeypat
             self.shutdown_calls += 1
             self.browser.session_id = None
 
-    def dying_fetcher(env_path, *, session=None):
+    def dying_fetcher(env_path, *, session=None, deep=False):
         received.append(session)
         # 模拟 BskBrowser 子进程超时：默认 stop_session_on_timeout 会清空 session_id，但抓取器正常返回。
         session.browser.session_id = None
@@ -254,7 +256,7 @@ def test_self_built_session_started_and_shutdown_once(monkeypatch):
         monkeypatch.setattr(
             pipeline,
             name,
-            lambda env_path, *, session=None, source=source: [
+            lambda env_path, *, session=None, deep=False, source=source: [
                 {"url": f"u-{source}", "title": "t", "source": source}
             ],
         )
@@ -290,7 +292,7 @@ def test_self_built_session_shuts_down_on_fetcher_exception(monkeypatch):
             self.shutdown_calls += 1
             self.browser.session_id = None
 
-    def boom_fetcher(env_path, *, session=None):
+    def boom_fetcher(env_path, *, session=None, deep=False):
         raise ValueError("boom")
 
     monkeypatch.setattr(pipeline, "BskRunnerSession", FakeBsk)
@@ -353,7 +355,7 @@ def test_external_session_not_started_or_shutdown(monkeypatch):
     monkeypatch.setattr(
         pipeline,
         "fetch_douyin_favorites",
-        lambda env_path, *, session=None: [{"url": "u1", "title": "t1", "source": "douyin_favorite"}],
+        lambda env_path, *, session=None, deep=False: [{"url": "u1", "title": "t1", "source": "douyin_favorite"}],
     )
 
     pipeline._fetch_enabled_sources(args=_args(fetch_douyin=True), db=FakeDB(), session=session)

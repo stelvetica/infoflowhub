@@ -29,11 +29,17 @@ class LaterhubSource:
     needs_browser: bool
     # 源能拉全量、且「消失即已处理」的源才置 True：本轮抓全后，源里不再出现的未完成条目自动完成。
     finish_on_removed: bool
+    # 非 None 表示该源支持「深度全量扫描」并按此天数到期：日常只抓增量，到期那轮才滚到底。
+    deep_scan_interval_days: int | None = None
 
 
 SOURCES: tuple[LaterhubSource, ...] = (
     LaterhubSource("bilibili_watchlater", "B站稍后看", "收藏/稍后处理", "Bilibili", "网页抓取（bsk）", "", "fetch_bilibili", "fetch_bilibili_watchlater", True, True),
-    LaterhubSource("douyin_favorite", "抖音收藏", "收藏/稍后处理", "抖音", "网页抓取（bsk）", "douyin_shared", "fetch_douyin", "fetch_douyin_favorites", True, False),
+    LaterhubSource(
+        "douyin_favorite", "抖音收藏", "收藏/稍后处理", "抖音", "网页抓取（bsk）", "douyin_shared", "fetch_douyin", "fetch_douyin_favorites", True,
+        finish_on_removed=True,
+        deep_scan_interval_days=30,
+    ),
     LaterhubSource("xiaoheihe_favor", "小黑盒收藏", "收藏/稍后处理", "小黑盒", "网页抓取（bsk）", "xiaoheihe_shared", "fetch_xiaoheihe", "fetch_xiaoheihe_favorites", True, True),
     LaterhubSource("weread_shelf", "微信读书书架", "待读/稍后处理", "微信读书", "网页抓取（bsk）", "", "fetch_weread", "fetch_weread_shelf", True, False),
 )
