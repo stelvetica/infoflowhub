@@ -141,4 +141,6 @@ def test_cc_success_also_passes_description(tmp_path, monkeypatch):
     assert outcome.status == "succeeded"
     assert llm.subtitle_calls[0]["description"] == "简介：工具名称与链接"
     assert llm.desc_calls == [] and llm.video_calls == []
-    assert "字幕来源：B站字幕" in _report(reports_dir, db, link_id)
+    markdown = _report(reports_dir, db, link_id)
+    assert "字幕来源：B站字幕" in markdown
+    assert "处理说明：使用B站CC字幕；B站简介作为补充材料参与分析" in markdown

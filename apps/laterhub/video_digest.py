@@ -273,13 +273,24 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
                     work_notes.append("已下载视频并转写，bijian/jianying 均未识别到有效人声")
 
         if subtitle_text:
+            # 正常路径也把材料链写清楚：简介参与了就明确标注，避免用户不知道是否用了简介
+            material_notes = ["使用B站CC字幕"] if subtitle_source == "bilibili_cc" else [*work_notes, "语音转写成功"]
+            if meta.description:
+                material_notes.append("B站简介作为补充材料参与分析")
             digest = llm.generate_from_subtitle(
                 title=title,
                 owner=meta.owner,
                 subtitle_text=subtitle_text,
                 description=meta.description,
             )
-            path = _finalize(db, link_id, row, digest, subtitle_source=subtitle_source, reports_dir=reports_dir, owner=meta.owner, duration_seconds=meta.duration_seconds)
+            path = _finalize(
+                db, link_id, row, digest,
+                subtitle_source=subtitle_source,
+                reports_dir=reports_dir,
+                owner=meta.owner,
+                duration_seconds=meta.duration_seconds,
+                process_note="；".join(material_notes),
+            )
             return DigestOutcome(link_id, url, title, "succeeded", str(path))
 
         # 3) 无人声：优先用 B站简介分析；简介为空才回退多模态看视频
