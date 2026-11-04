@@ -14,3 +14,6 @@ pyyaml>=6,<7
 # browser fetching itself does not need Playwright).
 # After installing, also run:  python -m playwright install chromium
 # playwright>=1.40,<2
+# portfolio-operations：读估值表（.xlsx / .xls）
+openpyxl>=3.1,<4
+xlrd>=2,<3
