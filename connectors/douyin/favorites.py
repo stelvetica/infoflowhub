@@ -21,7 +21,7 @@ DOUYIN_FAVORITE_URL = "https://www.douyin.com/user/self?from_tab_name=main&showT
 # 两种节奏：日常增量只为抓新，滚大步长、轮数有上限；到期深度全量要拿到完整列表（据此判定
 # 「源内已移除」），步长必须小于一屏，否则虚拟列表会跳过未渲染的卡片。
 DOUYIN_SCROLL_ROUNDS = 10              # 增量模式轮数上限
-DOUYIN_DEEP_SCROLL_MAX_ROUNDS = 200    # 深度全量上限；撞上限视为没拿全
+DOUYIN_DEEP_SCROLL_MAX_ROUNDS = 150    # 深度全量上限；撞上限视为没拿全（与 30 分钟预算对齐）
 DOUYIN_SCROLL_EMPTY_ROUNDS = 2         # 连续零新增轮数 = 到底/追上已知区域
 DOUYIN_SCROLL_STEP_PX = 3000           # 增量步长：只为抓新的，滚大一点快
 DOUYIN_DEEP_SCROLL_STEP_PX = 900       # 深度步长：小于一屏，避免虚拟列表跳过卡片
@@ -190,10 +190,11 @@ def fetch_douyin_favorites(
             session.shutdown()
 
     login_wall = not seen and any(marker in body_text for marker in DOUYIN_LOGIN_WALL_MARKERS)
-    # 只有深度全量滚到底才算拿到完整列表；增量模式即使滚到头也没扫全量，不能参与移除判定。
+    # 只有深度全量滚到底、且确实拿到条目才算完整：增量模式即使滚到头也没扫全量；
+    # 0 条更像是页面结构变了/没渲染出来，不能据此把库里所有收藏判成「已移除」。
     # ponytail: 底边靠「连续零新增」推断，若收藏页是无尽推荐流，深度扫描永远不完整（安全但功能失效）；
     # 升级路径 = 改走收藏接口 cursor 分页拿独立底边信号。
-    complete = deep and reached_bottom
+    complete = deep and reached_bottom and bool(seen)
     items = list(seen.values())
     # 调试产物的 ok 必须反映真实结论：登录墙时写 ok=false 并带失败原因，不能先写成功产物再抛错。
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)

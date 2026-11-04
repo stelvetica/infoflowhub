@@ -226,6 +226,18 @@ def test_incremental_is_never_complete_even_when_reaching_bottom():
     assert batch.complete is False
 
 
+def test_deep_scan_with_zero_items_is_not_complete():
+    """0 条更像页面没渲染/结构变了：绝不能当「收藏全清空」把所有库内条目判成已移除。"""
+    page = FakePage(items=[], body_text="我的收藏")
+
+    batch = favorites.fetch_douyin_favorites(session=FakeSession(page), deep=True)
+
+    debug = _debug()
+    assert debug["reached_bottom"] is True
+    assert batch.items == []
+    assert batch.complete is False
+
+
 def test_deep_scan_collects_until_bottom_and_marks_complete():
     """深度：增长几轮后连续零新增 = 到底 → complete=True，且逐步长（900）避免跳过卡片。"""
     rounds = [

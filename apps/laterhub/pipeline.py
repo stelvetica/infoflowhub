@@ -299,8 +299,10 @@ def _fetch_source(
         # 只有确认拿到完整列表才敢按「源里没有 = 已移除」判定，抓取半途而废一律不动。
         if source.finish_on_removed:
             if not batch.complete:
-                # 不完整时静默跳过会让功能悄悄失效，必须留痕才能发现翻页/接口退化。
-                log_line(f"[3/6][WARN] {source.name} 未拿到完整列表，跳过源内移除判定")
+                # 增量模式本就不完整（抖音日常），只有当这一轮本该完整却没拿全时才值得报警：
+                # 深度轮没滚到底，或本来就不分增量的源（B站/小黑盒）没拉全。
+                if deep or source.deep_scan_interval_days is None:
+                    log_line(f"[3/6][WARN] {source.name} 未拿到完整列表，跳过源内移除判定")
             else:
                 finished_rows = db.mark_missing_finished(
                     source.id, {item["url"] for item in batch.items}
