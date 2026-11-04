@@ -23,8 +23,12 @@ import requests
 from apps.laterhub.tagger import LLMConfig
 
 
-# 字幕截断时写进 note 的固定提示（编排层截断字幕时传 truncated=True）
-TRUNCATED_NOTE = "字幕因长度截断，总结仅基于前部分内容"
+# 长字幕强制分批（对齐 explain-notes 的「长文本必须分批」原则）：不截断、不跳读。
+# 每块按行切到 12k 字以内；相邻块保留 2 行重叠，避免在句子/论点边界处断链。
+CHUNK_MAX_CHARS = 12000
+CHUNK_OVERLAP_LINES = 2
+# 分段笔记合并上限：超过则再做一层归并，保证最终请求不会撑爆上下文。
+MERGE_MAX_CHARS = 24000
 
 SYSTEM_PROMPT = """你是视频内容简报助手。你的任务是把给定的视频材料整理成一份简明扼要的中文简报。
 
@@ -42,8 +46,21 @@ SUBTITLE_HINT = """
 不要复述错别字，也不要因为个别字词错误而偏离视频真实意思。
 """
 
-TRUNCATED_HINT = f"""
-补充要求：字幕因长度被截断，你只能看到视频前部分内容。必须在 note 中注明"{TRUNCATED_NOTE}"。
+CHUNK_SYSTEM_PROMPT = """你是视频字幕的分段整理器。你的任务是把给定的一段字幕按时间顺序整理成信息完整的分段笔记。
+
+硬约束：
+1. 只基于给定片段整理，禁止编造片段中不存在的事实、数字、人物或结论。
+2. 输出纯文本，不要 JSON、不要 Markdown 代码块。
+3. 保留本段的观点、论证、案例、数据、时间、条件与例外；不能只留结论、丢掉论据。
+4. 按时间顺序分段，可用短横线列表；关键名词与核心数据加粗。
+5. 字幕可能有同音字与断句错误：按语义理解，不要复述错别字，也不要因此偏离原意。
+"""
+
+MERGE_HINT = """
+补充要求：材料是同一个视频按时间顺序分段整理后的笔记（不是原文字幕）。请合并成全局简报：
+- 跨段重复的信息去重，但不得丢掉后段新增的数据、条件、例外与结论；
+- 按视频推进顺序组织，保留前后因果、转折与最终结论；
+- 只基于这些分段笔记，不引入外部信息。
 """
 
 VIDEO_URL_HINT = """
@@ -56,6 +73,41 @@ class DigestContent:
     summary: str
     key_points: list[str]
     note: str | None
+
+
+def split_text(
+    text: str,
+    *,
+    max_chars: int = CHUNK_MAX_CHARS,
+    overlap_lines: int = CHUNK_OVERLAP_LINES,
+) -> list[str]:
+    """按行切块（单行超长时硬切），相邻块保留若干行重叠，避免断句处丢上下文。
+
+    只做机械切分，不改写正文；所有行都会进入某个块，保证零遗漏。
+    """
+    lines: list[str] = []
+    for line in str(text).splitlines():
+        if len(line) <= max_chars:
+            lines.append(line)
+        else:
+            lines.extend(line[start : start + max_chars] for start in range(0, len(line), max_chars))
+
+    chunks: list[str] = []
+    current: list[str] = []
+    size = 0
+    for line in lines:
+        if current and size + len(line) + 1 > max_chars:
+            chunks.append("\n".join(current))
+            current = current[-overlap_lines:] if overlap_lines > 0 else []
+            # 重叠行本身不能把下一块撑爆（超长单行被硬切时会遇到）
+            while current and sum(len(item) + 1 for item in current) + len(line) + 1 > max_chars:
+                current = current[1:]
+            size = sum(len(item) + 1 for item in current)
+        current.append(line)
+        size += len(line) + 1
+    if current:
+        chunks.append("\n".join(current))
+    return chunks or [""]
 
 
 class VideoDigestLLM:
@@ -76,15 +128,58 @@ class VideoDigestLLM:
         title: str,
         owner: str | None,
         subtitle_text: str,
-        truncated: bool = False,
     ) -> DigestContent:
-        system = SYSTEM_PROMPT + SUBTITLE_HINT + (TRUNCATED_HINT if truncated else "")
+        """字幕 → 简报。长字幕分批整理后合并，不截断、不跳读。"""
+        chunks = split_text(subtitle_text)
+        if len(chunks) <= 1:
+            system = SYSTEM_PROMPT + SUBTITLE_HINT
+            user = (
+                f"视频标题：{title}\n"
+                f"作者：{owner or '未知'}\n\n"
+                f"字幕文本：\n{subtitle_text}"
+            )
+            return self._with_fallback(system, user)
+
+        notes = [
+            self._summarize_chunk(title=title, owner=owner, chunk=chunk, index=index, total=len(chunks))
+            for index, chunk in enumerate(chunks, 1)
+        ]
+        return self._merge_notes(title=title, owner=owner, notes=notes)
+
+    def _summarize_chunk(
+        self, *, title: str, owner: str | None, chunk: str, index: int, total: int
+    ) -> str:
+        user = (
+            f"视频标题：{title}\n"
+            f"作者：{owner or '未知'}\n"
+            f"本段是第 {index}/{total} 段字幕。\n\n"
+            f"字幕片段：\n{chunk}"
+        )
+        return self._text_with_fallback(CHUNK_SYSTEM_PROMPT, user)
+
+    def _merge_notes(self, *, title: str, owner: str | None, notes: list[str]) -> DigestContent:
+        merged = self._join_notes(notes)
+        # 极长视频：分段笔记仍可能超出单次合并预算，再做一层归并（最多 3 轮兜底）
+        for _ in range(3):
+            if len(merged) <= MERGE_MAX_CHARS:
+                break
+            groups = split_text(merged, max_chars=CHUNK_MAX_CHARS, overlap_lines=0)
+            notes = [
+                self._summarize_chunk(title=title, owner=owner, chunk=group, index=index, total=len(groups))
+                for index, group in enumerate(groups, 1)
+            ]
+            merged = self._join_notes(notes)
+        system = SYSTEM_PROMPT + MERGE_HINT
         user = (
             f"视频标题：{title}\n"
             f"作者：{owner or '未知'}\n\n"
-            f"字幕文本：\n{subtitle_text}"
+            f"分段整理：\n{merged}"
         )
         return self._with_fallback(system, user)
+
+    @staticmethod
+    def _join_notes(notes: list[str]) -> str:
+        return "\n\n".join(f"【第 {index} 段】\n{note}" for index, note in enumerate(notes, 1))
 
     def generate_from_video_url(
         self,
@@ -118,7 +213,44 @@ class VideoDigestLLM:
                 errors.append(self._format_error(label, exc))
         raise RuntimeError("视频简报生成失败: " + "; ".join(errors))
 
+    def _text_with_fallback(self, system: str, user: str, *, max_tokens: int = 3000) -> str:
+        """分段整理走纯文本输出（不要求 JSON），主备降级口径与简报一致。"""
+        attempts: list[tuple[str, LLMConfig]] = [("primary", self.config)]
+        if self.backup_config:
+            attempts.append(("backup", self.backup_config))
+        errors: list[str] = []
+        for label, config in attempts:
+            try:
+                return self._complete(
+                    config=config,
+                    system=system,
+                    user_content=user,
+                    json_mode=False,
+                    max_tokens=max_tokens,
+                )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(self._format_error(label, exc))
+        raise RuntimeError("字幕分段整理失败: " + "; ".join(errors))
+
     def _generate(self, *, config: LLMConfig, system: str, user_content: Any) -> DigestContent:
+        content = self._complete(
+            config=config,
+            system=system,
+            user_content=user_content,
+            json_mode=True,
+            max_tokens=3000,
+        )
+        return self._validate(self._parse_json_object(content))
+
+    def _complete(
+        self,
+        *,
+        config: LLMConfig,
+        system: str,
+        user_content: Any,
+        json_mode: bool,
+        max_tokens: int,
+    ) -> str:
         payload = {
             "model": config.model,
             "messages": [
@@ -126,12 +258,13 @@ class VideoDigestLLM:
                 {"role": "user", "content": user_content},
             ],
             "thinking": {"type": "disabled"},
-            "response_format": {"type": "json_object"},
             "temperature": 0.2,
             # glm-5.3-flash 等思考模型把思考 token 计入 max_tokens 且不受 thinking 参数约束，
             # 上限过小会整条返回空 content（与 tagger.py 同一坑，故这里给到 3000）。
-            "max_tokens": 3000,
+            "max_tokens": max_tokens,
         }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
         response = requests.post(
             f"{config.base_url}/v1/chat/completions",
             headers={
@@ -149,7 +282,7 @@ class VideoDigestLLM:
         content = str(message.get("content") or "").strip()
         if not content:
             raise RuntimeError("模型返回空 content（思考模型可能耗尽 max_tokens）")
-        return self._validate(self._parse_json_object(content))
+        return content
 
     @staticmethod
     def _parse_json_object(text: str) -> dict[str, Any]:
@@ -256,15 +389,9 @@ def render_digest_markdown(
     subtitle_source: str,
     generated_at: str,
     digest: DigestContent,
-    truncated: bool = False,
 ) -> str:
     """渲染简报 Markdown：只用标题/无序列表/粗体/段落（md_render.py 支持子集）。"""
-    if digest.note:
-        note = digest.note
-    elif truncated:
-        note = TRUNCATED_NOTE
-    else:
-        note = "无"
+    note = digest.note or "无"
 
     points = "\n".join(f"- {point}" for point in digest.key_points)
     return (

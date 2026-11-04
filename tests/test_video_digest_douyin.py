@@ -103,7 +103,6 @@ def test_douyin_full_chain_succeeds_and_cleans_workdir(tmp_path, monkeypatch):
 
     call = llm.subtitle_calls[0]
     assert call["owner"] is None
-    assert call["truncated"] is False
     assert "抖音字幕正文" in call["subtitle_text"]
     assert llm.video_calls == []  # 抖音不走 GLM video_url 兜底
     assert not workdir.exists()  # finally 清理
@@ -143,20 +142,20 @@ def test_douyin_transcribe_error_marks_failed(tmp_path, monkeypatch):
     assert "转写" in row["digest_error"]
 
 
-def test_douyin_subtitle_is_truncated_at_limit(tmp_path, monkeypatch):
+def test_douyin_long_subtitle_is_passed_whole_to_llm(tmp_path, monkeypatch):
+    """编排层不再截断：长字幕原样交给 LLM 层，由其分块处理。"""
     db = DBManager(tmp_path / "d4.sqlite3")
     link_id = _add(db, DOUYIN)
     _patch_tmp(monkeypatch, tmp_path)
+    long_text = "字" * 30000
     monkeypatch.setattr(vd, "download_douyin_video", _fake_download())
-    monkeypatch.setattr(vd, "_transcribe_with_videocaptioner", _fake_transcribe("字" * (vd.SUBTITLE_MAX_CHARS + 50)))
+    monkeypatch.setattr(vd, "_transcribe_with_videocaptioner", _fake_transcribe(long_text))
 
     llm = FakeLLM()
     outcome = vd.process_one(db, db.get_digest_row(link_id), llm=llm, reports_dir=tmp_path / "reports")
 
     assert outcome.status == "succeeded"
-    call = llm.subtitle_calls[0]
-    assert call["truncated"] is True
-    assert len(call["subtitle_text"]) == vd.SUBTITLE_MAX_CHARS
+    assert llm.subtitle_calls[0]["subtitle_text"] == long_text
 
 
 # ---------- db.reset_unsupported_to_pending ----------

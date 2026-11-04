@@ -14,11 +14,11 @@ import pytest
 from apps.laterhub import video_digest_llm as mod
 from apps.laterhub.tagger import LLMConfig
 from apps.laterhub.video_digest_llm import (
-    TRUNCATED_NOTE,
     DigestContent,
     VideoDigestLLM,
     build_digest_filename,
     render_digest_markdown,
+    split_text,
     write_digest_report,
 )
 
@@ -148,6 +148,56 @@ def test_key_points_over_seven_is_truncated(monkeypatch):
     assert result.key_points == [f"要点{i}" for i in range(1, 8)]
 
 
+# ---------- 长字幕分批 ----------
+
+
+def test_split_text_covers_all_lines_with_overlap():
+    text = "\n".join(f"第{i}行" for i in range(1, 31))
+    chunks = split_text(text, max_chars=40, overlap_lines=1)
+
+    assert len(chunks) > 1
+    for i in range(1, 31):
+        assert any(f"第{i}行" in chunk for chunk in chunks)
+    for prev, nxt in zip(chunks, chunks[1:]):
+        assert nxt.splitlines()[0] == prev.splitlines()[-1]
+
+
+def test_split_text_hard_splits_overlong_single_line():
+    text = "字" * 25
+    chunks = split_text(text, max_chars=10, overlap_lines=2)
+
+    assert "".join(chunks) == text
+    assert all(len(chunk) <= 10 for chunk in chunks)
+
+
+def test_long_subtitle_is_chunked_then_merged(monkeypatch):
+    payloads: list[dict] = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        payloads.append(json)
+        if "response_format" in json:
+            return _ok(_digest_json(summary="合并总结", note="合并备注"))
+        return _ok("分段笔记")
+
+    monkeypatch.setattr(mod.requests, "post", fake_post)
+    text = "\n".join(["开头内容" * 20, "中间内容" * 3000, "结尾内容" * 20])
+
+    result = VideoDigestLLM(PRIMARY).generate_from_subtitle(title="长视频", owner=None, subtitle_text=text)
+
+    chunk_calls = [p for p in payloads if "response_format" not in p]
+    merge_calls = [p for p in payloads if "response_format" in p]
+    assert result == DigestContent(summary="合并总结", key_points=["要点一", "要点二", "要点三"], note="合并备注")
+    assert len(chunk_calls) >= 2 and len(merge_calls) == 1
+
+    # 全文覆盖：首尾都进入了分段请求，没有截断
+    all_chunk_text = "\n".join(str(p["messages"][1]["content"]) for p in chunk_calls)
+    assert "开头内容" * 20 in all_chunk_text
+    assert "结尾内容" * 20 in all_chunk_text
+    # 合并请求拿到全部分段笔记
+    merge_user = str(merge_calls[0]["messages"][1]["content"])
+    assert merge_user.count("分段笔记") == len(chunk_calls)
+
+
 # ---------- generate_from_video_url ----------
 
 
@@ -227,14 +277,13 @@ def test_render_digest_markdown_note_priority_and_source_passthrough():
         subtitle_source="glm_video",
         generated_at="now",
         digest=DigestContent(summary="s", key_points=["a", "b", "c"], note="模型备注"),
-        truncated=True,
     )
     assert "来源：unknown_source" in with_note
     assert "字幕来源：AI 视频理解" in with_note
     assert "时长：未知" in with_note
     assert "模型备注" in with_note
 
-    truncated_only = render_digest_markdown(
+    no_note = render_digest_markdown(
         title="T",
         url="u",
         source="douyin_favorites",
@@ -243,9 +292,8 @@ def test_render_digest_markdown_note_priority_and_source_passthrough():
         subtitle_source="videocaptioner_bijian",
         generated_at="now",
         digest=DigestContent(summary="s", key_points=["a", "b", "c"], note=None),
-        truncated=True,
     )
-    assert TRUNCATED_NOTE in truncated_only
+    assert "无" in no_note
 
 
 # ---------- write_digest_report ----------

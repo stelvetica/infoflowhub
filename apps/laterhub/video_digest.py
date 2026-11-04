@@ -35,9 +35,7 @@ REPORTS_DIR = DATA_DIR / "reports"
 # 简报产物独立子目录：不与其它产物混放，也不进面板「新闻公告」白名单
 DIGEST_SUBDIR = "video_digest"
 TMP_DIR = DATA_DIR / "tmp" / "video_digest"
-# 字幕喂给 LLM 的字符上限： glm-5.3-flash 上下文足够，但一小时视频的逐字稿可超 5 万字，
-# 截断到 2 万字保预算，报告里标注"仅基于前部分内容"
-SUBTITLE_MAX_CHARS = 20000
+# 长字幕不在编排层截断：video_digest_llm 按行分批整理后再合并（见 CHUNK_MAX_CHARS）。
 ASR_TIMEOUT_SECONDS = 1800
 DOUYIN_BATCH_GAP_SECONDS = 15
 
@@ -130,7 +128,6 @@ def _finalize(
     digest: DigestContent,
     *,
     subtitle_source: str,
-    truncated: bool,
     reports_dir: Path,
     owner: str | None,
     duration_seconds: int | None,
@@ -152,7 +149,6 @@ def _finalize(
         subtitle_source=subtitle_source,
         generated_at=now,
         digest=digest,
-        truncated=truncated,
     )
     # digest_path 存相对 reports 根的路径（含子目录），面板/幂等检查按此定位
     path = write_digest_report(digest_dir, filename, markdown)
@@ -176,20 +172,14 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
             step = "语音转写"
             srt_path = _transcribe_with_videocaptioner(video_path, workdir)
             subtitle_text = _srt_to_text(srt_path)
-            truncated = len(subtitle_text) > SUBTITLE_MAX_CHARS
-            if truncated:
-                subtitle_text = subtitle_text[:SUBTITLE_MAX_CHARS]
             step = "生成简报"
-            digest = llm.generate_from_subtitle(
-                title=title, owner=None, subtitle_text=subtitle_text, truncated=truncated
-            )
+            digest = llm.generate_from_subtitle(title=title, owner=None, subtitle_text=subtitle_text)
             path = _finalize(
                 db,
                 link_id,
                 row,
                 digest,
                 subtitle_source="videocaptioner_bijian",
-                truncated=truncated,
                 reports_dir=reports_dir,
                 owner=None,
                 duration_seconds=duration_seconds,
@@ -227,7 +217,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
             return DigestOutcome(link_id, url, title, "failed", f"meta: {exc}")
 
         # 1) B站 CC 字幕直取：免费、秒级、免下载
-        subtitle_text, subtitle_source, truncated = "", "", False
+        subtitle_text, subtitle_source = "", ""
         try:
             cc = bili_video.get_bilibili_cc_subtitle_text(meta.bvid, meta.cid, page=page)
         except Exception as exc:  # noqa: BLE001
@@ -256,16 +246,11 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
                     db.mark_digest_failed(link_id, error_message=detail[:500])
                     return DigestOutcome(link_id, url, title, "failed", detail)
                 digest = llm.generate_from_video_url(title=title, owner=meta.owner, video_url=mp4_url)
-                path = _finalize(db, link_id, row, digest, subtitle_source="glm_video", truncated=False, reports_dir=reports_dir, owner=meta.owner, duration_seconds=meta.duration_seconds)
+                path = _finalize(db, link_id, row, digest, subtitle_source="glm_video", reports_dir=reports_dir, owner=meta.owner, duration_seconds=meta.duration_seconds)
                 return DigestOutcome(link_id, url, title, "succeeded", str(path))
 
-        if len(subtitle_text) > SUBTITLE_MAX_CHARS:
-            subtitle_text = subtitle_text[:SUBTITLE_MAX_CHARS]
-            truncated = True
-        digest = llm.generate_from_subtitle(
-            title=title, owner=meta.owner, subtitle_text=subtitle_text, truncated=truncated
-        )
-        path = _finalize(db, link_id, row, digest, subtitle_source=subtitle_source, truncated=truncated, reports_dir=reports_dir, owner=meta.owner, duration_seconds=meta.duration_seconds)
+        digest = llm.generate_from_subtitle(title=title, owner=meta.owner, subtitle_text=subtitle_text)
+        path = _finalize(db, link_id, row, digest, subtitle_source=subtitle_source, reports_dir=reports_dir, owner=meta.owner, duration_seconds=meta.duration_seconds)
         return DigestOutcome(link_id, url, title, "succeeded", str(path))
     except Exception as exc:  # noqa: BLE001
         db.mark_digest_failed(link_id, error_message=f"{type(exc).__name__}: {exc}"[:500])
