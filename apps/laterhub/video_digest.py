@@ -270,7 +270,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
                     subtitle_source = "videocaptioner_bijian"
                 except Exception as exc:  # noqa: BLE001
                     errors.append(f"语音转写失败: {exc}")
-                    work_notes.append("已下载视频并转写，bijian/jianying 均未识别到有效人声")
+                    work_notes.append("转写未识别到有效人声（bijian/jianying）")
 
         if subtitle_text:
             # 正常路径也把材料链写清楚：简介参与了就明确标注，避免用户不知道是否用了简介
