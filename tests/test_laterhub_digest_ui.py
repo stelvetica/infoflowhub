@@ -15,7 +15,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 import web.routes.main as main
 import web.services.views as views
-from apps.laterhub.db import DBManager, LinkRecord
+from apps.laterhub.db import DBManager, LinkRecord, is_digest_video_url
 from web.app import app
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -65,6 +65,37 @@ def client() -> TestClient:
 def _row_by_title(title: str) -> dict:
     rows, _, _ = views._build_laterhub_rows()
     return next(row for row in rows if row["title"] == title)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.bilibili.com/video/BV1xx411c7mD",
+        "https://m.bilibili.com/video/BV1xx411c7mD?p=2",
+        "https://www.douyin.com/video/7123456789",
+        "https://m.douyin.com/video/7123456789",
+    ],
+)
+def test_digest_video_url_accepts_real_video_pages(url: str) -> None:
+    assert is_digest_video_url(url) is True
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://mp.weixin.qq.com/s/abcdefg",
+        "https://www.xiaoheihe.cn/app/bbs/link/123",
+        "https://weread.qq.com/web/bookDetail/abc",
+        "https://www.bilibili.com/bangumi/play/ep123",  # B站但非 /video/
+        "https://t.bilibili.com/123456",  # 动态
+        "https://evil.example/?next=https://www.bilibili.com/video/BV1xx411c7mD",  # 子串陷阱
+        "https://notbilibili.com/video/BV1xx411c7mD",  # 相似域名
+        "",
+        "not-a-url",
+    ],
+)
+def test_digest_video_url_rejects_non_video(url: str) -> None:
+    assert is_digest_video_url(url) is False
 
 
 def test_rows_expose_video_and_digest_fields(db_path: Path) -> None:

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
+from urllib.parse import urlparse
 
 
 UTC = timezone.utc
@@ -15,9 +16,20 @@ VIDEO_URL_CONDITION = "(url LIKE '%bilibili.com/video/%' OR url LIKE '%douyin.co
 
 
 def is_digest_video_url(url: str | None) -> bool:
-    """与 VIDEO_URL_CONDITION 同口径的 Python 版，供 UI/路由判断是否展示「解析」。"""
-    text = str(url or "").lower()
-    return "bilibili.com/video/" in text or "douyin.com/video/" in text
+    """是否 B站/抖音的视频页（UI 是否展示「解析」的唯一判据）。
+
+    按真实域名 + 路径判定，不能只看子串：否则「普通文章里带 B站链接」的转发 URL
+    也会被误判成视频。VIDEO_URL_CONDITION 是 SQL 侧粗筛（候选集），此处是精确判据。
+    """
+    try:
+        parsed = urlparse(str(url or "").strip())
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower()
+    path = parsed.path or ""
+    if not (path == "/video" or path.startswith("/video/")):
+        return False
+    return host == "bilibili.com" or host.endswith(".bilibili.com") or host == "douyin.com" or host.endswith(".douyin.com")
 
 
 @dataclass(slots=True)
