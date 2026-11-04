@@ -189,33 +189,47 @@ def parse_valuation(path: Path) -> dict:
 
 
 def parse_valuation_rows(rows: list[list], source: str = "<rows>") -> dict:
-    hdr_i = next((i for i, r in enumerate(rows) if r and str(r[0]).strip() == "科目代码"), None)
+    # 部分模板有 2–3 行重复表头，只有最后一行带「市值」列
+    hdr_i = next((i for i, r in enumerate(rows)
+                  if r and str(r[0]).strip() == "科目代码"
+                  and any(str(c).strip() == "市值" for c in r)), None)
+    if hdr_i is None:
+        hdr_i = next((i for i, r in enumerate(rows) if r and str(r[0]).strip() == "科目代码"), None)
     if hdr_i is None:
         raise SystemExit(f"估值表结构不认识（找不到表头）: {source}")
     hdr = [str(c).strip() if c is not None else "" for c in rows[hdr_i]]
-    col_mv = hdr.index("市值")
-    col_mvpct = hdr.index("市值占净值%") if "市值占净值%" in hdr else None
+    # 部分管理人模板有「原币/本币」两列同名市值，取最后一列（本币）；占比列名也分两种
+    col_mv = max(i for i, h in enumerate(hdr) if h == "市值")
+    col_mvpct = next((i for i, h in enumerate(hdr) if h in ("市值占净值%", "市值占比")), None)
+    # 「市值占比」是 0–1 小数，「市值占净值%」已是百分数
+    pct_scale = 1.0 if col_mvpct is not None and "%" in hdr[col_mvpct] else 100.0
+
+    def pct(row: list) -> float | None:
+        v = _num(row, col_mvpct) if col_mvpct is not None else None
+        return None if v is None else v * pct_scale
 
     out = {"nav": None, "stock_pct": None, "stock_mv": 0.0,
            "fund_pct": None, "fund_mv": 0.0, "swap_pct": 0.0, "date": ""}
-    # 估值日期在表头上方（第 2 行），不在明细区
+    # 估值日期在表头上方（第 2 行），不在明细区；两种写法：「估值日期」「日期」
     for r in rows[:hdr_i]:
-        if r and "估值日期" in str(r[0] or ""):
-            out["date"] = str(r[0]).split("：", 1)[-1].strip()[:10].replace("-", "")
+        head = str(r[0] or "") if r else ""
+        if ("估值日期" in head or head.strip().startswith("日期")) and "：" in head:
+            out["date"] = head.split("：", 1)[-1].strip()[:10].replace("-", "")
     for r in rows[hdr_i + 1:]:
         if not r or len(r) < 2:
             continue
         label = str(r[1] or "").strip()
-        if label.startswith("基金资产净值") and out["nav"] is None:
+        head0 = str(r[0] or "").strip()
+        if (label.startswith("基金资产净值") or head0 == "资产净值") and out["nav"] is None:
             out["nav"] = _num(r, col_mv)
-        if label == "股票投资" or label.startswith(EQUITY_PREFIX):
+        if label in ("股票投资", "交易性股票投资") or label.startswith(EQUITY_PREFIX):
             out["stock_mv"] = _num(r, col_mv) or 0.0
-            out["stock_pct"] = _num(r, col_mvpct) if col_mvpct is not None else None
+            out["stock_pct"] = pct(r)
         if label.startswith("以公允价值计量且其变动计入当期损益的基金投资"):
             out["fund_mv"] = _num(r, col_mv) or 0.0
-            out["fund_pct"] = _num(r, col_mvpct) if col_mvpct is not None else None
+            out["fund_pct"] = pct(r)
         if label.startswith("存出保证金") and "收益互换协议履约保证金" in label:
-            out["swap_pct"] += _num(r, col_mvpct) or 0.0
+            out["swap_pct"] += pct(r) or 0.0
     if not out["nav"] and out["stock_mv"] and out["stock_pct"]:
         out["nav"] = out["stock_mv"] * 100 / out["stock_pct"]
     if not out["nav"] and out["fund_mv"] and out["fund_pct"]:
@@ -266,29 +280,37 @@ def fmt_pct(x: float | None) -> str:
     return "—" if x is None else f"{x:.1f}%"
 
 
-def side_table(items: list[dict], top_n: int) -> str:
+def pct_of(x: float | None, nav: float | None, signed: bool = True) -> str:
+    """金额 → 占期初净值%。报告一律用百分比，金额留在底稿 JSON 供核对。"""
+    if x is None or not nav:
+        return "—"
+    v = x / nav * 100
+    return f"{v:+.1f}%" if signed else f"{v:.1f}%"
+
+
+def side_table(items: list[dict], top_n: int, nav: float | None) -> str:
     adds = [i for i in items if i["net"] > 0][:top_n]
     cuts = [i for i in items if i["net"] < 0][-top_n:][::-1]
-    lines = ["| 加仓 | 净额（万） | 减仓 | 净额（万） |", "|---|---|---|---|"]
+    lines = ["| 加仓 | 占净值 | 减仓 | 占净值 |", "|---|---|---|---|"]
     for n in range(max(len(adds), len(cuts))):
         a = f"{adds[n]['name']}" if n < len(adds) else ""
-        av = wan(adds[n]["net"]) if n < len(adds) else ""
+        av = pct_of(adds[n]["net"], nav) if n < len(adds) else ""
         c = f"{cuts[n]['name']}" if n < len(cuts) else ""
-        cv = wan(cuts[n]["net"]) if n < len(cuts) else ""
+        cv = pct_of(cuts[n]["net"], nav) if n < len(cuts) else ""
         lines.append(f"| {a} | {av} | {c} | {cv} |")
     return "\n".join(lines)
 
 
-def industry_table(industries: dict[str, int], top_n: int) -> str:
+def industry_table(industries: dict[str, int], top_n: int, nav: float | None) -> str:
     items = sorted(industries.items(), key=lambda x: -x[1])
     adds = [(k, v) for k, v in items if v > 0][:top_n]
     cuts = [(k, v) for k, v in items if v < 0][-top_n:][::-1]
-    lines = ["| 加仓行业 | 净额（万） | 减仓行业 | 净额（万） |", "|---|---|---|---|"]
+    lines = ["| 加仓行业 | 占净值 | 减仓行业 | 占净值 |", "|---|---|---|---|"]
     for n in range(max(len(adds), len(cuts))):
         a = adds[n][0] if n < len(adds) else ""
-        av = wan(adds[n][1]) if n < len(adds) else ""
+        av = pct_of(adds[n][1], nav) if n < len(adds) else ""
         c = cuts[n][0] if n < len(cuts) else ""
-        cv = wan(cuts[n][1]) if n < len(cuts) else ""
+        cv = pct_of(cuts[n][1], nav) if n < len(cuts) else ""
         lines.append(f"| {a} | {av} | {c} | {cv} |")
     return "\n".join(lines)
 
@@ -302,40 +324,52 @@ def render_md(report: dict, cfg: dict) -> str:
     L.append(f"> 窗口：近一周 = 最近 {cfg['windows']['week']} 个交易日（{iso(w[0])} ~ {iso(w[1])}）；"
              f"近一月 = 最近 {cfg['windows']['month']} 个交易日（{iso(m[0])} ~ {iso(m[1])}）")
     L += ["", "## 口径", ""]
-    L.append("- **权益敞口 = 股票市值占净值% + 收益互换履约保证金占净值%**。互换底层股票不在估值表内，保证金按 1:1 视为敞口（仅臻享1期存在互换，实际杠杆未知）。")
+    L.append("- **权益敞口 = 股票市值占净值% + 收益互换保证金占净值%**。互换底层均为股票，按股票计入（仅臻享1期有互换）。")
+    L.append("- **净值与仓位只取最新一日估值表**；所有加减按「占最新净值%」呈现，金额留在《操作底稿》JSON 供核对。")
     L.append("- 回购（GC001 等）不计入个股加减，单独列出。")
-    L.append("- 成交截至报告日、估值截至上一估值日，净卖出额与仓位变化不完全对齐属正常。")
+    L.append("- 成交截至报告日、估值截至上一估值日；«近一月净买卖» 可近似看作仓位变化（未扣市场损益）。")
     L.append("- 行业为标的信息库一级分类；未覆盖标的按 config 的 industry_overrides 补齐。")
     for p in report["products"]:
         if p.get("note"):
             own = f"（自身净值约 {amount(p['own_nav'])}；个股操作与仓位按母基金口径）" if p.get("own_nav") else ""
             L.append(f"- **{p['name']}**：{p['note']}{own}")
-    L += ["", "## 总览", "", "| 产品 | 净值（≈） | 近一周 买 / 卖 | 近一周 净 | 近一月 买 / 卖 | 近一月 净 |",
+    L += ["", "## 总览（占最新净值%）", "",
+          "| 产品 | 净值（≈） | 近一周 买 / 卖 | 近一周 净 | 近一月 买 / 卖 | 近一月 净 |",
           "|---|---|---|---|---|---|"]
     for p in report["products"]:
-        L.append(f"| {p['name']} | {yi(p['nav'])} | {wan(p['week']['buy'])} / {wan(p['week']['sell'])} 万 "
-                 f"| **{wan(p['week']['net'])} 万** | {wan(p['month']['buy'])} / {wan(p['month']['sell'])} 万 "
-                 f"| {wan(p['month']['net'])} 万 |")
+        wk, mo = p["week"], p["month"]
+        L.append(f"| {p['name']} | {yi(p['nav'])} "
+                 f"| {pct_of(wk['buy'], p['nav'], False)} / {pct_of(wk['sell'], p['nav'], False)} "
+                 f"| **{pct_of(wk['net'], p['nav'])}** "
+                 f"| {pct_of(mo['buy'], p['nav'], False)} / {pct_of(mo['sell'], p['nav'], False)} "
+                 f"| {pct_of(mo['net'], p['nav'])} |")
     tb = report["total"]
-    L.append(f"| **合计** | — | {wan(tb['week']['buy'])} / {wan(tb['week']['sell'])} 万 | "
-             f"**{wan(tb['week']['net'])} 万** | {wan(tb['month']['buy'])} / {wan(tb['month']['sell'])} 万 "
-             f"| {wan(tb['month']['net'])} 万 |")
-    if tb["week"]["repo"] or tb["month"]["repo"]:
-        L.append(f"\n> 另有回购操作：近一周 {wan(tb['week']['repo'])} 万、近一月 {wan(tb['month']['repo'])} 万（不计入个股）。")
-    L += ["", "## 仓位", "", "| 产品 | 期初 | 期末 | 权益敞口 期初 → 期末 | 变化 | 其中股票 | 其中互换保证金 |",
+    wk, mo = tb["week"], tb["month"]
+    L.append(f"| **合计** | — "
+             f"| {pct_of(wk['buy'], wk['nav'], False)} / {pct_of(wk['sell'], wk['nav'], False)} "
+             f"| **{pct_of(wk['net'], wk['nav'])}** "
+             f"| {pct_of(mo['buy'], mo['nav'], False)} / {pct_of(mo['sell'], mo['nav'], False)} "
+             f"| {pct_of(mo['net'], mo['nav'])} |")
+    if wk["repo"] or mo["repo"]:
+        L.append(f"\n> 另有回购操作：近一周 {pct_of(wk['repo'], wk['nav'])}、"
+                 f"近一月 {pct_of(mo['repo'], mo['nav'])}（不计入个股）。")
+    L += ["", "## 仓位（最新估值表）", "",
+          "| 产品 | 估值日 | 净值（≈） | 权益敞口（股票+互换） | 其中直接股票 | 其中互换保证金 | 近一月净买卖（≈变化） |",
           "|---|---|---|---|---|---|---|"]
     for p in report["products"]:
         pos = p["position"]
-        delta = "—" if pos["delta"] is None else f"{pos['delta']:+.1f}pp"
-        L.append(f"| {p['name']} | {iso(pos['start_date'])} | {iso(pos['end_date'])} "
-                 f"| {fmt_pct(pos['equity_start'])} → {fmt_pct(pos['equity_end'])} "
-                 f"| {delta} | {fmt_pct(pos['stock_end'])} | {fmt_pct(pos['swap_end'])} |")
+        L.append(f"| {p['name']} | {iso(pos['date'])} | {yi(p['nav'])} | **{fmt_pct(pos['equity'])}** "
+                 f"| {fmt_pct(pos['stock'])} | {fmt_pct(pos['swap'])} "
+                 f"| {pct_of(p['month']['net'], p['nav'])} |")
     for label, key in (("近一周", "week"), ("近一月", "month")):
-        L += ["", f"## {label}", "", "### 行业", "", industry_table(tb[key]["industries"], top_n),
-              "", "### 个股（三产品合计）", "", side_table(tb[key]["stocks"], top_n)]
+        nav_t = tb[key]["nav"]
+        L += ["", f"## {label}", "", f"### 行业（全部产品合计，占最新净值%）", "",
+              industry_table(tb[key]["industries"], top_n, nav_t),
+              "", "### 个股（全部产品合计）", "", side_table(tb[key]["stocks"], top_n, nav_t)]
         for p in report["products"]:
-            L += ["", f"<details><summary>{p['name']}：合计净 {wan(p[key]['net'])} 万</summary>", "",
-                  industry_table(p[key]["industries"], top_n), "", side_table(p[key]["stocks"], top_n), "", "</details>"]
+            L += ["", f"<details><summary>{p['name']}：合计净 {pct_of(p[key]['net'], p['nav'])}</summary>", "",
+                  industry_table(p[key]["industries"], top_n, p["nav"]), "",
+                  side_table(p[key]["stocks"], top_n, p["nav"]), "", "</details>"]
     L += ["", "## 解读", "", "<!-- AI：读《操作底稿》后填写，3–5 条，带数字，不评价「对不对」 -->", ""]
     return "\n".join(L)
 
@@ -343,12 +377,12 @@ def render_md(report: dict, cfg: dict) -> str:
 def print_report(report: dict) -> None:
     for p in report["products"]:
         pos = p["position"]
-        print(f"{p['name']}: 净值≈{yi(p['nav'])} 权益敞口 "
-              f"{fmt_pct(pos['equity_start'])}→{fmt_pct(pos['equity_end'])} "
-              f"({pos['delta'] if pos['delta'] is None else f'{pos['delta']:+.1f}pp'})")
+        print(f"{p['name']}: 净值≈{yi(p['nav'])} 权益敞口 {fmt_pct(pos['equity'])}"
+              f"（股票 {fmt_pct(pos['stock'])} + 互换 {fmt_pct(pos['swap'])}）")
         for key, label in (("week", "近一周"), ("month", "近一月")):
             w = p[key]
-            print(f"  {label} {w['start']}~{w['end']}: 买 {wan(w['buy'])}万 / 卖 {wan(w['sell'])}万 / 净 {wan(w['net'])}万")
+            print(f"  {label} {w['start']}~{w['end']}: 买 {pct_of(w['buy'], p['nav'], False)}"
+                  f" / 卖 {pct_of(w['sell'], p['nav'], False)} / 净 {pct_of(w['net'], p['nav'])}")
     unresolved = sorted({c for p in report["products"] for k in ("week", "month") for c in p[k]["unresolved"]})
     if unresolved:
         print(f"[待补行业] {', '.join(unresolved)}")
@@ -366,31 +400,26 @@ def build_report(cfg: dict, end_date: str | None = None) -> dict:
         (t["date"] for t in trades if t["date"] < end),
         default=end,
     )
-    products, tot = [], {k: {"buy": 0, "sell": 0, "net": 0, "repo": 0,
+    products, tot = [], {k: {"buy": 0, "sell": 0, "net": 0, "repo": 0, "nav": 0.0,
                              "industries": defaultdict(float), "stocks": [], "start": "", "end": ""}
                          for k in windows}
     for p in cfg["products"]:
         names = set(p["csv_names"])
         entry = {"name": p["name"], "note": p.get("note", ""), "nav": None, "position": {}}
         own = parse_valuation(fp) if (fp := find_valuation(cfg["valuation_root"], p["valuation_dir"], val_end)) else {}
-        pos_v_end = own if p["position_dir"] == p["valuation_dir"] else (
+        pos_v = own if p["position_dir"] == p["valuation_dir"] else (
             parse_valuation(fp2) if (fp2 := find_valuation(cfg["valuation_root"], p["position_dir"], val_end)) else {})
-        entry["nav"] = own.get("nav")
+        entry["nav"] = pos_v.get("nav") or own.get("nav")
         entry["own_nav"] = None
         if p.get("own_valuation_dir") and p["own_valuation_dir"] != p["valuation_dir"]:
             ov = find_valuation(cfg["valuation_root"], p["own_valuation_dir"], val_end)
             entry["own_nav"] = parse_valuation(ov).get("nav") if ov else None
-        # 期初：与近一月窗口起点对齐
-        start = windows["month"][0]
-        pos_v_start = (parse_valuation(fp3) if (fp3 := find_valuation(cfg["valuation_root"], p["position_dir"], start)) else {})
-        e0, e1 = equity_pct(pos_v_start), equity_pct(pos_v_end)
+        # 仓位只取最新估值表：资产规模与权益敞口都以最新一日为准（用户口径：取个大概即可）
         entry["position"] = {
-            "start_date": pos_v_start.get("date") or start,
-            "end_date": pos_v_end.get("date") or val_end,
-            "equity_start": e0, "equity_end": e1,
-            "delta": None if (e0 is None or e1 is None) else round(e1 - e0, 1),
-            "stock_start": pos_v_start.get("stock_pct"), "stock_end": pos_v_end.get("stock_pct"),
-            "swap_start": pos_v_start.get("swap_pct"), "swap_end": pos_v_end.get("swap_pct"),
+            "date": pos_v.get("date") or val_end,
+            "equity": equity_pct(pos_v),
+            "stock": pos_v.get("stock_pct"),
+            "swap": pos_v.get("swap_pct"),
         }
         for key, (a, b) in windows.items():
             agg = aggregate(trades, names, a, b, info, overrides)
@@ -401,6 +430,7 @@ def build_report(cfg: dict, end_date: str | None = None) -> dict:
                 t["industries"][k] += v
         products.append(entry)
     for key in windows:
+        tot[key]["nav"] = sum(p["nav"] or 0 for p in products) or None
         codes = defaultdict(lambda: [0.0, 0.0, "", ""])
         for p in products:
             for it in p[key]["stocks"]:
@@ -416,7 +446,7 @@ def build_report(cfg: dict, end_date: str | None = None) -> dict:
     return {
         "date_iso": f"{end[:4]}-{end[4:6]}-{end[6:]}",
         "trade_end": end,
-        "valuation_end": products[0]["position"]["end_date"] if products else "",
+        "valuation_end": products[0]["position"]["date"] if products else "",
         "windows": windows,
         "products": products,
         "total": tot,
@@ -504,6 +534,21 @@ def selftest() -> int:
     assert v["stock_pct"] == 70 and v["swap_pct"] == 10, v
     assert v["nav"] == 1000, v
     assert equity_pct(v) == 80.0, v
+
+    # 另一种模板：三行重复表头、市值分原币/本币、占比为 0–1 小数、股票科目标「交易性股票投资」
+    rows2 = [
+        ["SAUY87_某产品_资产估值表"],
+        ["日期：2026-11-03", "单位净值:1.2590"],
+        ["科目代码", "科目名称", "币种", "汇率", "数量", "单位成本", "成本", "成本", "成本占比"],
+        ["科目代码", "科目名称", "币种", "汇率", "数量", "单位成本", "原币", "本币", "成本占比",
+         "行情", "市值", "市值", "市值占比"],
+        ["1102", "交易性股票投资", "***", "", "", "", "", "79464401.61", "1.21922", "0", "", "65055511.11", "0.998144"],
+        ["资产净值", " ", " ", "", "", "", "", "79585337.35", "1.221075", "0", "", "65176446.85", "1"],
+    ]
+    v2 = parse_valuation_rows(rows2)
+    assert v2["date"] == "20261103", v2
+    assert abs(v2["stock_pct"] - 99.8) < 0.05, v2     # 0.998144 × 100
+    assert abs(v2["nav"] - 65176446.85) < 1, v2
     print("selftest PASS")
     return 0
 
