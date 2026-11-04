@@ -157,12 +157,12 @@ def test_page_already_on_bilibili_is_reused():
 
 def test_meta_reads_view_api_through_page():
     page = FakePage(
-        [("web-interface/view", {"code": 0, "data": {"bvid": BVID, "aid": 1, "cid": 222, "title": "标题", "owner": {"name": "UP"}, "duration": 90}})]
+        [("web-interface/view", {"code": 0, "data": {"bvid": BVID, "aid": 1, "cid": 222, "title": "标题", "owner": {"name": "UP"}, "duration": 90, "desc": "简介正文"}})]
     )
 
     meta = video_mod.get_bilibili_video_meta(f"https://www.bilibili.com/video/{BVID}", page=page)
 
-    assert meta == video_mod.BilibiliVideoMeta(BVID, 1, 222, "标题", "UP", 90)
+    assert meta == video_mod.BilibiliVideoMeta(BVID, 1, 222, "标题", "UP", 90, "简介正文")
     assert page.evaluate_calls  # 真的走了页内 fetch
 
 

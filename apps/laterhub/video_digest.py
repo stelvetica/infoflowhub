@@ -137,6 +137,7 @@ def _subtitle_source_label(subtitle_source: str) -> str:
     return {
         "bilibili_cc": "B站字幕",
         "videocaptioner_bijian": "语音转写",
+        "bilibili_desc": "B站简介",
         "glm_video": "AI 视频理解",
     }.get(subtitle_source, subtitle_source)
 
@@ -151,6 +152,7 @@ def _finalize(
     reports_dir: Path,
     owner: str | None,
     duration_seconds: int | None,
+    process_note: str = "",
 ) -> Path:
     url = str(row["url"])
     filename = build_digest_filename(str(row["title"]), url)
@@ -169,6 +171,7 @@ def _finalize(
         subtitle_source=subtitle_source,
         generated_at=now,
         digest=digest,
+        process_note=process_note,
     )
     # digest_path 存相对 reports 根的路径（含子目录），面板/幂等检查按此定位
     path = write_digest_report(digest_dir, filename, markdown)
@@ -238,39 +241,83 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
 
         # 1) B站 CC 字幕直取：免费、秒级、免下载
         subtitle_text, subtitle_source = "", ""
+        work_notes: list[str] = []
         try:
             cc = bili_video.get_bilibili_cc_subtitle_text(meta.bvid, meta.cid, page=page)
         except Exception as exc:  # noqa: BLE001
             cc = None
             errors.append(f"CC字幕接口失败: {exc}")
-        if cc:
+            work_notes.append(f"CC字幕接口异常: {exc}")
+        if cc and len(cc) >= _asr_min_chars(meta.duration_seconds):
             subtitle_text, subtitle_source = cc, "bilibili_cc"
         else:
-            # 2) 下载视频 + videocaptioner bijian 转录
+            if cc:
+                work_notes.append(f"CC字幕过短({len(cc)}字)，视为无有效内容")
+            else:
+                work_notes.append("CC字幕未取到")
+            # 2) 下载视频 + videocaptioner 转录
             try:
                 workdir.mkdir(parents=True, exist_ok=True)
                 video_path = bili_video.download_bilibili_video(meta.bvid, meta.cid, page=page, dest_dir=workdir)
-                srt_path = _transcribe_with_videocaptioner(video_path, workdir, duration_seconds=meta.duration_seconds)
-                subtitle_text = _srt_to_text(srt_path)
-                subtitle_source = "videocaptioner_bijian"
             except Exception as exc:  # noqa: BLE001
-                errors.append(f"下载+ASR失败: {exc}")
-                # 3) GLM 视频理解兜底：完整 mp4 直链直接喂给多模态模型
+                errors.append(f"下载视频失败: {exc}")
+                work_notes.append(f"下载视频失败: {exc}")
+            else:
+                work_notes.append("已下载视频")
                 try:
-                    mp4_url = bili_video.get_bilibili_full_mp4_url(meta.bvid, meta.cid, page=page)
-                except Exception as exc2:  # noqa: BLE001
-                    mp4_url = None
-                    errors.append(f"拿直链失败: {exc2}")
-                if not mp4_url:
-                    detail = "; ".join(errors) or "无可用字幕来源"
-                    db.mark_digest_failed(link_id, error_message=detail[:500])
-                    return DigestOutcome(link_id, url, title, "failed", detail)
-                digest = llm.generate_from_video_url(title=title, owner=meta.owner, video_url=mp4_url)
-                path = _finalize(db, link_id, row, digest, subtitle_source="glm_video", reports_dir=reports_dir, owner=meta.owner, duration_seconds=meta.duration_seconds)
-                return DigestOutcome(link_id, url, title, "succeeded", str(path))
+                    srt_path = _transcribe_with_videocaptioner(video_path, workdir, duration_seconds=meta.duration_seconds)
+                    subtitle_text = _srt_to_text(srt_path)
+                    subtitle_source = "videocaptioner_bijian"
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"语音转写失败: {exc}")
+                    work_notes.append("已下载视频并转写，bijian/jianying 均未识别到有效人声")
 
-        digest = llm.generate_from_subtitle(title=title, owner=meta.owner, subtitle_text=subtitle_text)
-        path = _finalize(db, link_id, row, digest, subtitle_source=subtitle_source, reports_dir=reports_dir, owner=meta.owner, duration_seconds=meta.duration_seconds)
+        if subtitle_text:
+            digest = llm.generate_from_subtitle(
+                title=title,
+                owner=meta.owner,
+                subtitle_text=subtitle_text,
+                description=meta.description,
+            )
+            path = _finalize(db, link_id, row, digest, subtitle_source=subtitle_source, reports_dir=reports_dir, owner=meta.owner, duration_seconds=meta.duration_seconds)
+            return DigestOutcome(link_id, url, title, "succeeded", str(path))
+
+        # 3) 无人声：优先用 B站简介分析；简介为空才回退多模态看视频
+        if meta.description:
+            work_notes.append("改用B站简介分析")
+            process_note = "；".join(work_notes)[:500]
+            digest = llm.generate_from_description(title=title, owner=meta.owner, description=meta.description)
+            path = _finalize(
+                db, link_id, row, digest,
+                subtitle_source="bilibili_desc",
+                reports_dir=reports_dir,
+                owner=meta.owner,
+                duration_seconds=meta.duration_seconds,
+                process_note=process_note,
+            )
+            return DigestOutcome(link_id, url, title, "succeeded", str(path))
+
+        work_notes.append("B站简介为空，改用AI视频理解")
+        process_note = "；".join(work_notes)[:500]
+        # 4) GLM 视频理解兜底：完整 mp4 直链直接喂给多模态模型
+        try:
+            mp4_url = bili_video.get_bilibili_full_mp4_url(meta.bvid, meta.cid, page=page)
+        except Exception as exc2:  # noqa: BLE001
+            mp4_url = None
+            errors.append(f"拿直链失败: {exc2}")
+        if not mp4_url:
+            detail = "; ".join(errors) or "无可用字幕来源"
+            db.mark_digest_failed(link_id, error_message=detail[:500])
+            return DigestOutcome(link_id, url, title, "failed", detail)
+        digest = llm.generate_from_video_url(title=title, owner=meta.owner, video_url=mp4_url, description=meta.description)
+        path = _finalize(
+            db, link_id, row, digest,
+            subtitle_source="glm_video",
+            reports_dir=reports_dir,
+            owner=meta.owner,
+            duration_seconds=meta.duration_seconds,
+            process_note=process_note,
+        )
         return DigestOutcome(link_id, url, title, "succeeded", str(path))
     except Exception as exc:  # noqa: BLE001
         db.mark_digest_failed(link_id, error_message=f"{type(exc).__name__}: {exc}"[:500])

@@ -46,6 +46,19 @@ SUBTITLE_HINT = """
 不要复述错别字，也不要因为个别字词错误而偏离视频真实意思。
 """
 
+DESCRIPTION_HINT = """
+补充要求：视频简介是 UP 主提供的文字说明，可用于补充背景、术语、工具名与链接；
+但它可能包含宣传语或与视频实际内容不一致。与字幕/视频内容冲突时，以字幕/视频为准，
+不得把简介中的说法直接当成视频结论。
+"""
+
+DESC_ONLY_HINT = """
+补充要求：本次没有可用字幕或语音，材料只有视频标题与 UP 主简介。
+- 只能基于标题与简介分析，禁止编造视频画面、演示步骤或讲解中未出现的内容；
+- 明确区分「简介明确写到」与「根据简介推断」；
+- 必须在 note 中注明「未获取到有效字幕/人声，本简报仅基于标题与B站简介」。
+"""
+
 CHUNK_SYSTEM_PROMPT = """你是视频字幕的分段整理器。你的任务是把给定的一段字幕按时间顺序整理成信息完整的分段笔记。
 
 硬约束：
@@ -110,6 +123,11 @@ def split_text(
     return chunks or [""]
 
 
+def _description_block(description: str) -> str:
+    text = str(description or "").strip()
+    return f"视频简介：\n{text}\n\n" if text else ""
+
+
 class VideoDigestLLM:
     def __init__(
         self,
@@ -128,14 +146,17 @@ class VideoDigestLLM:
         title: str,
         owner: str | None,
         subtitle_text: str,
+        description: str = "",
     ) -> DigestContent:
-        """字幕 → 简报。长字幕分批整理后合并，不截断、不跳读。"""
+        """字幕 → 简报。长字幕分批整理后合并，不截断、不跳读；简介作为补充材料。"""
+        desc_block = _description_block(description)
         chunks = split_text(subtitle_text)
         if len(chunks) <= 1:
-            system = SYSTEM_PROMPT + SUBTITLE_HINT
+            system = SYSTEM_PROMPT + SUBTITLE_HINT + (DESCRIPTION_HINT if desc_block else "")
             user = (
                 f"视频标题：{title}\n"
                 f"作者：{owner or '未知'}\n\n"
+                f"{desc_block}"
                 f"字幕文本：\n{subtitle_text}"
             )
             return self._with_fallback(system, user)
@@ -144,7 +165,23 @@ class VideoDigestLLM:
             self._summarize_chunk(title=title, owner=owner, chunk=chunk, index=index, total=len(chunks))
             for index, chunk in enumerate(chunks, 1)
         ]
-        return self._merge_notes(title=title, owner=owner, notes=notes)
+        return self._merge_notes(title=title, owner=owner, notes=notes, description=description)
+
+    def generate_from_description(
+        self,
+        *,
+        title: str,
+        owner: str | None,
+        description: str,
+    ) -> DigestContent:
+        """无人声时：仅基于标题与 B站简介分析，并要求在 note 中注明依据。"""
+        system = SYSTEM_PROMPT + DESC_ONLY_HINT
+        user = (
+            f"视频标题：{title}\n"
+            f"作者：{owner or '未知'}\n\n"
+            f"视频简介：\n{description}"
+        )
+        return self._with_fallback(system, user)
 
     def _summarize_chunk(
         self, *, title: str, owner: str | None, chunk: str, index: int, total: int
@@ -157,7 +194,9 @@ class VideoDigestLLM:
         )
         return self._text_with_fallback(CHUNK_SYSTEM_PROMPT, user)
 
-    def _merge_notes(self, *, title: str, owner: str | None, notes: list[str]) -> DigestContent:
+    def _merge_notes(
+        self, *, title: str, owner: str | None, notes: list[str], description: str = ""
+    ) -> DigestContent:
         merged = self._join_notes(notes)
         # 极长视频：分段笔记仍可能超出单次合并预算，再做一层归并（最多 3 轮兜底）
         for _ in range(3):
@@ -169,10 +208,12 @@ class VideoDigestLLM:
                 for index, group in enumerate(groups, 1)
             ]
             merged = self._join_notes(notes)
-        system = SYSTEM_PROMPT + MERGE_HINT
+        desc_block = _description_block(description)
+        system = SYSTEM_PROMPT + MERGE_HINT + (DESCRIPTION_HINT if desc_block else "")
         user = (
             f"视频标题：{title}\n"
             f"作者：{owner or '未知'}\n\n"
+            f"{desc_block}"
             f"分段整理：\n{merged}"
         )
         return self._with_fallback(system, user)
@@ -187,11 +228,14 @@ class VideoDigestLLM:
         title: str,
         owner: str | None,
         video_url: str,
+        description: str = "",
     ) -> DigestContent:
-        system = SYSTEM_PROMPT + VIDEO_URL_HINT
+        desc_block = _description_block(description)
+        system = SYSTEM_PROMPT + VIDEO_URL_HINT + (DESCRIPTION_HINT if desc_block else "")
         prompt = (
             f"视频标题：{title}\n"
-            f"作者：{owner or '未知'}\n"
+            f"作者：{owner or '未知'}\n\n"
+            f"{desc_block}"
             "请直接观看视频，并严格按要求只返回 JSON 简报对象。"
         )
         # 多模态：文本指令 + 视频直链（R4M 端点已实测支持 video_url）
@@ -368,6 +412,7 @@ _SOURCE_LABELS = {
 _SUBTITLE_SOURCE_LABELS = {
     "bilibili_cc": "B站字幕",
     "videocaptioner_bijian": "语音转写",
+    "bilibili_desc": "B站简介",
     "glm_video": "AI 视频理解",
 }
 
@@ -389,9 +434,11 @@ def render_digest_markdown(
     subtitle_source: str,
     generated_at: str,
     digest: DigestContent,
+    process_note: str = "",
 ) -> str:
     """渲染简报 Markdown：只用标题/无序列表/粗体/段落（md_render.py 支持子集）。"""
     note = digest.note or "无"
+    process_line = f"- 处理说明：{process_note}\n" if process_note.strip() else ""
 
     points = "\n".join(f"- {point}" for point in digest.key_points)
     return (
@@ -402,6 +449,7 @@ def render_digest_markdown(
         f"- 作者：{owner or '未知'}\n"
         f"- 时长：{_format_duration(duration_seconds)}\n"
         f"- 字幕来源：{_SUBTITLE_SOURCE_LABELS.get(subtitle_source, subtitle_source)}\n"
+        f"{process_line}"
         f"- 生成时间：{generated_at}\n"
         "\n"
         "## 一句话总结\n"

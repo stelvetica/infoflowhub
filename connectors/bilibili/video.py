@@ -73,6 +73,8 @@ class BilibiliVideoMeta:
     title: str
     owner: str | None
     duration_seconds: int | None
+    # UP 主简介：所有视频都作为补充材料参与简报；无人声时作为主要分析依据
+    description: str = ""
 
 
 def _download_session() -> requests.Session:
@@ -166,6 +168,7 @@ def get_bilibili_video_meta(url: str, *, page, timeout: float = 30) -> BilibiliV
         title=str(payload.get("title") or ""),
         owner=owner_name or None,
         duration_seconds=payload.get("duration"),
+        description=str(payload.get("desc") or "").strip(),
     )
 
 

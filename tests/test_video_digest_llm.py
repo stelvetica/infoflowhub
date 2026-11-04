@@ -148,6 +148,35 @@ def test_key_points_over_seven_is_truncated(monkeypatch):
     assert result.key_points == [f"要点{i}" for i in range(1, 8)]
 
 
+def test_subtitle_prompt_includes_description(monkeypatch):
+    _, payloads = _patch_post(monkeypatch, {PRIMARY.model: _ok(_digest_json())})
+
+    VideoDigestLLM(PRIMARY).generate_from_subtitle(
+        title="标题", owner="作者", subtitle_text="字幕正文", description="简介里的工具名"
+    )
+
+    system = payloads[0]["messages"][0]["content"]
+    user = payloads[0]["messages"][1]["content"]
+    assert "视频简介" in system or "简介是 UP 主" in system
+    assert "简介里的工具名" in user and "字幕正文" in user
+
+
+def test_description_only_prompt_forces_scope_note(monkeypatch):
+    _, payloads = _patch_post(
+        monkeypatch, {PRIMARY.model: _ok(_digest_json(note="未获取到有效字幕/人声，本简报仅基于标题与B站简介"))}
+    )
+
+    result = VideoDigestLLM(PRIMARY).generate_from_description(
+        title="标题", owner=None, description="简介正文"
+    )
+
+    system = payloads[0]["messages"][0]["content"]
+    user = payloads[0]["messages"][1]["content"]
+    assert "禁止编造" in system and "note" in system
+    assert "简介正文" in user
+    assert "仅基于标题与B站简介" in result.note
+
+
 # ---------- 长字幕分批 ----------
 
 
@@ -182,7 +211,9 @@ def test_long_subtitle_is_chunked_then_merged(monkeypatch):
     monkeypatch.setattr(mod.requests, "post", fake_post)
     text = "\n".join(["开头内容" * 20, "中间内容" * 3000, "结尾内容" * 20])
 
-    result = VideoDigestLLM(PRIMARY).generate_from_subtitle(title="长视频", owner=None, subtitle_text=text)
+    result = VideoDigestLLM(PRIMARY).generate_from_subtitle(
+        title="长视频", owner=None, subtitle_text=text, description="简介补充"
+    )
 
     chunk_calls = [p for p in payloads if "response_format" not in p]
     merge_calls = [p for p in payloads if "response_format" in p]
@@ -193,9 +224,10 @@ def test_long_subtitle_is_chunked_then_merged(monkeypatch):
     all_chunk_text = "\n".join(str(p["messages"][1]["content"]) for p in chunk_calls)
     assert "开头内容" * 20 in all_chunk_text
     assert "结尾内容" * 20 in all_chunk_text
-    # 合并请求拿到全部分段笔记
+    # 合并请求拿到全部分段笔记，并附上简介
     merge_user = str(merge_calls[0]["messages"][1]["content"])
     assert merge_user.count("分段笔记") == len(chunk_calls)
+    assert "简介补充" in merge_user
 
 
 # ---------- generate_from_video_url ----------
@@ -265,6 +297,23 @@ def test_render_digest_markdown_structure():
     # 仓库 md 渲染器子集：禁表格与代码围栏
     assert "|" not in md
     assert "```" not in md
+
+
+def test_render_digest_markdown_process_note_and_desc_source():
+    md = render_digest_markdown(
+        title="T",
+        url="u",
+        source="bilibili_watchlater",
+        owner=None,
+        duration_seconds=31,
+        subtitle_source="bilibili_desc",
+        generated_at="now",
+        digest=DigestContent(summary="s", key_points=["a", "b", "c"], note=None),
+        process_note="CC字幕未取到；已下载视频；改用B站简介分析",
+    )
+
+    assert "- 字幕来源：B站简介" in md
+    assert "- 处理说明：CC字幕未取到；已下载视频；改用B站简介分析" in md
 
 
 def test_render_digest_markdown_note_priority_and_source_passthrough():
