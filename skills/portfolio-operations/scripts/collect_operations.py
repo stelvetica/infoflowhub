@@ -7,8 +7,9 @@
 口径（与 SKILL.md 一致，改口径先改这里）：
 - 窗口按**交易日**数：近一周 = 最近 5 个交易日，近一月 = 最近 20 个交易日。
   交易日取自成交 CSV 自身的日期集合（该数据源每日落盘，无需另建日历）。
-- 权益敞口 = 股票市值占净值% + 收益互换履约保证金占净值%。
-  互换底层股票不在估值表内，保证金按 1:1 视为敞口，仅臻享1期存在。
+- 权益敞口 = 股票市值占净值% + 收益互换保证金占净值%。
+  互换底层均为股票，按股票计入；仅臻享1期存在互换。
+- 净值与仓位只取最新一日估值表；加减一律换算为「占最新净值%」。
 - 回购（GC001 等）不计入股票加减，单独统计。
 - 行业取标的信息库 industry 的一级（「半导体-晶圆代工」→「半导体」），
   信息库缺失的标的由 config 的 industry_overrides 补齐；仍未归类的写进输出待 AI 处理。
@@ -250,7 +251,7 @@ def find_valuation(root: str, dirname: str, date_str: str) -> Path | None:
 
 
 def equity_pct(v: dict) -> float | None:
-    """权益敞口 = 股票占净值% + 互换保证金占净值%（保证金按 1:1 视为敞口）。"""
+    """权益敞口 = 股票占净值% + 互换保证金占净值%（互换按股票计）。"""
     if v.get("stock_pct") is None:
         return None
     return round(round(v["stock_pct"], 1) + round(v.get("swap_pct") or 0.0, 1), 1)
@@ -281,7 +282,7 @@ def fmt_pct(x: float | None) -> str:
 
 
 def pct_of(x: float | None, nav: float | None, signed: bool = True) -> str:
-    """金额 → 占期初净值%。报告一律用百分比，金额留在底稿 JSON 供核对。"""
+    """金额 → 占最新净值%。报告一律用百分比，金额留在底稿 JSON 供核对。"""
     if x is None or not nav:
         return "—"
     v = x / nav * 100
