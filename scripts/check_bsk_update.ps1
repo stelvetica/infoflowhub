@@ -17,6 +17,12 @@
 # 这里优雅降级（仍报 CLI 检查结果，并如实写明失败原因），不会因此整体失败。
 $ErrorActionPreference = 'Stop'
 
+# bsk 输出是 UTF-8，而 Windows PowerShell 5.1 捕获原生命令输出时按控制台代码页（本机 936/GBK）
+# 解码：`bsk status --json` 里浏览器标签 `main浏览器` 会变成乱码并吞掉收尾引号，ConvertFrom-Json
+# 必然失败（2026-11-02 13:00 起每次检查都报「daemon 状态未知」，扩展版本与版本错配全部看不见，
+# 正是本脚本要防的盲区）。固定按 UTF-8 解码，不依赖宿主的控制台代码页。
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
+
 $logPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'runtime\bsk_update_check.log'
 $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
 # 升级后 daemon 会重启，status 需要一点时间才重新可用（官方建议最多 5 次、每次隔 1s）。

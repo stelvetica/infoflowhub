@@ -52,6 +52,7 @@ daemon 由「InfoFlowHub 开机自启」计划任务以 **Highest（提权）** 
 
 - web 服务**每天**跑一次 `scripts/check_bsk_update.ps1`（`auto_runner._maybe_check_bsk_update()`，戳文件 `runtime/bsk_update_last_check.txt`），结果追加到 `runtime/bsk_update_check.log`（同时打印到控制台）。按天而非原先计划任务的每 14 天：扩展随时可能静默升级，粒度太粗会让「扩展升级 → CLI 追平」滞后到两周。
 - 退出码：`0` 全部最新；`2` 仍有待处理项（有更新可用、存在版本错配、或扩展仍领先 CLI）；`1` 检查本身失败（如 bsk 不在 PATH）。拿不到 daemon 状态时脚本优雅降级（仍报 CLI 结果并**如实写明失败原因**，便于区分「没在跑」与「权限不足」），不会整体失败。
+- **脚本必须按 UTF-8 捕获 bsk 输出**：Windows PowerShell 5.1（web 服务用 `powershell -NoProfile -File` 调它）按控制台代码页解码原生命令输出，本机 936 会把 `bsk status --json` 的浏览器标签 `main浏览器` 解成乱码并吞掉收尾引号，`ConvertFrom-Json` 必失败。2026-11-02～11-04 日志里的「daemon 状态未知」全由此而来：扩展版本与 `version_skew_browsers` 全程不可见，正好瞎掉本脚本的唯一职责。脚本开头已固定 `[Console]::OutputEncoding = UTF8`；若再出现 `daemon 状态未知（bsk status 失败：传入的对象无效…）`，先查这行是否还在。
 - 手动检查：
   - `bsk update --check --json` 看 CLI 是否有更新
   - `bsk status --json` 看 daemon 与扩展版本、是否错配
@@ -63,4 +64,5 @@ daemon 由「InfoFlowHub 开机自启」计划任务以 **Highest（提权）** 
    若报 `os error 5 拒绝访问`，**不是 daemon 没跑，而是调用方权限级别低于 daemon**（见上文「运行前提」）。
 3. 确认 Chrome 开着且扩展在线（扩展离线时 daemon 收不到浏览器会话）。
 4. 看源表「最近错误」：判断是否某源登录态失效，需在**日常 Chrome 重新登录**该站点。
-5. 以上都排除后仍失败，直接修 bsk 链路（`bsk update` / `bsk status` / 扩展）；copy 后端已禁用，不存在「换后端重试」的退路。
+5. 报 `evaluate 失败 (exit=1, code=permission_denied)` / `wheel 失败 (…permission_denied)`：daemon 说的是「The action's observed content changed; synchronize and replan」，即 sync 之后页面又变了。`evaluate` 是无目标动作，bsk 对它保持**整页**基线校验，自更新页面（B 站动态、抖音流）天然容易撞上；连接器已按 `effect_state=none` 自动重试（单动作 3 次 × 会话 2 次）。重试仍全线失败说明该页在持续变化（自动播放/轮播/扩展重载），等几分钟重跑即可，别急着改代码。
+6. 以上都排除后仍失败，直接修 bsk 链路（`bsk update` / `bsk status` / 扩展）；copy 后端已禁用，不存在「换后端重试」的退路。
