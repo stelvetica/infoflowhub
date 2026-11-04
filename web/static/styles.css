@@ -401,12 +401,15 @@ td { font-size: var(--fs-sm); }
 .laterhub-table .col-title { width: auto; }
 .laterhub-table .col-action { width: 62px; }
 .laterhub-table .col-digest { width: 58px; }
-/* 「解析」「完成」紧邻两列：表头与单元格统一左内边距，按钮和标题对齐；另压紧列间空白 */
+/* 「解析」「完成」两列整列居中：表头文字与按钮视觉中心一致（列宽为最宽状态预留） */
 .laterhub-table th:nth-child(3),
 .laterhub-table th:nth-child(4),
 .laterhub-table .laterhub-digest-cell,
-.laterhub-table .laterhub-action-cell { padding-left: 4px; }
-.laterhub-table .laterhub-digest-cell { padding-right: 0; }
+.laterhub-table .laterhub-action-cell {
+  padding-left: 4px;
+  padding-right: 4px;
+  text-align: center;
+}
 /* 「解析」列：灰(ghost)未解析 / 蓝(btn)已解析，尺寸跟随行内小按钮 */
 .laterhub-digest-cell { white-space: nowrap; }
 .laterhub-digest-cell .btn {
@@ -521,6 +524,8 @@ td { font-size: var(--fs-sm); }
 .laterhub-link-cell a { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .laterhub-action-cell { white-space: nowrap; }
 .laterhub-action-cell form { display: flex; justify-content: flex-start; }
+/* 「完成」按钮跟随所在列的居中对齐 */
+.laterhub-table .laterhub-action-cell form { justify-content: center; }
 
 /* 认证资产：仅展示当前源涉及到的登录站点，内容随源配置自动汇总 */
 .auth-sites { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
