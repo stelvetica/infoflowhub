@@ -83,6 +83,8 @@ class FakePage:
         self.ops.append(("evaluate", js))
         if "innerText" in js:
             return self.body_text
+        if "__bskPauseVideos" in js:
+            return "installed"
         return self.items
 
     def close(self) -> None:
@@ -118,16 +120,18 @@ def test_external_session_is_used_but_never_started_or_shutdown():
     assert result[0]["source"] == "douyin_favorite"
     # 页面操作确实发生
     assert page.goto_calls and page.goto_calls[0][0] == favorites.DOUYIN_FAVORITE_URL
-    # 首屏等待 → 提取 → 滚一轮（假 page 每轮条数不增长，故滚一轮即停）→ 取 body 文本
+    # 首屏等待 → 停播器 → 提取 → 滚一轮（假 page 每轮条数不增长，故滚一轮即停）→ 取 body 文本
     assert page.wait_calls == [5000, favorites.DOUYIN_SCROLL_WAIT_MS]
-    assert [op[0] for op in page.ops[:6]] == ["goto", "wait", "evaluate", "wheel", "wait", "evaluate"]
+    assert [op[0] for op in page.ops[:6]] == ["goto", "wait", "evaluate", "evaluate", "wheel", "wait"]
     assert page.ops[0][1] == favorites.DOUYIN_FAVORITE_URL
     assert page.ops[1][1] == 5000
-    # 第 4 个操作必须是真实滚轮事件（提取→滚动→等待→再提取，顺序不能颠倒）
-    assert page.ops[3] == ("wheel", favorites.DOUYIN_SCROLL_STEP_PX)
-    # 滚动前后的两次 evaluate 都是抽取 JS，不是滚动表达式
-    assert "querySelectorAll" in page.ops[2][1]
-    assert "querySelectorAll" in page.ops[5][1]
+    # 停播器必须在第一次滚动之前装上：滚轮会触发卡片预览自动播放，媒体源一变后续动作全被拒
+    assert "__bskPauseVideos" in page.ops[2][1]
+    # 第 5 个操作必须是真实滚轮事件（提取→滚动→等待→再提取，顺序不能颠倒）
+    assert page.ops[4] == ("wheel", favorites.DOUYIN_SCROLL_STEP_PX)
+    # 停播器之后、滚动前后的 evaluate 都是抽取 JS，不是滚动表达式
+    assert "querySelectorAll" in page.ops[3][1]
+    assert "querySelectorAll" in page.ops[6][1]
     assert page.evaluate_calls
     # 懒加载必须用 wheel：window.scrollTo 对抖音内层滚动容器几乎无效（实测 36 vs 134 锚点）
     assert page.mouse.wheel_calls == [(0, favorites.DOUYIN_SCROLL_STEP_PX)]
@@ -146,7 +150,7 @@ def test_scroll_loop_stops_early_and_keeps_growing_until_rounds_exhausted():
             self.extract_rounds = 0
 
         def evaluate(self, js, arg=None, **kwargs):
-            if "innerText" in js:
+            if "innerText" in js or "__bskPauseVideos" in js:
                 return super().evaluate(js, arg, **kwargs)
             self.evaluate_calls.append((js, arg, kwargs))
             self.ops.append(("evaluate", js))

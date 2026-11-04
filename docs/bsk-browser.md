@@ -11,6 +11,7 @@ bsk 是一个通过浏览器扩展驱动**本机日常 Chrome** 的抓取工具�
 - 抖音收藏、小黑盒收藏、B站稍后看、微信读书书架：**全部走 bsk**，复用日常 Chrome 实时登录会话。
 - 四个 bsk 源共用一个 bsk 会话；某源超时只停该 bsk 会话，**不会关闭或重开你的日常 Chrome**。
 - 小黑盒收藏：bsk 无请求/响应拦截能力，改为在页内借前端 `$hbRequest` 拿签名后直接取数（不再用 `page.on("request")`）。
+- 抖音收藏：**滚动前先装停播器**。卡片在滚轮悬停时会自动播放预览视频，而 `wheel` / `evaluate` 是无目标动作、strict 策略对它们保持整页基线校验——媒体源一变，后续动作全回 `permission_denied: The media source changed`（实测裸滚 8/8 被拒，且不会自愈；2026-11-04 07:14 抖音频道的整源失败即此）。停播器在导航并等 5s 后注入：暂停所有 `video` 且每 250ms 复查一次（懒加载新卡片同样覆盖）。装上后实测 6 轮滚动 0 被拒、条目 15→105 正常增长。副作用仅限 agent 自己的 tab，`page.close()` 后随文档销毁。
 - 微信读书书架：走 bsk 复用日常 Chrome 登录态；页内直接调同源接口 `/web/shelf/bookIds` + `/web/book/publicinfos`（页内 fetch 自动带登录 cookie，无需导出 token）。书架内可解析的书全部入库（不按「读完」标记过滤），坏 `bookId` 单条跳过、不拖垮整批。
 - B 站稍后看：与订阅动态同一姿势——先导航到 watchlater 页，再页内 fetch 官方接口 `x/v2/history/toview/web`（`credentials: include` 自动带日常 Chrome cookie）。不再读 `bilibili_main.json`、不再需要手动「同步登录态」；报 `-101 账号未登录` 时在日常 Chrome 登录 B站即可。
 
@@ -69,5 +70,5 @@ daemon 由「InfoFlowHub 开机自启」计划任务以 **Highest（提权）** 
    若报 `os error 5 拒绝访问`，**不是 daemon 没跑，而是调用方权限级别低于 daemon**（见上文「运行前提」）。
 3. 确认 Chrome 开着且扩展在线（扩展离线时 daemon 收不到浏览器会话）。
 4. 看源表「最近错误」：判断是否某源登录态失效，需在**日常 Chrome 重新登录**该站点。
-5. 报 `evaluate 失败 (exit=1, code=permission_denied)` / `wheel 失败 (…permission_denied)`：daemon 说的是「The action's observed content changed; synchronize and replan」，即 sync 之后页面又变了。`evaluate` 是无目标动作，bsk 对它保持**整页**基线校验，自更新页面天然容易撞上；连接器已按 `effect_state=none` 自动重试（单动作 3 次 × 会话 2 次）。**修法是换稳定落脚页**（B 站关注流/稍后看/视频摘要都已如此），靠加重试不解决——自更新页会连续拒。导航刚完成时 `cooperate sync` 被拒属正常（内容脚本尚未注入新文档），`_sync_context` 自带 6 × 0.6s 重试窗口。
+5. 报 `evaluate 失败 (exit=1, code=permission_denied)` / `wheel 失败 (…permission_denied)`：daemon 说的是「The action's observed content changed; synchronize and replan」或「The media source changed」，即 sync 之后页面又变了。`evaluate` / `wheel` 都是无目标动作，bsk 对它们保持**整页**基线校验，自更新页面天然撞上；连接器已按 `effect_state=none` 自动重试（单动作 3 次 × 会话 2 次），但**加重试治不了持续变化**。两种结构性修法：① 换稳定落脚页（B 站关注流/稍后看/视频摘要）；② 把变化源压住（抖音收藏装停播器）。导航刚完成时 `cooperate sync` 被拒属正常（内容脚本尚未注入新文档），`_sync_context` 自带 6 × 0.6s 重试窗口。
 6. 以上都排除后仍失败，直接修 bsk 链路（`bsk update` / `bsk status` / 扩展）；copy 后端已禁用，不存在「换后端重试」的退路。

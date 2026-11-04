@@ -20,6 +20,22 @@ DOUYIN_FAVORITE_URL = "https://www.douyin.com/user/self?from_tab_name=main&showT
 DOUYIN_SCROLL_ROUNDS = 3
 DOUYIN_SCROLL_STEP_PX = 3000
 DOUYIN_SCROLL_WAIT_MS = 2500
+# 收藏页卡片会在滚轮悬停时自动播放预览视频。bsk 的 wheel/evaluate 属无目标动作，strict 策略
+# 对它们保持整页基线校验：一旦有视频在播（媒体源持续变化），后续动作一律
+# `permission_denied: The media source changed` / `observed content changed`（实测裸滚 8/8 被拒，
+# 2026-11-04 07:14 抖音频道的整源失败即此）。滚动前先装一个停播器，把页面压成静态后再滚。
+DOUYIN_STABILIZE_MEDIA_JS = r"""
+() => {
+  if (window.__bskPauseVideos) return "already";
+  window.__bskPauseVideos = true;
+  const pause = () => document.querySelectorAll("video").forEach((v) => {
+    try { if (!v.paused) v.pause(); v.autoplay = false; } catch (e) {}
+  });
+  pause();
+  setInterval(pause, 250);
+  return "installed";
+}
+"""
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 DEBUG_JSON_PATH = DEBUG_DIR / "tmp_pw_douyin_favorites.json"
 
@@ -112,6 +128,8 @@ def fetch_douyin_favorites(
         page = session.acquire_page()
         page.goto(DOUYIN_FAVORITE_URL, wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(5000)
+        # 先停掉预览视频再滚：滚动会触发卡片自动播放，媒体源一变后续 wheel/evaluate 全被拒。
+        page.evaluate(DOUYIN_STABILIZE_MEDIA_JS)
         items = _extract_visible_items(page)
         # 逐轮下滚让懒加载条目进入 DOM；某轮条数不再增长就停。
         for _ in range(DOUYIN_SCROLL_ROUNDS):
