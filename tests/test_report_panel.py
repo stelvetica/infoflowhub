@@ -34,7 +34,11 @@ def _write_reports_dir(tmp_path: Path) -> Path:
     (reports / REPORT_MD).write_text(SAMPLE_MD, encoding="utf-8")
     (reports / ANNOUNCE_MD).write_text(SAMPLE_MD, encoding="utf-8")
     (reports / ANNOUNCE_PNG).write_bytes(b"\x89PNG\r\n\x1a\n")
-    (reports / TODAY_NEWS_MD).write_text(SAMPLE_MD, encoding="utf-8")
+    today_news = reports / TODAY_NEWS_MD
+    today_news.write_text(SAMPLE_MD, encoding="utf-8")
+    # 文件名没有日期，靠 mtime 判归属；默认写成旧文件，需要「今天」的用例自己 os.utime 刷新
+    old = datetime(2000, 1, 1).timestamp()
+    os.utime(today_news, (old, old))
     (reports / NOISE_JSON).write_text("{}", encoding="utf-8")
     return reports
 
@@ -325,27 +329,22 @@ def test_build_news_state_params_defaults_to_flow_scope():
     assert views.build_news_state_params({"news_scope": "bogus"})["news_scope"] == "flow"
 
 
-def test_news_scope_flow_lists_only_current_flow_products(reports_dir: Path, flow_state: Path, temp_db: Path):
-    _write_flow(
-        flow_state,
-        {
-            "flow_id": "20260922-081000",
-            "status": "success",
-            "products": [{"name": REPORT_MD, "kind": "新闻影响分析", "is_image": False}],
-        },
-    )
+def test_news_scope_flow_lists_only_today_products(reports_dir: Path, temp_db: Path):
+    """本次只列今天该出的产物；旧日期文件只在「历史」里出现。"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_md = f"新闻影响分析_{today}.md"
+    (reports_dir / today_md).write_text(SAMPLE_MD, encoding="utf-8")
     view = views.get_news_view({"news_scope": "flow"})
     assert view["scope"] == "flow"
-    assert [row["name"] for row in view["rows"]] == [REPORT_MD]
+    assert view["rows"] and {row["name"] for row in view["rows"]} == {today_md}
     # 同一份产物目录，all 范围仍返回整个白名单
     all_view = views.get_news_view({"news_scope": "all"})
     assert all_view["scope"] == "all"
-    assert all_view["filtered_total"] == 4
+    assert all_view["filtered_total"] == 5
 
 
-def test_news_scope_flow_empty_without_flow_record(reports_dir: Path, flow_state: Path, temp_db: Path):
-    _write_flow(flow_state, None)
-    assert views.get_flow_state() == {}
+def test_news_scope_flow_empty_for_old_dated_reports(reports_dir: Path, temp_db: Path):
+    """目录里只有旧日期产物时「本次」为空，与流程记录无关。"""
     assert views.get_news_view({"news_scope": "flow"})["filtered_total"] == 0
 
 
@@ -386,18 +385,23 @@ def test_news_panel_exposes_scope_and_flow_empty_text(client: TestClient, flow_s
     response = client.get("/fragments/news")
     assert response.status_code == 200
     assert 'data-news-scope="flow"' in response.text
-    assert "本次流程暂无新增产物" in response.text
+    assert "今日暂无产物" in response.text
 
 
-def test_news_scope_switch_via_route(client: TestClient, reports_dir: Path, flow_state: Path, temp_db: Path):
-    _write_flow(
-        flow_state,
-        {"flow_id": "x", "status": "success", "products": [{"name": REPORT_MD, "kind": "新闻影响分析", "is_image": False}]},
-    )
+def test_news_scope_switch_via_route(client: TestClient, reports_dir: Path, temp_db: Path):
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_md = f"新闻影响分析_{today}.md"
+    (reports_dir / today_md).write_text(SAMPLE_MD, encoding="utf-8")
     flow_resp = client.get("/fragments/news?news_scope=flow")
     assert 'data-news-scope="flow"' in flow_resp.text
-    assert REPORT_MD in flow_resp.text
+    assert today_md in flow_resp.text
     assert ANNOUNCE_MD not in flow_resp.text
+
+
+def test_scope_is_not_persisted_between_page_loads(client: TestClient, reports_dir: Path, temp_db: Path):
+    """范围只认本次请求：看过「历史」后刷新首页仍回到「本次」。"""
+    assert 'data-news-scope="all"' in client.get("/fragments/news?news_scope=all").text
+    assert 'data-news-scope="flow"' in client.get("/").text
 
     all_resp = client.get("/fragments/news?news_scope=all")
     assert 'data-news-scope="all"' in all_resp.text

@@ -197,6 +197,8 @@ button, input, select, textarea { font: inherit; }
 .news-card .entries-table td { height: var(--news-row-h); padding-top: 0; padding-bottom: 0; }
 .news-card .pagination .subtle, .news-card .entries-table th a.sort { font-size: var(--fs-xs); }
 .news-card .table-wrap { max-height: calc(4 * var(--news-row-h) + var(--news-head-h) + 3px); }
+/* 「本次」按实际条数撑开：今天该出几条就显示几行，不分批也不做 4 行滚动窗口；历史仍走窗口+续载 */
+.news-card:has([data-news-scope="flow"]) .table-wrap { max-height: none; }
 
 /* 展开报告时解除上面的 3 行限高:改由报告内容区自身限高滚动,并给新闻卡设总高上限,
    避免两万多像素的长报告把下方「订阅内容」卡挤没。:has() 让「是否展开」纯由 DOM 状态决定,

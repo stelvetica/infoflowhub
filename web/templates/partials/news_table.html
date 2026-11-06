@@ -72,7 +72,7 @@
           <tr class="news-report-row"><td colspan="3"><div class="news-report" id="{{ report_id }}"></div></td></tr>
           {% endfor %}
         {% else %}
-          <tr><td colspan="3" class="empty">{% if news.scope == 'flow' %}本次流程暂无新增产物{% else %}暂无生成内容{% endif %}</td></tr>
+          <tr><td colspan="3" class="empty">{% if news.scope == 'flow' %}今日暂无产物{% else %}暂无生成内容{% endif %}</td></tr>
         {% endif %}
       </tbody>
     </table>
