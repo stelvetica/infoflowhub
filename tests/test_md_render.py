@@ -40,6 +40,24 @@ def test_render_supports_ordered_list_and_paragraph_break():
     assert "<p>下一段</p>" in html
 
 
+def test_render_restores_details_block():
+    """产物里的折叠块要还原成真标签，不能显示成 &lt;details&gt; 文本。"""
+    html = md_render.render(
+        "<details><summary>产品A：近一周净 -1.2%</summary>\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n</details>"
+    )
+    assert "<details><summary>产品A：近一周净 -1.2%</summary>" in html
+    assert "</details>" in html
+    assert "&lt;details&gt;" not in html
+    assert "<table>" in html
+
+
+def test_render_keeps_details_with_attributes_escaped():
+    """只认固定字面量：带属性的 details 仍按文本转义，避免成为注入入口。"""
+    html = md_render.render("<details open><summary>x</summary></details>")
+    assert "<details>" not in html
+    assert "&lt;details open&gt;" in html
+
+
 def test_render_downgrades_unsafe_link_scheme():
     html = md_render.render("[点我](javascript:alert(1))")
     assert "<a href" not in html
