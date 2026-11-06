@@ -331,16 +331,14 @@ def render_md(report: dict, cfg: dict) -> str:
                  f"| **{pct_of(wk['net'], p['nav'])}** "
                  f"| {pct_of(mo['buy'], p['nav'], False)} / {pct_of(mo['sell'], p['nav'], False)} "
                  f"| {pct_of(mo['net'], p['nav'])} |")
-    tb = report["total"]
-    wk, mo = tb["week"], tb["month"]
-    L.append(f"| **合计** | — "
-             f"| {pct_of(wk['buy'], wk['nav'], False)} / {pct_of(wk['sell'], wk['nav'], False)} "
-             f"| **{pct_of(wk['net'], wk['nav'])}** "
-             f"| {pct_of(mo['buy'], mo['nav'], False)} / {pct_of(mo['sell'], mo['nav'], False)} "
-             f"| {pct_of(mo['net'], mo['nav'])} |")
-    if wk["repo"] or mo["repo"]:
-        L.append(f"\n> 另有回购操作：近一周 {pct_of(wk['repo'], wk['nav'])}、"
-                 f"近一月 {pct_of(mo['repo'], mo['nav'])}（不计入个股）。")
+    # 不做「全部产品合计」：各产品净值规模与策略不同，跨产品百分比加总没有组合含义。
+    repo_notes = [
+        f"{p['name']} 近一周 {pct_of(p['week']['repo'], p['nav'])}、近一月 {pct_of(p['month']['repo'], p['nav'])}"
+        for p in report["products"]
+        if p["week"]["repo"] or p["month"]["repo"]
+    ]
+    if repo_notes:
+        L.append("\n> 另有回购操作（不计入个股）：" + "；".join(repo_notes) + "。")
     L += ["", "## 仓位（最新估值表）", "",
           "| 产品 | 估值日 | 净值（≈） | 权益敞口（股票+互换） | 其中直接股票 | 其中互换保证金 | 近一月净买卖（≈变化） |",
           "|---|---|---|---|---|---|---|"]
@@ -350,13 +348,12 @@ def render_md(report: dict, cfg: dict) -> str:
                  f"| {fmt_pct(pos['stock'])} | {fmt_pct(pos['swap'])} "
                  f"| {pct_of(p['month']['net'], p['nav'])} |")
     for label, key in (("近一周", "week"), ("近一月", "month")):
-        nav_t = tb[key]["nav"]
-        L += ["", f"## {label}", "", f"### 行业（全部产品合计，占最新净值%）", "",
-              industry_table(tb[key]["industries"], top_n, nav_t),
-              "", "### 个股（全部产品合计）", "", side_table(tb[key]["stocks"], top_n, nav_t)]
+        L += ["", f"## {label}（分产品）"]
         for p in report["products"]:
-            L += ["", f"<details><summary>{p['name']}：合计净 {pct_of(p[key]['net'], p['nav'])}</summary>", "",
+            L += ["", f"<details><summary>{p['name']}：{label}净 {pct_of(p[key]['net'], p['nav'])}</summary>", "",
+                  "**行业（占本产品最新净值%）**", "",
                   industry_table(p[key]["industries"], top_n, p["nav"]), "",
+                  "**个股（占本产品最新净值%）**", "",
                   side_table(p[key]["stocks"], top_n, p["nav"]), "", "</details>"]
     L += ["", "## 解读", "", "<!-- AI：读《操作底稿》后填写，3–5 条，带数字，不评价「对不对」 -->", ""]
     return "\n".join(L)
