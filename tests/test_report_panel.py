@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -86,6 +87,25 @@ def test_news_view_only_lists_whitelisted_reports(reports_dir: Path, temp_db: Pa
     assert {row["name"] for row in view["rows"]} == {REPORT_MD, ANNOUNCE_MD, ANNOUNCE_PNG, TODAY_NEWS_MD}
     assert {row["read_key"] for row in view["rows"]} == {f"report:{name}" for name in (REPORT_MD, ANNOUNCE_MD, ANNOUNCE_PNG, TODAY_NEWS_MD)}
     assert all(row["link"].startswith("/reports/view/") for row in view["rows"])
+
+
+def test_news_view_history_includes_operations_report(reports_dir: Path, temp_db: Path):
+    """周任务产物（操作分析）不在晨间流程里，也要能进「历史」范围。"""
+    (reports_dir / "操作分析_2026-09-20.md").write_text(SAMPLE_MD, encoding="utf-8")
+    rows = views.get_news_view({"news_scope": "all"})["rows"]
+    assert [row["kind"] for row in rows if row["kind"] == "操作分析"] == ["操作分析"]
+    assert "操作分析_2026-09-20.md" in {row["name"] for row in rows}
+
+
+def test_news_view_flow_includes_only_today_operations_report(
+    reports_dir: Path, flow_state: Path, temp_db: Path
+):
+    """「本次」范围补当天操作分析：7:30 生成早于 8:10 流程起点，靠 flow products 扫不到。"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    (reports_dir / f"操作分析_{today}.md").write_text(SAMPLE_MD, encoding="utf-8")
+    (reports_dir / "操作分析_1999-01-01.md").write_text(SAMPLE_MD, encoding="utf-8")
+    names = {row["name"] for row in views.get_news_view({"news_scope": "flow"})["rows"]}
+    assert names == {f"操作分析_{today}.md"}
 
 
 def test_news_view_returns_empty_when_dir_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, temp_db: Path):
