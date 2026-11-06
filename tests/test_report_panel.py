@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -97,15 +98,18 @@ def test_news_view_history_includes_operations_report(reports_dir: Path, temp_db
     assert "操作分析_2026-09-20.md" in {row["name"] for row in rows}
 
 
-def test_news_view_flow_includes_only_today_operations_report(
+def test_news_view_flow_includes_operations_report_generated_today(
     reports_dir: Path, flow_state: Path, temp_db: Path
 ):
-    """「本次」范围补当天操作分析：7:30 生成早于 8:10 流程起点，靠 flow products 扫不到。"""
-    today = datetime.now().strftime("%Y-%m-%d")
-    (reports_dir / f"操作分析_{today}.md").write_text(SAMPLE_MD, encoding="utf-8")
-    (reports_dir / "操作分析_1999-01-01.md").write_text(SAMPLE_MD, encoding="utf-8")
+    """「本次」按生成时间补当天操作分析：文件名是报告口径日，可能与生成日不同。"""
+    generated = reports_dir / "操作分析_2026-01-05.md"
+    generated.write_text(SAMPLE_MD, encoding="utf-8")
+    stale = reports_dir / "操作分析_1999-01-01.md"
+    stale.write_text(SAMPLE_MD, encoding="utf-8")
+    old = datetime(2000, 1, 1).timestamp()
+    os.utime(stale, (old, old))
     names = {row["name"] for row in views.get_news_view({"news_scope": "flow"})["rows"]}
-    assert names == {f"操作分析_{today}.md"}
+    assert names == {generated.name}
 
 
 def test_news_view_returns_empty_when_dir_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, temp_db: Path):
