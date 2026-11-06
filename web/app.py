@@ -43,5 +43,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="InfoFlowHub", docs_url=None, redoc_url=None, lifespan=lifespan)
+# 路由里的手动补跑要拿同一个 runner 实例（进程内单例），挂在 app.state 上避免反向 import。
+app.state.auto_runner = auto_runner
 app.mount("/static", StaticFilesNoCache(directory=str(BASE_DIR / "web" / "static")), name="static")
 app.include_router(router)

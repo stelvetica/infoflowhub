@@ -6,7 +6,17 @@
   {# 标题行随片段渲染:范围切换后 chip 选中态要跟着换,放片段外就得靠 OOB 回写。
      .panel-title 本身是两端对齐的 flex,状态条与 chip 横排在右侧、与标题同基线。 #}
   <div class="panel-title news-panel-title">
-    <h2>新闻公告</h2>
+    <div class="panel-title-inline">
+      <h2>新闻公告</h2>
+      {# 手动补跑今天该跑的 skill：非交易日与运行中置灰，避免白跑一轮模型/连点重复触发 #}
+      {% set gate_verdict = (market_gate or {}).get('verdict') or '' %}
+      {% set flow_busy = flow.get('status') == 'running' %}
+      <form class="news-run-skills-form" hx-post="/actions/run-skills-now" hx-target="#news-flow-status" hx-swap="outerHTML">
+        <button class="btn ghost news-run-skills-btn" type="submit"
+                {% if flow_busy or gate_verdict == 'closed' %}disabled{% endif %}
+                title="{% if gate_verdict == 'closed' %}今日非交易日，无需运行{% elif flow_busy %}流程运行中{% else %}立即运行今天该跑的 skill（公告+新闻；本周最后交易日含操作分析）{% endif %}">跑技能</button>
+      </form>
+    </div>
     <div class="news-header-meta">
       {% include "partials/news_flow_status.html" %}
       {# 范围切换：与表头排序同款纯 HTMX 链接，不做 JS 状态机。base_params 不含 scope，各处显式拼一次，避免重复参数 #}

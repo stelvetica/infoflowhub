@@ -176,6 +176,8 @@ class AutoRunner:
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
         self._stopped = asyncio.Event()
+        # 手动补跑占位：在事件循环线程内同步读写，不跨线程，普通布尔足够。
+        self._manual_running = False
         # 门禁结论内存缓存：(落盘形状, 有效截止时刻)。决定性结论有效到当天结束，
         # 非决定性 120 秒——避免窗口内每 60 秒 tick 都重算一次判定链。
         self._gate_cache: tuple[dict[str, str], datetime] | None = None
@@ -423,32 +425,46 @@ class AutoRunner:
         async with self._lock:
             if str(self._slot("operations").get("last_attempt_date") or "") == today:
                 return
-            payload: dict[str, Any] = {
-                "last_attempt_date": today,
-                "started_at": self._format_dt(datetime.now()),
-                "finished_at": "",
-                "status": "running",
-                "error": "",
-                "result": {},
-            }
-            # 开工即落 attempt：失败当天不重试（每 60 秒 tick 重试只会反复烧模型）。
-            self._write_slot("operations", dict(payload))
-            try:
-                outcome = await asyncio.to_thread(
-                    run_skill, OPS_SKILL, cwd=BASE_DIR, timeout=OPS_SKILL_TIMEOUT_SECONDS
-                )
-                payload["result"] = outcome
-                payload["status"] = str(outcome.get("status") or "error")
-                payload["error"] = str(outcome.get("error") or "")
-            except Exception as exc:  # noqa: BLE001
-                payload["status"] = "error"
-                payload["error"] = normalize_utf8_text(str(exc))
-            payload["finished_at"] = self._format_dt(datetime.now())
-            self._write_slot("operations", payload)
-            if payload["status"] == "error":
-                logger.warning("操作分析周任务失败：%s", payload["error"])
-            else:
-                logger.info("操作分析周任务完成：%s", payload["result"])
+            await self._run_operations_slot(today)
+
+    async def _run_operations_slot(self, today: str) -> dict[str, Any]:
+        """跑一次操作分析并落 slots.operations；返回 skill 形状结果供 flow.skills 展示。
+
+        不加锁：调用方（定时槽 / 手动补跑）已持锁或已在流程占位内，再加一层会死锁。
+        """
+        payload: dict[str, Any] = {
+            "last_attempt_date": today,
+            "started_at": self._format_dt(datetime.now()),
+            "finished_at": "",
+            "status": "running",
+            "error": "",
+            "result": {},
+        }
+        # 开工即落 attempt：失败当天不重试（每 60 秒 tick 重试只会反复烧模型）。
+        self._write_slot("operations", dict(payload))
+        try:
+            outcome = await asyncio.to_thread(
+                run_skill, OPS_SKILL, cwd=BASE_DIR, timeout=OPS_SKILL_TIMEOUT_SECONDS
+            )
+            payload["result"] = outcome
+            payload["status"] = str(outcome.get("status") or "error")
+            payload["error"] = str(outcome.get("error") or "")
+        except Exception as exc:  # noqa: BLE001
+            payload["status"] = "error"
+            payload["error"] = normalize_utf8_text(str(exc))
+        payload["finished_at"] = self._format_dt(datetime.now())
+        self._write_slot("operations", payload)
+        if payload["status"] == "error":
+            logger.warning("操作分析周任务失败：%s", payload["error"])
+        else:
+            logger.info("操作分析周任务完成：%s", payload["result"])
+        return {
+            "name": OPS_SKILL,
+            "status": payload["status"],
+            "started_at": payload["started_at"],
+            "finished_at": payload["finished_at"],
+            "error": payload["error"],
+        }
 
     def _maybe_check_bsk_update(self, *, force: bool = False) -> None:
         """跑一次 bsk 更新检查（复用 scripts\\check_bsk_update.ps1，逻辑不重写）。
@@ -536,8 +552,8 @@ class AutoRunner:
         self._save_state(state)
         return started_at
 
-    def _run_skill_stage(self) -> list[dict[str, Any]]:
-        """抓取成功后按 SKILLS 顺序跑 skill，结束后确定性回写观察目录。
+    def _run_skill_stage(self, chain: tuple[str, ...] = SKILLS) -> list[dict[str, Any]]:
+        """按给定顺序跑 skill，结束后确定性回写观察目录（默认就是晨间 SKILLS 链）。
 
         第一个失败/超时也继续跑第二个（新闻分析不能因公告失败而缺失）；回写不依赖
         最后一个 skill 是否跑完，避免 md 已落盘但观察目录仍是旧版本。
@@ -545,7 +561,7 @@ class AutoRunner:
         if not self._skill_stage_enabled():
             return []
         skills: list[dict[str, Any]] = []
-        for name in SKILLS:
+        for name in chain:
             skills.append(run_skill(name, cwd=BASE_DIR))
             # 每跑完一个就落盘：运行期状态条从 state 读 skills，否则整个
             # 15~40 分钟运行期都误显示「阶段：抓取订阅与稍后处理」。
@@ -578,13 +594,89 @@ class AutoRunner:
         self._save_state(state)
         await asyncio.to_thread(_open_panel)
 
+    def _flow_running(self) -> bool:
+        flow = self._load_state().get("flow")
+        return isinstance(flow, dict) and flow.get("status") == "running"
+
+    def due_skill_names(self, now: datetime | None = None) -> list[str]:
+        """「当天该跑」的 skill：非交易日为空；交易日=公告+新闻；本周最后交易日再加操作分析。
+
+        操作分析当天已经跑过（7:30 定时或早先手动）就不再重复，手动按钮只补没跑的。
+        """
+        now = now or datetime.now()
+        if self._market_verdict(now)["verdict"] == VERDICT_CLOSED:
+            return []
+        names = list(SKILLS)
+        today = now.date().isoformat()
+        already_ran_ops = str(self._slot("operations").get("last_attempt_date") or "") == today
+        if not already_ran_ops and is_last_trading_day_of_week(now.date(), local_trading_days()):
+            names.append(OPS_SKILL)
+        return names
+
+    def claim_manual_run(self) -> bool:
+        """同步占位：挡住连点与流程运行中的重复触发，返回是否真的开工。"""
+        if self._manual_running or self._flow_running():
+            return False
+        self._manual_running = True
+        return True
+
     async def run_skills_now(self) -> list[dict[str, Any]]:
-        """手动补跑 skill 阶段：按一次完整流程登记状态，面板头部与「本次流程」据此显示。"""
-        now = datetime.now()
-        started_at = self._begin_flow(now)
-        skills = await asyncio.to_thread(self._run_skill_stage)
-        await self._finish_flow(started_at, skills=skills, today=now.date().isoformat())
-        return skills
+        """强制手动补跑 skill 链（scripts/run_skills_once.py 与测试用）：不问门禁、只跑 SKILLS。
+
+        强制模式登记 last_run_date：这是「把今天这次流程补上」的语义，8:10 不该再跑一遍。
+        """
+        return await self._run_manual(datetime.now(), list(SKILLS), record_last_run=True, include_ops=False)
+
+    async def run_due_skills_now(self) -> list[dict[str, Any]]:
+        """按钮用：只跑当天该跑的 skill，按一次完整流程登记状态供面板展示。
+
+        调用方必须先 claim_manual_run()；这里只负责执行与释放占位。
+        不写 last_run_date：手动补跑没有抓取输入源，不能让它把当天 8:10 的完整流程
+        （含新闻抓取）判成「今天已跑」；同一天重复点只是重跑 skill。
+        """
+        try:
+            now = datetime.now()
+            names = self.due_skill_names(now)
+            if not names:
+                return []
+            chain = [name for name in names if name in SKILLS]
+            return await self._run_manual(
+                now, chain, record_last_run=False, include_ops=OPS_SKILL in names
+            )
+        finally:
+            self._manual_running = False
+
+    async def _run_manual(
+        self,
+        now: datetime,
+        chain: list[str],
+        *,
+        record_last_run: bool,
+        include_ops: bool,
+    ) -> list[dict[str, Any]]:
+        """两次手动入口共用的流程登记与收尾；运行中不叠加。"""
+        async with self._lock:
+            if self._flow_running():
+                return []
+            started_at = self._begin_flow(now)
+            try:
+                skills = await asyncio.to_thread(self._run_skill_stage, tuple(chain))
+                if include_ops:
+                    skills = [*skills, await self._run_operations_slot(now.date().isoformat())]
+                    self._persist_skills(skills)
+                await self._finish_flow(
+                    started_at, skills=skills, today=now.date().isoformat() if record_last_run else None
+                )
+                return skills
+            except Exception as exc:  # noqa: BLE001
+                state = self._load_state()
+                error = normalize_utf8_text(str(exc))
+                state["last_status"] = "error"
+                state["last_error"] = error
+                self._finalize_flow(state, started_at, status="error", error=error)
+                self._save_state(state)
+                logger.warning("手动补跑 skill 失败：%s", error)
+                return []
 
     def _persist_skills(self, skills: list[dict[str, Any]]) -> None:
         """把已完成/进行中的技能列表落盘到 flow.skills（运行期状态条据此显示阶段）。"""

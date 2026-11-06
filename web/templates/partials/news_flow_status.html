@@ -15,7 +15,8 @@
      data-flow-id="{{ flow.get('flow_id') or '' }}"
      role="status"
      aria-live="polite"
-     {% if status == 'running' %}hx-get="/fragments/news-flow-status" hx-trigger="every 10s" hx-swap="outerHTML"{% endif %}>
+     {% if status == 'running' %}hx-get="/fragments/news-flow-status" hx-trigger="every 10s" hx-swap="outerHTML"
+     {% elif force_poll %}hx-get="/fragments/news-flow-status" hx-trigger="load delay:5s" hx-swap="outerHTML"{% endif %}>
   {% if not status %}
   <span class="subtle">暂无自动化流程记录</span>
   {% elif status == 'running' %}

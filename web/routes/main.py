@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import threading
 from pathlib import Path
 from urllib.parse import quote, urlencode, urlparse
@@ -42,6 +44,9 @@ from web.services.views import (
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
+logger = logging.getLogger(__name__)
+# 手动补跑是长时间后台任务：任务引用要留住，否则可能被 GC 掉。
+_SKILL_TASKS: set[asyncio.Task] = set()
 BASE_DIR = Path(__file__).resolve().parents[2]
 # 源正文目录：kind 与 web/services/views.MARKDOWN_KINDS 的取值一一对应
 MARKDOWN_DIRS = {
@@ -219,6 +224,39 @@ async def news_flow_status_fragment(request: Request):
         request,
         "partials/news_flow_status.html",
         {"flow": get_flow_state(), "market_gate": get_market_gate(), "params": query_dict(request)},
+    )
+
+
+async def _run_due_skills_bg(runner) -> None:  # noqa: ANN001 - 避免与 app 循环 import AutoRunner
+    """后台跑当天该跑的 skill；异常只记日志，占位由 run_due_skills_now 的 finally 释放。"""
+    try:
+        await runner.run_due_skills_now()
+    except Exception:  # noqa: BLE001
+        logger.exception("手动补跑 skill 后台任务异常")
+
+
+@router.post("/actions/run-skills-now", response_class=HTMLResponse)
+async def run_skills_now_action(request: Request):
+    """手动跑当天该跑的 skill（交易日=公告+新闻；本周最后交易日含操作分析）。
+
+    立即返回状态片段：任务在事件循环里后台跑，避免 HTTP 请求挂十几分钟；
+    刚开工时 flow 还没落 running，片段靠 force_poll 在 5s 后再拉一次，接上 10s 轮询。
+    """
+    runner = request.app.state.auto_runner
+    started = runner.claim_manual_run()
+    if started:
+        task = asyncio.create_task(_run_due_skills_bg(runner), name="run-skills-now-bg")
+        _SKILL_TASKS.add(task)
+        task.add_done_callback(_SKILL_TASKS.discard)
+    return templates.TemplateResponse(
+        request,
+        "partials/news_flow_status.html",
+        {
+            "flow": get_flow_state(),
+            "market_gate": get_market_gate(),
+            "params": query_dict(request),
+            "force_poll": started,
+        },
     )
 
 
