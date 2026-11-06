@@ -414,7 +414,7 @@ def render_md(report: dict, cfg: dict) -> str:
 
     # 4 产品分化：按各产品自身净额排序，不做跨产品加总
     L += ["### 4. 产品分化", "",
-          "| 产品 | 净值（≈） | 近一周净 | 近一月净 | 期末权益敞口 |", "|---|---|---|---|---|"]
+          "| 产品 | 净值（≈） | 【仓位】近一周净 | 【仓位】近一月净 | 期末权益敞口 |", "|---|---|---|---|---|"]
     for p in sorted(products, key=lambda x: (x["week"]["net"] / x["nav"]) if x["nav"] else 0):
         L.append(f"| {p['name']} | {yi(p['nav'])} | {pct_of(p['week']['net'], p['nav'])} "
                  f"| {pct_of(p['month']['net'], p['nav'])} | {fmt_pct(p['position'].get('equity'))} |")
@@ -469,7 +469,7 @@ def render_md(report: dict, cfg: dict) -> str:
     for label, key in (("近一周", "week"), ("近一月", "month")):
         L += ["", f"## {label}（分产品）"]
         for p in report["products"]:
-            L += ["", f"<details><summary>{p['name']}：{label}净 {pct_of(p[key]['net'], p['nav'])}</summary>", "",
+            L += ["", f"<details open><summary>{p['name']}：{label}净 {pct_of(p[key]['net'], p['nav'])}</summary>", "",
                   "**行业（占本产品最新净值%）**", "",
                   industry_table(p[key]["industries"], top_n, p["nav"]), "",
                   "**个股（占本产品最新净值%）**", "",

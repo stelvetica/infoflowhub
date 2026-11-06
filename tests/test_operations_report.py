@@ -85,5 +85,16 @@ def test_caliber_block_is_short():
     assert any("互换" in line for line in bullets)
 
 
+def test_position_columns_are_labeled():
+    md = ops.render_md(_report(), CFG)
+    assert "【仓位】近一周净" in md
+    assert "【仓位】近一月净" in md
+
+
+def test_detail_blocks_default_open():
+    md = ops.render_md(_report(), CFG)
+    assert md.count("<details open>") == 4  # 两个窗口 × 两个产品
+
+
 def test_industry_shift_marks_reversal():
     assert "转为减仓" in ops.industry_shift_cell(_report()["products"][0])

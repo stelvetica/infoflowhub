@@ -51,11 +51,18 @@ def test_render_restores_details_block():
     assert "<table>" in html
 
 
-def test_render_keeps_details_with_attributes_escaped():
-    """只认固定字面量：带属性的 details 仍按文本转义，避免成为注入入口。"""
-    html = md_render.render("<details open><summary>x</summary></details>")
-    assert "<details>" not in html
-    assert "&lt;details open&gt;" in html
+def test_render_restores_details_open_block():
+    """`open` 是唯一允许的属性：详情块默认展开。"""
+    html = md_render.render("<details open><summary>产品A</summary>\n\n正文\n\n</details>")
+    assert "<details open><summary>产品A</summary>" in html
+    assert "</details>" in html
+
+
+def test_render_keeps_unknown_details_attributes_escaped():
+    """只认固定字面量：`open` 之外的属性仍按文本转义，避免成为注入入口。"""
+    html = md_render.render('<details onclick="x"><summary>x</summary>')
+    assert "<details" not in html
+    assert "&lt;details onclick=" in html
 
 
 def test_render_downgrades_unsafe_link_scheme():

@@ -24,9 +24,9 @@ _CODE_SPAN_RE = re.compile(r"`([^`]+)`")
 _BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
 _LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)\s]*)\)")
 _UNSAFE_URL_RE = re.compile(r"^\s*(?:javascript|data|vbscript):", re.IGNORECASE)
-# 产物里的折叠块（<details><summary>…</summary>）是固定字面量：整段 escape 后按精确模式还原，
-# 只认这两行且不带任何属性，其余 HTML 仍照旧转义为文本。
-_DETAILS_OPEN_RE = re.compile(r"^&lt;details&gt;&lt;summary&gt;(.*)&lt;/summary&gt;$")
+# 产物里的折叠块（<details[ open]><summary>…</summary>）是固定字面量：整段 escape 后按精确模式还原，
+# 只认这一行且属性只允许 `open`，其余 HTML 仍照旧转义为文本。
+_DETAILS_OPEN_RE = re.compile(r"^&lt;details( open)?&gt;&lt;summary&gt;(.*)&lt;/summary&gt;$")
 _DETAILS_CLOSE = "&lt;/details&gt;"
 
 
@@ -118,7 +118,8 @@ def render(markdown_text: str) -> str:
         if details:
             flush_paragraph()
             flush_list()
-            blocks.append(f"<details><summary>{_inline(details.group(1))}</summary>")
+            open_attr = " open" if details.group(1) else ""
+            blocks.append(f"<details{open_attr}><summary>{_inline(details.group(2))}</summary>")
             index += 1
             continue
 
