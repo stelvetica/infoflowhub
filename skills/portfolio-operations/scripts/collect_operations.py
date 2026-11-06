@@ -15,7 +15,7 @@
   新标的出现时归「未归类」，由 AI 查证后补进 config。
 
 产物（写 config.output_dir）：
-- 操作分析_YYYY-MM-DD.md   表格 + 「解读」占位（AI 填写）
+- 操作分析_YYYY-MM-DD.md   解读（个股/行业/特征/产品分化由脚本，各产品点评由 AI）→ 口径 → 总览 → 仓位 → 明细
 - 操作底稿_YYYY-MM-DD.json 结构化底稿（AI 读取用）
 """
 from __future__ import annotations
@@ -276,6 +276,74 @@ def pct_of(x: float | None, nav: float | None, signed: bool = True) -> str:
     return f"{v:+.1f}%" if signed else f"{v:.1f}%"
 
 
+# ---------- 解读用的确定性片段（脚本出数据，AI 只写点评） ----------
+
+def side_cell(items: list[tuple[str, float]], nav: float | None, n: int = 3) -> str:
+    """加/减各前 n 名 →「加 A +1.2%；减 B -3.4%、C -1.1%」。"""
+    adds = sorted((kv for kv in items if kv[1] > 0), key=lambda kv: -kv[1])[:n]
+    cuts = sorted((kv for kv in items if kv[1] < 0), key=lambda kv: kv[1])[:n]
+    text_add = "、".join(f"{name} {pct_of(v, nav)}" for name, v in adds) or "—"
+    text_cut = "、".join(f"{name} {pct_of(v, nav)}" for name, v in cuts) or "—"
+    return f"加 {text_add}；减 {text_cut}"
+
+
+def reversal_cell(p: dict, n: int = 2) -> str:
+    """同一标的近一月与近一周净额符号相反（周内幅度 ≥0.5% 净值）→ 反转。"""
+    month_nets = {s["code"]: s["net"] for s in p["month"]["stocks"]}
+    rows = []
+    for s in p["week"]["stocks"]:
+        month_net = month_nets.get(s["code"])
+        if not month_net or not s["net"] or month_net * s["net"] > 0:
+            continue
+        week_pct = s["net"] / p["nav"] * 100
+        if abs(week_pct) < 0.5:
+            continue
+        rows.append((abs(s["net"]), s["name"], month_net / p["nav"] * 100, week_pct))
+    rows.sort(reverse=True)
+    return "、".join(f"{name} {mp:+.1f}%→{wp:+.1f}%" for _, name, mp, wp in rows[:n]) or "—"
+
+
+def industry_shift_cell(p: dict, n: int = 2) -> str:
+    """近一月 Top 行业 → 近一周：延续 / 放缓 / 反转。"""
+    tops = sorted(p["month"]["industries"].items(), key=lambda kv: -abs(kv[1]))[:n]
+    out = []
+    for name, month_net in tops:
+        week_net = p["week"]["industries"].get(name, 0)
+        mp, wp = month_net / p["nav"] * 100, week_net / p["nav"] * 100
+        if month_net * week_net > 0 and abs(wp) < abs(mp) * 0.5:
+            tag = "减仓放缓" if month_net < 0 else "加仓放缓"
+        elif month_net * week_net < 0:
+            tag = "转为减仓" if week_net < 0 else "转为加仓"
+        else:
+            tag = "延续"
+        out.append(f"{name} {mp:+.1f}%→{wp:+.1f}%（{tag}）")
+    return "；".join(out) or "—"
+
+
+def turnover(w: dict, nav: float | None) -> str:
+    return pct_of(w["buy"] + w["sell"], nav, False) if nav else "—"
+
+
+def net_share(w: dict) -> str:
+    gross = w["buy"] + w["sell"]
+    return f"{abs(w['net']) / gross * 100:.0f}%" if gross else "—"
+
+
+def top3_sell_share(w: dict) -> str:
+    top = sorted((s for s in w["stocks"] if s["net"] < 0), key=lambda s: s["net"])[:3]
+    if not top or not w["sell"]:
+        return "—"
+    return f"{sum(abs(s['net']) for s in top) / w['sell'] * 100:.0f}%"
+
+
+def etf_share(w: dict) -> str:
+    gross = w["buy"] + w["sell"]
+    if not gross:
+        return "—"
+    etf = sum(s["buy"] + s["sell"] for s in w["stocks"] if s["industry"] == "ETF")
+    return f"{etf / gross * 100:.0f}%"
+
+
 def side_table(items: list[dict], top_n: int, nav: float | None) -> str:
     adds = [i for i in items if i["net"] > 0][:top_n]
     cuts = [i for i in items if i["net"] < 0][-top_n:][::-1]
@@ -311,16 +379,67 @@ def render_md(report: dict, cfg: dict) -> str:
     L.append(f"> 仓位：`{cfg['valuation_root']}` 下各产品估值表（截至 {iso(report['valuation_end'])}）")
     L.append(f"> 窗口：近一周 = 最近 {cfg['windows']['week']} 个交易日（{iso(w[0])} ~ {iso(w[1])}）；"
              f"近一月 = 最近 {cfg['windows']['month']} 个交易日（{iso(m[0])} ~ {iso(m[1])}）")
-    L += ["", "## 口径", ""]
-    L.append("- **权益敞口 = 股票市值占净值% + 收益互换保证金占净值%**。互换底层均为股票，按股票计入（仅臻享1期有互换）。")
-    L.append("- **净值与仓位只取最新一日估值表**；所有加减按「占最新净值%」呈现，金额留在《操作底稿》JSON 供核对。")
-    L.append("- 回购（GC001 等）不计入个股加减，单独列出。")
-    L.append("- 成交截至报告日、估值截至上一估值日；«近一月净买卖» 可近似看作仓位变化（未扣市场损益）。")
-    L.append("- 行业取 config 内置行业表的一级分类；新标的未归类时先补进 config 再重跑。")
-    for p in report["products"]:
-        if p.get("note"):
-            own = f"（自身净值约 {amount(p['own_nav'])}；个股操作与仓位按母基金口径）" if p.get("own_nav") else ""
-            L.append(f"- **{p['name']}**：{p['note']}{own}")
+    products = report["products"]
+    L += ["", "## 解读", ""]
+
+    # 1 个股动向：脚本给加/减 Top3 与单票反转，AI 不给结论
+    L += ["### 1. 个股动向（占本产品最新净值%）", "",
+          "| 产品 | 近一周 | 近一月 | 单票反转（近一月→近一周） |", "|---|---|---|---|"]
+    for p in products:
+        L.append(f"| {p['name']} "
+                 f"| {side_cell([(s['name'], s['net']) for s in p['week']['stocks']], p['nav'])} "
+                 f"| {side_cell([(s['name'], s['net']) for s in p['month']['stocks']], p['nav'])} "
+                 f"| {reversal_cell(p)} |")
+    L.append("")
+
+    # 2 行业动向：脚本给行业加/减 Top3 与主线变化标注
+    L += ["### 2. 行业动向（占本产品最新净值%）", "",
+          "| 产品 | 近一周 | 近一月 | 主线变化（近一月→近一周） |", "|---|---|---|---|"]
+    for p in products:
+        L.append(f"| {p['name']} "
+                 f"| {side_cell(list(p['week']['industries'].items()), p['nav'])} "
+                 f"| {side_cell(list(p['month']['industries'].items()), p['nav'])} "
+                 f"| {industry_shift_cell(p)} |")
+    L.append("")
+
+    # 3 交易特征：换手、净卖出占比、卖压集中度、ETF 占比
+    L += ["### 3. 交易特征", "",
+          "| 产品 | 近一周换手 | 近一周净÷成交 | 近一周前三卖单占卖出 | 近一月换手 | 近一月前三卖单占卖出 | 近一月ETF占成交 |",
+          "|---|---|---|---|---|---|---|"]
+    for p in products:
+        wk, mo = p["week"], p["month"]
+        L.append(f"| {p['name']} | {turnover(wk, p['nav'])} | {net_share(wk)} | {top3_sell_share(wk)} "
+                 f"| {turnover(mo, p['nav'])} | {top3_sell_share(mo)} | {etf_share(mo)} |")
+    L.append("")
+
+    # 4 产品分化：按各产品自身净额排序，不做跨产品加总
+    L += ["### 4. 产品分化", "",
+          "| 产品 | 净值（≈） | 近一周净 | 近一月净 | 期末权益敞口 |", "|---|---|---|---|---|"]
+    for p in sorted(products, key=lambda x: (x["week"]["net"] / x["nav"]) if x["nav"] else 0):
+        L.append(f"| {p['name']} | {yi(p['nav'])} | {pct_of(p['week']['net'], p['nav'])} "
+                 f"| {pct_of(p['month']['net'], p['nav'])} | {fmt_pct(p['position'].get('equity'))} |")
+    L.append("")
+
+    # 5 各产品点评：唯一由 AI 写的部分
+    L += ["### 5. 各产品点评", "",
+          "<!-- AI：逐产品 0–3 句，只写判断（为啥这么动、值不值得跟踪），不复述上表数字 -->", ""]
+    for p in products:
+        L.append(f"- **{p['name']}**：<!-- AI 填写 -->")
+    L.append("")
+
+    L += ["## 口径", ""]
+    L.append("- 加减按「占本产品最新净值%」，金额见《操作底稿》JSON；净买卖 ≈ 仓位变化（未扣市场损益）。")
+    L.append("- 成交截至报告日、仓位截至上一估值日，两者错位时净卖出与敞口变化不完全同步属正常。")
+    special = []
+    for p in products:
+        if p.get("note") and p.get("own_nav"):
+            special.append(f"{p['name']} 按母基金口径（自身净值约 {amount(p['own_nav'])}）")
+        if (p["position"].get("swap") or 0) > 0:
+            special.append(f"{p['name']} 权益敞口含互换保证金 {p['position']['swap']:.1f} 个百分点")
+    if special:
+        L.append("- " + "；".join(special) + "。完整口径见 SKILL.md。")
+    else:
+        L.append("- 完整口径见 SKILL.md。")
     L += ["", "## 总览（占最新净值%）", "",
           "| 产品 | 净值（≈） | 近一周 买 / 卖 | 近一周 净 | 近一月 买 / 卖 | 近一月 净 |",
           "|---|---|---|---|---|---|"]
