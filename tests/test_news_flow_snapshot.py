@@ -1,4 +1,4 @@
-"""流程维度产物快照：mtime 基线判定 + news_scope=flow/all 的范围切换。"""
+"""流程维度产物快照：mtime 基线判定（状态条 +N 项）+ news_scope 范围切换（本次=今天该出的）。"""
 
 from __future__ import annotations
 
@@ -76,27 +76,34 @@ def test_flow_products_entry_shape(env: dict[str, Path]):
 # ── news_scope 范围切换 ─────────────────────────────────────────
 
 
-def test_news_scope_flow_returns_only_current_flow_products(env: dict[str, Path], temp_db: Path):
-    _write_report(env["reports"], NEWS_MD, STARTED_TS - 600)
-    _write_report(env["reports"], ANNOUNCE_MD, STARTED_TS + 60)
-    _write_report(env["reports"], TODAY_NEWS_MD, STARTED_TS + 60)
-    _write_state(env["runtime"], {"flow_id": "x", "status": "success", "products": [{"name": ANNOUNCE_MD, "kind": "公告清单", "is_image": False}]})
+def test_news_scope_flow_returns_today_products(env: dict[str, Path], temp_db: Path):
+    """本次=今天该出的：按产物自身判定，不看流程快照（流程后补跑的也算）。"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    now_ts = datetime.now().timestamp()
+    today_news = f"新闻影响分析_{today}.md"
+    today_announce = f"公告清单_{today}.md"
+    today_announce_png = f"公告清单_{today}.png"
+    _write_report(env["reports"], today_news, STARTED_TS - 3600)
+    _write_report(env["reports"], today_announce, STARTED_TS - 3600)
+    _write_report(env["reports"], today_announce_png, STARTED_TS - 3600)
+    _write_report(env["reports"], TODAY_NEWS_MD, now_ts)  # 文件名无日期，按 mtime 判今天
+    _write_report(env["reports"], NEWS_MD, STARTED_TS + 60)  # 旧日期的产物即便在流程内也不进本次
+    _write_state(env["runtime"], {"flow_id": "x", "status": "success", "products": [{"name": NEWS_MD, "kind": "新闻影响分析", "is_image": False}]})
     view = views.get_news_view({"news_scope": "flow"})
     assert view["scope"] == "flow"
-    assert [row["name"] for row in view["rows"]] == [ANNOUNCE_MD]
-    # 补全成完整行：link/read_key/时间字段都要有
+    assert {row["name"] for row in view["rows"]} == {today_news, today_announce, today_announce_png, TODAY_NEWS_MD}
+    # 本次不分批：有几条返回几条，避免第 6 条在无滚动条时永远看不到
+    assert view["next_cursor"] == ""
+    assert len(view["rows"]) == view["filtered_total"]
     row = view["rows"][0]
     assert row["link"].startswith("/reports/view/")
-    assert row["read_key"] == f"report:{ANNOUNCE_MD}"
+    assert row["read_key"].startswith("report:")
     assert row["display_time"] and row["sort_time"]
 
 
 def test_news_scope_defaults_to_flow(env: dict[str, Path], temp_db: Path):
-    _write_report(env["reports"], NEWS_MD, STARTED_TS + 60)
-    _write_state(env["runtime"], {"flow_id": "x", "status": "success", "products": [{"name": NEWS_MD, "kind": "新闻影响分析", "is_image": False}]})
-    view = views.get_news_view({})
-    assert view["scope"] == "flow"
-    assert [row["name"] for row in view["rows"]] == [NEWS_MD]
+    _write_state(env["runtime"], {"flow_id": "x", "status": "success", "products": []})
+    assert views.get_news_view({})["scope"] == "flow"
 
 
 def test_news_scope_all_returns_whole_whitelist(env: dict[str, Path], temp_db: Path):
@@ -107,21 +114,15 @@ def test_news_scope_all_returns_whole_whitelist(env: dict[str, Path], temp_db: P
     assert view["filtered_total"] == 4
 
 
-def test_news_scope_flow_empty_without_flow_record(env: dict[str, Path], temp_db: Path):
+def test_news_scope_flow_ignores_old_dated_products(env: dict[str, Path], temp_db: Path):
+    """只有旧日期产物时「本次」为空，哪怕流程快照里记着它们。"""
     _write_report(env["reports"], NEWS_MD, STARTED_TS + 60)
-    _write_state(env["runtime"], None)
-    assert views.get_flow_state() == {}
-    assert views.get_news_view({"news_scope": "flow"})["filtered_total"] == 0
-
-
-def test_news_scope_flow_empty_while_running_without_products(env: dict[str, Path], temp_db: Path):
-    _write_report(env["reports"], NEWS_MD, STARTED_TS + 60)
-    _write_state(env["runtime"], {"flow_id": "x", "status": "running", "products": []})
-    assert views.get_news_view({"news_scope": "flow"})["filtered_total"] == 0
-
-
-def test_news_scope_flow_skips_deleted_product_files(env: dict[str, Path], temp_db: Path):
     _write_state(env["runtime"], {"flow_id": "x", "status": "success", "products": [{"name": NEWS_MD, "kind": "新闻影响分析", "is_image": False}]})
+    assert views.get_news_view({"news_scope": "flow"})["filtered_total"] == 0
+
+
+def test_news_scope_flow_empty_when_reports_dir_missing(env: dict[str, Path], temp_db: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(views, "REPORTS_DIR", env["reports"] / "missing")
     assert views.get_news_view({"news_scope": "flow"})["filtered_total"] == 0
 
 

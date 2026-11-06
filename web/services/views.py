@@ -954,44 +954,37 @@ def _iter_report_rows() -> list[dict[str, Any]]:
     return rows
 
 
-def _iter_flow_report_rows(flow: dict[str, Any]) -> list[dict[str, Any]]:
-    """按最近一次流程的 products 清单补全为完整行；清单缺项或文件已被清理的条目跳过。"""
-    products = flow.get("products")
-    if not isinstance(products, list):
-        return []
-    rows: list[dict[str, Any]] = []
-    for item in products:
-        if not isinstance(item, dict):
-            continue
-        name = str(item.get("name") or "")
-        path = REPORTS_DIR / name
-        if not name or not path.is_file():
-            continue
-        rows.append(_build_report_row(path, str(item.get("kind") or "")))
-    return rows
+def _iter_today_report_rows() -> list[dict[str, Any]]:
+    """「今天该出的」产物：文件名日期=今天；文件名日期不代表生成日的（今日热点/操作分析）按 mtime 判今天。
 
-
-def _iter_today_operations_rows() -> list[dict[str, Any]]:
-    """今天生成的操作分析行。
-
-    周任务 7:30 跑、晨间流程 8:10 才开始，产物永远早于 flow started_at，「本次」靠 flow products
-    扫不到；且文件名日期是报告口径日（上一估值日），不等于生成日，故按 mtime 判「今天生成」。
+    不依赖 flow.products 快照：快照是流程结束那一刻拍的，流程后补跑的产物（手动重跑、晚到的分析）
+    不在里面，会让「本次」漏项。按产物本身判定，今天该出几个就显示几个。
+    操作分析的文件名是报告口径日（上一估值日），不等于生成日，必须走 mtime。
     """
     today = datetime.now().date()
     rows: list[dict[str, Any]] = []
-    for path in sorted(REPORTS_DIR.glob("操作分析_*.md")):
-        try:
-            if path.is_file() and datetime.fromtimestamp(path.stat().st_mtime).date() == today:
-                rows.append(_build_report_row(path, "操作分析"))
-        except OSError:
-            continue
+    for pattern, kind in REPORT_PATTERNS:
+        for path in sorted(REPORTS_DIR.glob(pattern)):
+            if not path.is_file():
+                continue
+            matched = re.search(r"\d{4}-\d{2}-\d{2}", path.name)
+            if matched and kind != "操作分析":
+                if matched.group(0) != today.isoformat():
+                    continue
+            else:
+                try:
+                    if datetime.fromtimestamp(path.stat().st_mtime).date() != today:
+                        continue
+                except OSError:
+                    continue
+            rows.append(_build_report_row(path, kind))
     return rows
 
 
 def get_news_view(query: dict[str, str]) -> dict[str, Any]:
-    """新闻卡片：展示 data/reports 下的生成产物，游标式续载（每批 NEWS_BATCH_SIZE 条）。
+    """新闻卡片：展示 data/reports 下的生成产物。
 
-    news_scope=flow（默认）看最近一次流程新增的产物 + 当天操作分析，=all 扫全部白名单文件。
+    news_scope=flow（默认）看「今天该出的」产物（全量返回，不分批）；=all 扫全部白名单文件并游标续载。
     """
     keyword = normalize_text(query.get("news_q", ""))
     unread_only = query.get("news_unread_only", "0") == "1"
@@ -1004,9 +997,7 @@ def get_news_view(query: dict[str, str]) -> dict[str, Any]:
     if scope == "all":
         source_rows = _iter_report_rows()
     else:
-        source_rows = _iter_flow_report_rows(get_flow_state())
-        known = {row["name"] for row in source_rows}
-        source_rows += [row for row in _iter_today_operations_rows() if row["name"] not in known]
+        source_rows = _iter_today_report_rows()
     cursor = query.get("news_after", "")
     rows: list[dict[str, Any]] = []
     for row in source_rows:
@@ -1017,7 +1008,11 @@ def get_news_view(query: dict[str, str]) -> dict[str, Any]:
             continue
         rows.append(row)
     sort_rows_with_tiebreak(rows, sort, direction, "read_key")
-    batch, next_cursor = take_after_cursor(rows, cursor, sort, direction, "read_key", NEWS_BATCH_SIZE)
+    if scope == "flow":
+        # 本次只该有几条显示几条：分批会让第 6 条在无滚动条时永远看不到
+        batch, next_cursor = rows, ""
+    else:
+        batch, next_cursor = take_after_cursor(rows, cursor, sort, direction, "read_key", NEWS_BATCH_SIZE)
     return {
         "rows": batch,
         "sort": sort,

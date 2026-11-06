@@ -474,8 +474,7 @@ def render_md(report: dict, cfg: dict) -> str:
                   industry_table(p[key]["industries"], top_n, p["nav"]), "",
                   "**个股（占本产品最新净值%）**", "",
                   side_table(p[key]["stocks"], top_n, p["nav"]), "", "</details>"]
-    L += ["", "## 解读", "", "<!-- AI：读《操作底稿》后填写，3–5 条，带数字，不评价「对不对」 -->", ""]
-    return "\n".join(L)
+    return "\n".join(L) + "\n"
 
 
 def print_report(report: dict) -> None:

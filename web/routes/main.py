@@ -126,11 +126,15 @@ def persist_entries_state(response: Response, state: dict[str, str]) -> None:
 
 
 def load_news_state(request: Request) -> dict[str, str]:
-    return _load_state(request, NEWS_STATE_COOKIE, build_news_state_params)
+    state = _load_state(request, NEWS_STATE_COOKIE, build_news_state_params)
+    # 范围只认本次请求：历史是临时查看，不能被 cookie 钉成默认值（否则刷新后仍停在历史）
+    state["news_scope"] = "all" if request.query_params.get("news_scope") == "all" else "flow"
+    return state
 
 
 def persist_news_state(response: Response, state: dict[str, str]) -> None:
-    _persist_state(response, NEWS_STATE_COOKIE, state)
+    # 同理不把 scope 写进 cookie；其它持久状态（搜索词/排序）照旧
+    _persist_state(response, NEWS_STATE_COOKIE, {**state, "news_scope": ""})
 
 
 def merge_url(params: dict[str, str], **extra: str) -> str:
