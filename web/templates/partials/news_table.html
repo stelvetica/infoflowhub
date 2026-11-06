@@ -12,9 +12,9 @@
       {% set gate_verdict = (market_gate or {}).get('verdict') or '' %}
       {% set flow_busy = flow.get('status') == 'running' %}
       <form class="news-run-skills-form" hx-post="/actions/run-skills-now" hx-target="#news-flow-status" hx-swap="outerHTML">
-        <button class="btn ghost news-run-skills-btn" type="submit"
+        <button class="btn news-run-skills-btn" type="submit"
                 {% if flow_busy or gate_verdict == 'closed' %}disabled{% endif %}
-                title="{% if gate_verdict == 'closed' %}今日非交易日，无需运行{% elif flow_busy %}流程运行中{% else %}立即运行今天该跑的 skill（公告+新闻；本周最后交易日含操作分析）{% endif %}">跑技能</button>
+                title="{% if gate_verdict == 'closed' %}今日非交易日，无需运行{% elif flow_busy %}流程运行中{% else %}立即运行今天该跑的 skill（公告+新闻；本周最后交易日含操作分析）{% endif %}">立即分析</button>
       </form>
     </div>
     <div class="news-header-meta">
