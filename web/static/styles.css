@@ -185,8 +185,12 @@ button, input, select, textarea { font: inherit; }
 .news-card { --news-row-h: 24px; --news-head-h: 30px; width: 100%; padding-bottom: var(--sp-3); }
 .news-panel-title { margin-bottom: var(--sp-2); flex-wrap: wrap; }
 /* 标题不被右侧状态条挤成竖排两行 */
-.news-panel-title > h2 { flex: none; white-space: nowrap; }
+.news-panel-title h2 { flex: none; white-space: nowrap; }
 .news-header-form { justify-content: flex-end; }
+/* 「跑技能」按钮:与标题同基线,尺寸压到 xs;非交易日/运行中置灰用 not-allowed 而非全局的 wait */
+.news-run-skills-form { margin: 0; }
+.news-run-skills-btn { padding: 2px 9px; font-size: var(--fs-xs); }
+.news-run-skills-btn:disabled { cursor: not-allowed; }
 /* 状态条与范围切换横排在标题右侧(.panel-title 已是两端对齐 flex),两者原本各自带的下边距在此归零 */
 .news-header-meta { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex-wrap: wrap; }
 .news-header-meta .news-flow-status, .news-header-meta .news-scope-bar { margin-bottom: 0; }
