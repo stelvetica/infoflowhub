@@ -972,13 +972,20 @@ def _iter_flow_report_rows(flow: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _iter_today_operations_rows() -> list[dict[str, Any]]:
-    """当天的操作分析行。
+    """今天生成的操作分析行。
 
-    周任务 7:30 跑、晨间流程 8:10 才开始，所以它永远落在 flow started_at 之前，
-    「本次」范围靠 flow products 自然扫不到；按当天文件名补一行，避免产物只在「历史」里可见。
+    周任务 7:30 跑、晨间流程 8:10 才开始，产物永远早于 flow started_at，「本次」靠 flow products
+    扫不到；且文件名日期是报告口径日（上一估值日），不等于生成日，故按 mtime 判「今天生成」。
     """
-    path = REPORTS_DIR / f"操作分析_{datetime.now():%Y-%m-%d}.md"
-    return [_build_report_row(path, "操作分析")] if path.is_file() else []
+    today = datetime.now().date()
+    rows: list[dict[str, Any]] = []
+    for path in sorted(REPORTS_DIR.glob("操作分析_*.md")):
+        try:
+            if path.is_file() and datetime.fromtimestamp(path.stat().st_mtime).date() == today:
+                rows.append(_build_report_row(path, "操作分析"))
+        except OSError:
+            continue
+    return rows
 
 
 def get_news_view(query: dict[str, str]) -> dict[str, Any]:
