@@ -555,7 +555,7 @@ class AutoRunner:
     def _run_skill_stage(self, chain: tuple[str, ...] = SKILLS) -> list[dict[str, Any]]:
         """按给定顺序跑 skill，结束后确定性回写观察目录（默认就是晨间 SKILLS 链）。
 
-        第一个失败/超时也继续跑第二个（新闻分析不能因公告失败而缺失）；回写不依赖
+        第一个失败/超时也继续跑后续 skill（新闻分析不能因公告失败而缺失，热点也不能因新闻失败而断供）；回写不依赖
         最后一个 skill 是否跑完，避免 md 已落盘但观察目录仍是旧版本。
         """
         if not self._skill_stage_enabled():
@@ -599,7 +599,7 @@ class AutoRunner:
         return isinstance(flow, dict) and flow.get("status") == "running"
 
     def due_skill_names(self, now: datetime | None = None) -> list[str]:
-        """「当天该跑」的 skill：非交易日为空；交易日=公告+新闻；本周最后交易日再加操作分析。
+        """「当天该跑」的 skill：非交易日为空；交易日=公告+新闻+市场热点；本周最后交易日再加操作分析。
 
         操作分析当天已经跑过（7:30 定时或早先手动）就不再重复，手动按钮只补没跑的。
         """

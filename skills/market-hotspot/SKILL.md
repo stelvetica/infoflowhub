@@ -20,6 +20,8 @@ description: 生成 A 股近 3 个交易日「市场热点」报告：申万二�
 
 ## 运行
 
+已接入晨间流程：`SKILLS = (portfolio-announcements, portfolio-news, market-hotspot)`，交易日 8:10 自动执行，排在新闻分析之后（原因分析依赖当天《今日新闻.md》）。也可手动运行：
+
 ```bash
 C:\Users\ETT\Playground\infoflowhub\.venv\Scripts\python.exe "<skill_dir>\scripts\collect_hotspot.py"
 ```

@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 
 # 严格按此顺序执行：公告清单先跑（新闻影响分析要把当天清单纳入新闻源），新闻分析后跑。
 # 上一个失败/超时也继续跑下一个，避免公告失败连带新闻分析缺失。
-SKILLS = ("portfolio-announcements", "portfolio-news")
+# 市场热点排最后：它的原因分析要读当天 portfolio-news 产出的《今日新闻.md》。
+SKILLS = ("portfolio-announcements", "portfolio-news", "market-hotspot")
 # 每个 skill 的总时间预算（跨模型尝试）：75 个事件的新闻分析实测要 17~25 分钟。
 # 2026-10-29 收尾超出 20 分钟被判 timeout；2026-10-30 主模型 400 后换备选，只剩 27 分钟、
 # 产物 09:38 已落盘却在 09:46 被掐——45 分钟才覆盖「主模型失败 + 备选从头重跑」。
