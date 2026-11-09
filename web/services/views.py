@@ -71,6 +71,7 @@ REPORT_PATTERNS: tuple[tuple[str, str], ...] = (
     ("公告清单_*.png", "公告图片"),
     ("今日新闻.md", "今日热点"),
     ("操作分析_*.md", "操作分析"),
+    ("市场热点_*.md", "市场热点"),
 )
 # 订阅源 → 本地正文目录标识（路由 /markdown/{kind}/{name} 的 kind）
 MARKDOWN_KINDS: dict[str, str] = {
