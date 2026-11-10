@@ -110,6 +110,10 @@ def test_douyin_full_chain_succeeds_and_cleans_workdir(tmp_path, monkeypatch):
     assert call["owner"] is None
     assert "抖音字幕正文" in call["subtitle_text"]
     assert llm.video_calls == []  # 抖音不走 GLM video_url 兜底
+    # 报告末尾必须给出原文，读者不用回看视频
+    report = (reports_dir / row["digest_path"]).read_text(encoding="utf-8")
+    assert "## 原文" in report
+    assert report.rstrip().endswith("抖音字幕正文")
     assert not workdir.exists()  # finally 清理
 
 
@@ -175,6 +179,8 @@ def test_douyin_no_speech_falls_back_to_caption(tmp_path, monkeypatch):
     report = (tmp_path / "reports" / row["digest_path"]).read_text(encoding="utf-8")
     assert "抖音文案" in report
     assert "未识别到人声" in report
+    # 无人声时原文就是作品文案
+    assert "## 原文" in report and "孩子ne老不好" in report
 
 
 def test_douyin_no_speech_without_author_prefix_keeps_title_as_caption(tmp_path, monkeypatch):

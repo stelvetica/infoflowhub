@@ -47,8 +47,11 @@ def _http_error(status_code: int) -> requests.HTTPError:
     return requests.HTTPError(f"HTTP {status_code}", response=FakeResponse(status_code, text='{"error":"boom"}'))
 
 
-def _digest_json(*, summary: str = "一句话总结", points: tuple[str, ...] = ("要点一", "要点二", "要点三"), note=None) -> str:
-    return json.dumps({"summary": summary, "key_points": list(points), "note": note}, ensure_ascii=False)
+def _digest_json(*, summary: str = "一句话总结", points: tuple[str, ...] = ("要点一", "要点二", "要点三"), note=None, notes=None) -> str:
+    payload = {"summary": summary, "key_points": list(points), "note": note}
+    if notes is not None:
+        payload["notes"] = notes
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def _patch_post(monkeypatch, per_model: dict):
@@ -82,7 +85,7 @@ def test_subtitle_valid_json(monkeypatch):
     assert payload["thinking"] == {"type": "disabled"}
     assert payload["response_format"] == {"type": "json_object"}
     assert payload["temperature"] == 0.2
-    assert payload["max_tokens"] == 3000
+    assert payload["max_tokens"] == 6000  # 结构化笔记需要比旧的 3000 更大的输出预算
     assert isinstance(payload["messages"][1]["content"], str)
 
 
@@ -126,6 +129,17 @@ def test_key_points_too_few_falls_through_to_backup(monkeypatch):
 
     assert result.key_points == ["要点一", "要点二", "要点三"]
     assert calls == [PRIMARY.model, BACKUP.model]
+
+
+def test_notes_field_is_parsed_and_optional(monkeypatch):
+    _patch_post(monkeypatch, {PRIMARY.model: _ok(_digest_json(notes="### 分节\n- 要点"))})
+    result = VideoDigestLLM(PRIMARY).generate_from_subtitle(title="标题", owner=None, subtitle_text="字幕")
+    assert result.notes == "### 分节\n- 要点"
+
+    # 模型漏给 notes 不该让整条简报失败
+    _patch_post(monkeypatch, {PRIMARY.model: _ok(_digest_json())})
+    result = VideoDigestLLM(PRIMARY).generate_from_subtitle(title="标题", owner=None, subtitle_text="字幕")
+    assert result.notes == ""
 
 
 def test_code_fenced_json_is_parsed(monkeypatch):
@@ -314,6 +328,52 @@ def test_render_digest_markdown_process_note_and_desc_source():
 
     assert "- 字幕来源：B站简介" in md
     assert "- 处理说明：CC字幕未取到；已下载视频；改用B站简介分析" in md
+
+
+def test_render_digest_markdown_notes_and_source_text():
+    digest = DigestContent(
+        summary="总结",
+        key_points=["一", "二", "三"],
+        note=None,
+        notes="### 分节标题\n- **关键**要点\n- 细节",
+    )
+    md = render_digest_markdown(
+        title="T",
+        url="u",
+        source="douyin_favorites",
+        owner=None,
+        duration_seconds=601,
+        subtitle_source="videocaptioner_bijian",
+        generated_at="now",
+        digest=digest,
+        source_text="第一行字幕\n# 这行不能变成标题\n- 这行不能变成列表",
+    )
+
+    # 章节顺序：一句话总结 → 核心要点 → 笔记 → 备注 → 原文
+    order = [md.index(s) for s in ("## 一句话总结", "## 核心要点", "## 笔记", "## 备注", "## 原文")]
+    assert order == sorted(order)
+    assert "### 分节标题" in md and "- **关键**要点" in md
+    assert "第一行字幕" in md
+    # 原文行首的 Markdown 记号必须被挡住，否则会破坏报告结构
+    assert "\n# 这行不能变成标题" not in md
+    assert "\n- 这行不能变成列表" not in md
+    assert " # 这行不能变成标题" in md
+    assert " - 这行不能变成列表" in md
+
+
+def test_render_digest_markdown_omits_empty_notes_and_source():
+    md = render_digest_markdown(
+        title="T",
+        url="u",
+        source="douyin_favorites",
+        owner=None,
+        duration_seconds=None,
+        subtitle_source="glm_video",
+        generated_at="now",
+        digest=DigestContent(summary="s", key_points=["a", "b", "c"], note=None),
+    )
+    assert "## 笔记" not in md
+    assert "## 原文" not in md
 
 
 def test_render_digest_markdown_note_priority_and_source_passthrough():

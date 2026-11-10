@@ -35,10 +35,16 @@ SYSTEM_PROMPT = """你是视频内容简报助手。你的任务是把给定的�
 硬约束：
 1. 只基于给定材料（字幕文本 / 视频本身）总结，禁止编造材料中不存在的事实、数字、人物或结论。
 2. 只能输出一个 JSON 对象，禁止输出解释、Markdown、代码块。
-3. JSON 结构固定为：{"summary": "...", "key_points": ["...", "..."], "note": "可选"}。
+3. JSON 结构固定为：{"summary": "...", "key_points": ["...", "..."], "notes": "结构化笔记", "note": "可选"}。
 4. summary：一段话，80 字以内，简明扼要概括视频主旨。
 5. key_points：3-7 条，每条一句话，覆盖视频的核心信息与结论。
-6. note：可选字符串；材料不完整、来源可疑或无法确认时在此说明，无话可说填 null。
+6. notes：结构化笔记，替代逐句复述，让读者不必看原文也能拿到全部信息。要求：
+   - 按主题用「### 小标题」分节（不要用 # 和 ##，那是报告自己的层级）；
+   - 每节下用「- 」平铺要点，**不要嵌套缩进**（报告渲染器不支持多层列表）；
+   - 保留论证链、案例、数据、时间、条件与例外，不得只留结论而丢掉论据；
+   - 关键名词、数字用 **加粗**；同一概念在多处出现时横向归并成一条；
+   - 只基于材料，不编造；材料没有的细节就写「材料未说明」。
+7. note：可选字符串；材料不完整、来源可疑或无法确认时在此说明，无话可说填 null。
 """
 
 SUBTITLE_HINT = """
@@ -85,7 +91,8 @@ VIDEO_URL_HINT = """
 class DigestContent:
     summary: str
     key_points: list[str]
-    note: str | None
+    note: str | None = None
+    notes: str = ""  # 结构化笔记（### 分节 + 平铺列表），旧调用不传时为空
 
 
 def split_text(
@@ -282,7 +289,8 @@ class VideoDigestLLM:
             system=system,
             user_content=user_content,
             json_mode=True,
-            max_tokens=3000,
+            # 结构化笔记让输出变长：预算不足会截断 JSON，直接判整条简报失败
+            max_tokens=6000,
         )
         return self._validate(self._parse_json_object(content))
 
@@ -365,7 +373,10 @@ class VideoDigestLLM:
 
         raw_note = obj.get("note")
         note = raw_note.strip() if isinstance(raw_note, str) and raw_note.strip() else None
-        return DigestContent(summary=summary.strip(), key_points=points, note=note)
+        # notes 是可选的加点项：模型漏给时报告少一节，不该让整条简报判失败
+        raw_notes = obj.get("notes")
+        notes = raw_notes.strip() if isinstance(raw_notes, str) else ""
+        return DigestContent(summary=summary.strip(), key_points=points, note=note, notes=notes)
 
     @staticmethod
     def _format_error(label: str, exc: Exception) -> str:
@@ -425,6 +436,20 @@ def _format_duration(seconds: int | None) -> str:
     return f"{minutes}分{sec:02d}秒"
 
 
+def _plain_block(text: str) -> str:
+    """把原文（字幕/文案）压成渲染器安全的段落：行首的 Markdown 记号要挡掉。
+
+    md_render 会把行首 `#` 当标题、`- `/`* ` 当列表；字幕里偶尔就有一行以这些字符开头，
+    原样写出会把报告的标题结构带歪。前导空格不起眼且能阻断行首匹配。
+    """
+    lines = []
+    for raw in str(text).splitlines():
+        line = raw.strip()
+        if line:
+            lines.append(f" {line}" if line[0] in "#-*>|" else line)
+    return "\n".join(lines)
+
+
 def render_digest_markdown(
     *,
     title: str,
@@ -436,12 +461,18 @@ def render_digest_markdown(
     generated_at: str,
     digest: DigestContent,
     process_note: str = "",
+    source_text: str = "",
 ) -> str:
-    """渲染简报 Markdown：只用标题/无序列表/粗体/段落（md_render.py 支持子集）。"""
+    """渲染简报 Markdown：只用标题/无序列表/粗体/段落（md_render.py 支持子集）。
+
+    结构：一句话总结 → 核心要点 → 笔记（结构化） → 备注 → 原文（字幕/文案）。
+    """
     note = digest.note or "无"
     process_line = f"- 处理说明：{process_note}\n" if process_note.strip() else ""
 
     points = "\n".join(f"- {point}" for point in digest.key_points)
+    notes_block = f"{digest.notes.strip()}\n\n" if digest.notes.strip() else ""
+    source_block = f"## 原文\n\n{_plain_block(source_text)}\n" if source_text.strip() else ""
     return (
         f"# {title}\n"
         "\n"
@@ -461,9 +492,13 @@ def render_digest_markdown(
         "\n"
         f"{points}\n"
         "\n"
+        f"{'## 笔记\n\n' if notes_block else ''}"
+        f"{notes_block}"
         "## 备注\n"
         "\n"
         f"{note}\n"
+        "\n"
+        f"{source_block}"
     )
 
 

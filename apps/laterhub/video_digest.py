@@ -156,6 +156,7 @@ def _finalize(
     owner: str | None,
     duration_seconds: int | None,
     process_note: str = "",
+    source_text: str = "",
 ) -> Path:
     url = str(row["url"])
     filename = build_digest_filename(str(row["title"]), url)
@@ -175,6 +176,7 @@ def _finalize(
         generated_at=now,
         digest=digest,
         process_note=process_note,
+        source_text=source_text,
     )
     # digest_path 存相对 reports 根的路径（含子目录），面板/幂等检查按此定位
     path = write_digest_report(digest_dir, filename, markdown)
@@ -215,6 +217,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
                     owner=owner,
                     duration_seconds=duration_seconds,
                     process_note=f"整段音频未识别到人声（{exc}），简报依据作品文案生成。",
+                    source_text=caption,
                 )
                 return DigestOutcome(link_id, url, title, "succeeded", str(path))
             step = "生成简报"
@@ -228,6 +231,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
                 reports_dir=reports_dir,
                 owner=None,
                 duration_seconds=duration_seconds,
+                source_text=subtitle_text,
             )
             return DigestOutcome(link_id, url, title, "succeeded", str(path))
         except Exception as exc:  # noqa: BLE001
@@ -312,6 +316,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
                 owner=meta.owner,
                 duration_seconds=meta.duration_seconds,
                 process_note="；".join(material_notes),
+                source_text=subtitle_text,
             )
             return DigestOutcome(link_id, url, title, "succeeded", str(path))
 
@@ -327,6 +332,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
                 owner=meta.owner,
                 duration_seconds=meta.duration_seconds,
                 process_note=process_note,
+                source_text=meta.description,
             )
             return DigestOutcome(link_id, url, title, "succeeded", str(path))
 
