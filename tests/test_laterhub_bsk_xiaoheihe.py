@@ -82,7 +82,7 @@ def test_normal_path_uses_page_evaluate_and_does_not_touch_external_session():
     )
     session = FakeExternalSession(page)
 
-    batch = feed.fetch_xiaoheihe_favorites(session=session)
+    batch = feed.fetch_xiaoheihe_favorites(session=session, deep=True)
     result = batch.items
 
     assert [r["url"] for r in result] == [
@@ -113,7 +113,7 @@ def test_truncated_fetch_reports_incomplete_batch():
     )
     session = FakeExternalSession(page)
 
-    batch = feed.fetch_xiaoheihe_favorites(session=session)
+    batch = feed.fetch_xiaoheihe_favorites(session=session, deep=True)
 
     assert [r["url"] for r in batch.items] == ["https://www.xiaoheihe.cn/app/bbs/link/333"]
     assert batch.complete is False
@@ -143,7 +143,7 @@ def test_self_built_session_starts_and_shuts_down_once(monkeypatch):
 
     monkeypatch.setattr(feed, "BskRunnerSession", FakeBskSession)
 
-    batch = feed.fetch_xiaoheihe_favorites()
+    batch = feed.fetch_xiaoheihe_favorites(deep=True)
 
     assert len(created) == 1
     assert created[0].start_url == "about:blank"
@@ -174,7 +174,7 @@ def test_self_built_session_shuts_down_on_exception(monkeypatch):
     monkeypatch.setattr(feed, "BskRunnerSession", FakeBskSession)
 
     with pytest.raises(RuntimeError, match="导航小黑盒首页失败"):
-        feed.fetch_xiaoheihe_favorites()
+        feed.fetch_xiaoheihe_favorites(deep=True)
 
     assert created[0].started == 1 and created[0].shutdowns == 1
 
@@ -183,7 +183,7 @@ def test_login_failure_raises_with_login_hint():
     session = FakeExternalSession(FakeBskPage(login_ok=False))
 
     with pytest.raises(RuntimeError) as excinfo:
-        feed.fetch_xiaoheihe_favorites(session=session)
+        feed.fetch_xiaoheihe_favorites(session=session, deep=True)
 
     message = str(excinfo.value)
     assert "登录" in message
@@ -198,7 +198,7 @@ def test_missing_signature_raises():
     session = FakeExternalSession(page)
 
     with pytest.raises(RuntimeError) as excinfo:
-        feed.fetch_xiaoheihe_favorites(session=session)
+        feed.fetch_xiaoheihe_favorites(session=session, deep=True)
 
     message = str(excinfo.value)
     assert "签名" in message

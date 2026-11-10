@@ -387,3 +387,17 @@ def test_source_no_longer_references_copy_runner():
     assert "CopyRunnerSession" not in source
     assert "LATERHUB_RUNNER_DIR" not in source
     assert "9224" not in source
+
+
+def test_incremental_stops_when_known_streak_reached():
+    """日常短抓取：首屏就连续撞到 3 条已知 → 已追平历史，不必再滚。"""
+    known_urls = [f"https://www.douyin.com/video/{n}" for n in (1, 2, 3)]
+    page = FakePage(round_items=[[_video(n) for n in (1, 2, 3)]])
+
+    batch = favorites.fetch_douyin_favorites(
+        session=FakeSession(page), known_urls=known_urls
+    )
+
+    assert page.mouse.wheel_calls == []
+    assert page.extract_rounds == 1
+    assert batch.complete is False

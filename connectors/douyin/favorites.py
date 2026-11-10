@@ -24,6 +24,8 @@ DOUYIN_FAVORITE_URL = "https://www.douyin.com/user/self?from_tab_name=main&showT
 DOUYIN_SCROLL_ROUNDS = 10              # 增量模式轮数上限
 DOUYIN_DEEP_SCROLL_MAX_ROUNDS = 150    # 深度全量上限；撞上限视为没拿全（与 30 分钟预算对齐）
 DOUYIN_SCROLL_EMPTY_ROUNDS = 2         # 连续零新增轮数（增量模式收工条件/深度模式确认条件）
+# 日常短抓取：列表按收藏时间倒序，连续遇到这么多条已知条目即认定已追平历史。
+DOUYIN_KNOWN_STREAK = 3
 # 深度模式的「到底」必须由滚动几何证明：收藏页是内层滚动容器，滚轮没落到容器上时
 # 卡片不会新增，旧逻辑（连续两轮无新增即到底）会把「滚动卡住」当成「扫完了」，
 # 进而把仍在收藏里的条目整批误标「源内已移除」（2026-11-08 误标 780 条即此）。
@@ -221,6 +223,7 @@ def fetch_douyin_favorites(
     *,
     session: BskRunnerSession | None = None,
     deep: bool = False,
+    known_urls: list[str] | None = None,
 ) -> FetchBatch:
     # ponytail: env_path 仅为与 pipeline 的 fetcher(ENV_PATH, session=...) 调用姿势同形，
     # bsk 走用户已登录的浏览器，不需要 env 配置；若将来 bsk 需要 env 参数再接线。
@@ -228,6 +231,15 @@ def fetch_douyin_favorites(
     if own_session:
         session = BskRunnerSession(start_url="about:blank")
         session.start()
+
+    # 已知条目按 aweme id 比对；深扫不看已知集合（必须全量到底才能判定移除）。
+    known_ids = {
+        tail.split("?")[0]
+        for url in (known_urls or [])
+        for tail in [str(url).split("/video/")[-1]]
+        if "/video/" in str(url)
+    }
+    known_streak = 0
 
     seen: dict[str, dict[str, Any]] = {}
     rounds = 0
@@ -242,6 +254,7 @@ def fetch_douyin_favorites(
 
         def _absorb(extracted: list[dict[str, Any]]) -> int:
             # 必须跨轮累积：收藏页虚拟列表会把滚出视口的卡片从 DOM 摘掉，每轮覆盖会丢条目。
+            nonlocal known_streak
             added = 0
             for item in extracted:
                 key = str(item.get("video_id") or item.get("url") or "").strip()
@@ -249,6 +262,8 @@ def fetch_douyin_favorites(
                     continue
                 seen[key] = item
                 added += 1
+                # 列表按收藏时间倒序：连续撞上已知条目说明已追平历史，日常短抓取可收工。
+                known_streak = known_streak + 1 if key in known_ids else 0
             return added
 
         _absorb(_extract_visible_items(page))
@@ -258,6 +273,8 @@ def fetch_douyin_favorites(
         empty_rounds = 0
         last_top: float | None = None
         for round_no in range(limit):
+            if not deep and known_streak >= DOUYIN_KNOWN_STREAK:
+                break
             _wheel_with_retry(page, step, reinstall=_install_stabilizer)
             page.wait_for_timeout(_scroll_wait_ms(round_no))
             rounds = round_no + 1

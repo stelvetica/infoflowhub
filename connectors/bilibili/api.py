@@ -20,6 +20,10 @@ BILIBILI_BSK_EVALUATE_TIMEOUT_SECONDS = 120.0
 BILIBILI_PAGE_REQUEST_TIMEOUT_MS = 20000
 # 稍后看全量翻页的安全上限：翻到上限仍每页满 = 没拿全，complete 置 False 不做按源比对。
 BILIBILI_WATCHLATER_MAX_PAGES = 50
+# 日常短抓取最多翻这么多页（只用于追新）；每 30 天一次的深扫才跑满上限。
+BILIBILI_WATCHLATER_SHORT_MAX_PAGES = 3
+# 日常短抓取：按收藏时间倒序，连续命中这么多条已入库条目即认为已追平历史。
+BILIBILI_WATCHLATER_KNOWN_STREAK = 3
 # 增量翻页：连续命中已入库标题达到该条数即认为已追上历史，停止继续翻页。
 BILIBILI_DUPLICATE_STOP_STREAK = 3
 # 安全上限：全新库/无已知键时最多翻这么多页，避免无限翻历史。
@@ -77,6 +81,9 @@ async (argsJson) => {
   };
   const all = [];
   const seen = new Set();
+  const known = new Set(args.knownKeys || []);
+  let knownStreak = 0;
+  let stoppedByKnown = false;
   // 用接口自报的 count 做完整性校验；字段缺失时为 null，退回「短页即到底」判断。
   let total = null;
   const itemKey = (it) =>
@@ -113,7 +120,14 @@ async (argsJson) => {
       seen.add(key);
       all.push(item);
       added++;
+      // 日常短抓取：连续命中已知即认为已追平，剩下的历史不必再翻。
+      if (!args.deep) {
+        const bv = String(item.bvid || item.bv_id || "");
+        knownStreak = bv && known.has(bv) ? knownStreak + 1 : 0;
+        if (knownStreak >= args.knownStreak) stoppedByKnown = true;
+      }
     }
+    if (stoppedByKnown) return { items: all, complete: false, stopped: "known" };
     if (total !== null && all.length >= total) return { items: all, complete: true };
     // 短页通常意味着到底；但若接口自报 count 还没拿够，或整页零新增（pn 被忽略），
     // 都不能当完整列表——否则会把源里仍在的条目误判成「已移除」。
@@ -128,10 +142,29 @@ async (argsJson) => {
 """
 
 
+def _watchlater_known_bvids(known_urls: list[str] | None) -> list[str]:
+    """从已入库 URL 里提取 BV 号，供页内做「已追平历史」判定。"""
+    found: list[str] = []
+    for url in known_urls or []:
+        match = re.search(r"/video/(BV[0-9A-Za-z]+)", str(url))
+        if match and match.group(1) not in found:
+            found.append(match.group(1))
+    return found
+
+
 def fetch_bilibili_watchlater_with_page(
-    page, *, ps: int = 20, timeout_ms: int = 60000
+    page,
+    *,
+    ps: int = 20,
+    timeout_ms: int = 60000,
+    deep: bool = True,
+    known_urls: list[str] | None = None,
 ) -> FetchBatch:
-    """bsk 页内取数版：先导航到稍后看页拿同域上下文，再页内 fetch 官方接口并翻全量。"""
+    """bsk 页内取数版：先导航到稍后看页拿同域上下文，再页内 fetch 官方接口。
+
+    deep=True 翻满上限并以接口 count 判完整；deep=False 为日常短抓取：连续命中已知
+    条目即收工，complete 恒 False（不参与移除判定）。
+    """
     eval_timeout = max(BILIBILI_BSK_EVALUATE_TIMEOUT_SECONDS, timeout_ms / 1000.0 + 30.0)
     page.goto(BILIBILI_WATCHLATER_PAGE_URL, wait_until="domcontentloaded")
     payload = page.evaluate(
@@ -140,8 +173,15 @@ def fetch_bilibili_watchlater_with_page(
             {
                 "url": BILIBILI_WATCHLATER_API,
                 "ps": ps,
-                "maxPages": BILIBILI_WATCHLATER_MAX_PAGES,
+                "maxPages": (
+                    BILIBILI_WATCHLATER_MAX_PAGES
+                    if deep
+                    else BILIBILI_WATCHLATER_SHORT_MAX_PAGES
+                ),
                 "requestTimeoutMs": BILIBILI_PAGE_REQUEST_TIMEOUT_MS,
+                "deep": bool(deep),
+                "knownKeys": _watchlater_known_bvids(known_urls),
+                "knownStreak": BILIBILI_WATCHLATER_KNOWN_STREAK,
             }
         ),
         timeout=eval_timeout,
@@ -166,12 +206,16 @@ def fetch_bilibili_watchlater_with_page(
     # 承担可见性，不能抛错——否则会把真实清空的用户每轮记成一条抓取失败。
     return FetchBatch(
         items=[_normalize_watchlater_item(item) for item in items],
-        complete=bool(payload.get("complete")),
+        complete=bool(deep and payload.get("complete")),
     )
 
 
 def fetch_bilibili_watchlater(
-    env_path: str | Path | None = None, *, session=None
+    env_path: str | Path | None = None,
+    *,
+    session=None,
+    deep: bool = False,
+    known_urls: list[str] | None = None,
 ) -> FetchBatch:
     """抓取 B 站「稍后看」：bsk 页内 fetch，复用日常 Chrome 登录态。
 
@@ -179,11 +223,15 @@ def fetch_bilibili_watchlater(
     session 为空时自建一个 bsk 会话（CLI/单测入口）。
     """
     if session is not None:
-        return fetch_bilibili_watchlater_with_page(session.acquire_page())
+        return fetch_bilibili_watchlater_with_page(
+            session.acquire_page(), deep=deep, known_urls=known_urls
+        )
     from connectors._shared.bsk_session import BskRunnerSession
 
     with BskRunnerSession(start_url="about:blank") as own_session:
-        return fetch_bilibili_watchlater_with_page(own_session.acquire_page())
+        return fetch_bilibili_watchlater_with_page(
+            own_session.acquire_page(), deep=deep, known_urls=known_urls
+        )
 
 
 def build_bilibili_dynamic_link(item: dict[str, Any]) -> str:

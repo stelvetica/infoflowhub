@@ -53,7 +53,7 @@ def _state(db: DBManager, url: str) -> tuple[int, str | None, int]:
 
 
 def _bili_fetcher(*urls: str, complete: bool = True):
-    def fetcher(env_path, *, session=None):
+    def fetcher(env_path, *, session=None, **kwargs):
         return FetchBatch(
             items=[{"url": url, "title": "视频", "source": BILI_SOURCE} for url in urls],
             complete=complete,
@@ -94,6 +94,7 @@ def test_pipeline_completes_missing_items_when_batch_complete(tmp_path):
         source=SOURCE_BY_ID[BILI_SOURCE],
         fetcher=_bili_fetcher(PRESENT),
         db=db,
+        deep=True,
     )
 
     assert _state(db, PRESENT)[0] == 0
@@ -111,6 +112,7 @@ def test_pipeline_leaves_missing_items_alone_when_batch_incomplete(tmp_path, mon
         source=SOURCE_BY_ID[BILI_SOURCE],
         fetcher=_bili_fetcher(PRESENT, complete=False),
         db=db,
+        deep=True,
     )
 
     assert _state(db, REMOVED)[0] == 0
@@ -125,7 +127,7 @@ def test_pipeline_skips_sources_without_finish_on_removed(tmp_path):
 
     pipeline._fetch_source(
         source=SOURCE_BY_ID["weread_shelf"],
-        fetcher=lambda env_path, *, session=None: FetchBatch(
+        fetcher=lambda env_path, *, session=None, **kwargs: FetchBatch(
             items=[{"url": "https://weread.qq.com/web/reader/def", "title": "新书", "source": "weread_shelf"}],
             complete=True,
         ),
@@ -144,6 +146,7 @@ def test_refetch_revives_auto_finished_item(tmp_path):
         source=SOURCE_BY_ID[BILI_SOURCE],
         fetcher=_bili_fetcher(PRESENT),
         db=db,
+        deep=True,
     )
     assert _state(db, REMOVED)[0] == 1
 
@@ -170,3 +173,18 @@ def test_compare_after_skips_entries_recorded_before_cutoff(tmp_path):
     assert [row["url"] for row in finished] == [REMOVED]
     # 早于下界的条目保持未完成，不参与对照。
     assert _state(db, OLD)[0] == 0
+
+
+def test_incremental_batch_never_removes_even_when_complete(tmp_path):
+    """日常短抓取即使抓取器自报 complete=True，也不得进入移除判定。"""
+    db = DBManager(tmp_path / "laterhub.sqlite3")
+    _add(db, PRESENT, BILI_SOURCE)
+    _add(db, REMOVED, BILI_SOURCE)
+
+    pipeline._fetch_source(
+        source=SOURCE_BY_ID[BILI_SOURCE],
+        fetcher=_bili_fetcher(PRESENT, complete=True),
+        db=db,
+    )
+
+    assert _state(db, REMOVED)[0] == 0

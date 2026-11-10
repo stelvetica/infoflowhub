@@ -8,7 +8,7 @@ import types
 import pytest
 
 from apps.laterhub import pipeline
-from apps.laterhub.sources import SOURCE_BY_ID, SOURCES
+from apps.laterhub.sources import COMPARE_AFTER, DEEP_SCAN_INTERVAL_DAYS, SOURCE_BY_ID, SOURCES
 from connectors._shared.common import FetchBatch
 from web.services import fetch_runtime
 
@@ -44,16 +44,12 @@ def _args(**overrides) -> argparse.Namespace:
     return argparse.Namespace(**base)
 
 
-def test_registry_marks_only_douyin_as_deep_capable():
-    douyin = SOURCE_BY_ID["douyin_favorite"]
-    assert douyin.finish_on_removed is True
-    assert douyin.deep_scan_interval_days == 30
-    assert douyin.compare_after == "2026-03-24T08:48:36+00:00"
+def test_registry_unifies_fetch_policy_across_sources():
+    """四源同一套策略：日常短抓取、30 天深扫、只在完整深扫里做移除判定、统一时间下界。"""
     for source in SOURCES:
-        if source.id == "douyin_favorite":
-            continue
-        assert source.deep_scan_interval_days is None, source.id
-        assert source.compare_after is None, source.id
+        assert source.finish_on_removed is True, source.id
+        assert source.deep_scan_interval_days == DEEP_SCAN_INTERVAL_DAYS, source.id
+        assert source.compare_after == COMPARE_AFTER, source.id
 
 
 def test_douyin_removal_comparison_passes_compare_after(monkeypatch):
@@ -196,3 +192,23 @@ def test_fetch_laterhub_now_propagates_manual_incremental(monkeypatch):
 
     assert captured["deep_scan"] is False
     assert captured["fetch_douyin"] is True
+
+
+def test_known_urls_are_passed_through_to_fetcher():
+    captured: dict = {}
+
+    def fetcher(env_path, *, session=None, deep=False, known_urls=None):
+        captured["known"] = known_urls
+        captured["deep"] = deep
+        return FetchBatch(items=[], complete=False)
+
+    pipeline._fetch_source(
+        source=SOURCE_BY_ID["douyin_favorite"],
+        fetcher=fetcher,
+        db=FakeDB(),
+        deep=True,
+        supports_deep=True,
+        known_urls=["https://www.douyin.com/video/1"],
+    )
+
+    assert captured == {"known": ["https://www.douyin.com/video/1"], "deep": True}

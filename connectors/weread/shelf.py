@@ -6,6 +6,7 @@ from typing import Any
 
 from apps.laterhub.config import DEBUG_DIR
 from connectors._shared.bsk_session import BskRunnerSession
+from connectors._shared.common import FetchBatch
 
 
 WEREAD_SHELF_URL = "https://weread.qq.com/web/shelf"
@@ -65,6 +66,9 @@ async (argsJson) => {
     return {error: '微信读书书架接口返回异常: ' + JSON.stringify(idsData).slice(0, 200)};
   }
   const ids = idsData.data.map(x => x && x.bookId).filter(Boolean);
+  const known = new Set(args.knownBookIds || []);
+  // 日常短抓取只取未入库的新书详情；深扫不看已知集合，必须全量才能判定移除。
+  const targets = args.deep ? ids : ids.filter(id => !known.has(id));
   const books = new Map();
   const badIds = [];
   const fetchChunk = async (chunk) => {
@@ -105,17 +109,29 @@ async (argsJson) => {
     await grab(chunk.slice(0, mid));
     await grab(chunk.slice(mid));
   };
-  for (let i = 0; i < ids.length; i += args.batchSize) await grab(ids.slice(i, i + args.batchSize));
-  return {ids: ids.length, books: Array.from(books.values()), badIds};
+  for (let i = 0; i < targets.length; i += args.batchSize) await grab(targets.slice(i, i + args.batchSize));
+  return {ids: ids.length, targets: targets.length, books: Array.from(books.values()), badIds};
 }
 """
+
+
+def _known_book_ids(known_urls: list[str] | None) -> list[str]:
+    """从已入库 URL 提取 bookId（/web/reader/{bookId}），供日常短抓取跳过已入库书籍。"""
+    found: list[str] = []
+    for url in known_urls or []:
+        match = re.search(r"/web/reader/([0-9A-Za-z]+)", str(url))
+        if match and match.group(1) not in found:
+            found.append(match.group(1))
+    return found
 
 
 def fetch_weread_shelf(
     env_path: str | None = None,
     *,
     session: BskRunnerSession | None = None,
-) -> list[dict[str, Any]]:
+    deep: bool = False,
+    known_urls: list[str] | None = None,
+) -> FetchBatch:
     # ponytail: env_path 仅为与 pipeline 的 fetcher(ENV_PATH, session=...) 调用姿势同形，
     # bsk 复用用户日常 Chrome 的登录态，不需要 env 配置。
     own_session = session is None
@@ -134,7 +150,14 @@ def fetch_weread_shelf(
         page.wait_for_timeout(3000)
         payload = page.evaluate(
             _SHELF_JS,
-            json.dumps({"batchSize": WEREAD_SHELF_BATCH_SIZE, "timeoutMs": 20000}),
+            json.dumps(
+                {
+                    "batchSize": WEREAD_SHELF_BATCH_SIZE,
+                    "timeoutMs": 20000,
+                    "deep": bool(deep),
+                    "knownBookIds": _known_book_ids(known_urls),
+                }
+            ),
             timeout=120,
         )
         if not isinstance(payload, dict):
@@ -188,4 +211,6 @@ def fetch_weread_shelf(
     )
     if error_message:
         raise RuntimeError(error_message)
-    return result
+    # 日常短抓取永远不完整；深扫只有「没有坏 id」才算拿全：坏 id 无法确认对应书是否还在架，
+    # 宁可不做移除判定，也不能把仍在架上的书误标成已读完。
+    return FetchBatch(items=result, complete=bool(deep and not bad_ids))
