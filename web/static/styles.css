@@ -388,9 +388,10 @@ td { font-size: var(--fs-sm); }
 .entries-table .col-source { width: 160px; }
 .entries-table .col-title { width: auto; }
 .entries-table .col-action { width: 64px; }
-/* 「稍后读」列：与稍后处理面板的小按钮同尺寸 */
+/* 「稍后读」列：与稍后处理面板的小按钮同尺寸；行内按钮压薄，避免整表行高被撑大一截 */
 .entries-add-th, .entries-add-cell { text-align: center; white-space: nowrap; }
-.entries-add-cell .btn { font-size: var(--fs-xs); padding: 4px 8px; }
+.entries-add-cell .btn { font-size: var(--fs-xs); padding: 1px 7px; }
+.entries-table tbody td { vertical-align: middle; }
 
 /* 订阅源表 */
 .sources-table .col-index { width: 4%; }
@@ -437,6 +438,9 @@ td { font-size: var(--fs-sm); }
 .cell-time { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .cell-tight { white-space: nowrap; }
 .cell-ellipsis { display: block; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* 直接挂在 td 上时不能变成 block：脱离 table-cell 后不再随行高拉伸，
+   行内其它单元格（如更高的按钮）会把行撑高，本格底边边框就与整行错位 */
+td.cell-ellipsis { display: table-cell; }
 .cell-link { display: block; max-width: 100%; }
 .cell-link:hover { color: var(--accent); }
 .cell-link-disabled { color: var(--muted); cursor: not-allowed; }
