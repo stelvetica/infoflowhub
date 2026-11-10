@@ -22,8 +22,8 @@ FAVOUR_PAGE_SIZE = 20
 FAVOUR_MAX_PAGES = 50  # 安全上限，防异常死循环
 # 日常短抓取：最多翻这么多页；每 15 天一次的深扫才跑满上限。
 FAVOUR_SHORT_MAX_PAGES = 3
-# 日常短抓取：按收藏时间倒序，连续命中这么多条已入库条目即认为已追平历史。
-FAVOUR_KNOWN_STREAK = 3
+# 日常短抓取收工条件：连续这么多页没有未入库条目才算追平历史。
+FAVOUR_STALE_PAGES = 2
 
 
 def _log(msg: str) -> None:
@@ -102,8 +102,7 @@ async (argsJson) => {
     const base = new URL(captured, location.origin);
     const all = [];
     const known = new Set(args.knownIds || []);
-    let knownStreak = 0;
-    let stoppedByKnown = false;
+    let stalePages = 0;
     let totalPage = 1;
     let totalPageKnown = false;
     let pagesFetched = 0;
@@ -136,16 +135,17 @@ async (argsJson) => {
         pagesFetched++;
         const items = data.result || [];
         if (items.length === 0) { complete = true; break; }
+        let pageNew = 0;
         for (const it of items) {
             all.push({linkid: it.linkid, title: it.title || "", is_favour: it.is_favor || it.is_favour});
-            // 日常短抓取：连续命中已知 linkid 即认为已追平历史。
-            if (!args.deep) {
-                const id = String(it.linkid || "");
-                knownStreak = id && known.has(id) ? knownStreak + 1 : 0;
-                if (knownStreak >= args.knownStreak) stoppedByKnown = true;
-            }
+            const id = String(it.linkid || "");
+            if (!(id && known.has(id))) pageNew++;
         }
-        if (stoppedByKnown) { complete = false; break; }
+        // 日常短抓取：连续多页没有未入库条目才算追平。
+        if (!args.deep) {
+            stalePages = pageNew === 0 ? stalePages + 1 : 0;
+            if (stalePages >= args.stalePages) { complete = false; break; }
+        }
         if (totalPageKnown) {
             if (i + 1 >= totalPage) { complete = true; break; }
         } else if (items.length < args.pageSize) {
@@ -195,7 +195,7 @@ def _fetch_favour_via_api(
                 "maxPages": FAVOUR_MAX_PAGES if deep else FAVOUR_SHORT_MAX_PAGES,
                 "deep": bool(deep),
                 "knownIds": _known_link_ids(known_urls),
-                "knownStreak": FAVOUR_KNOWN_STREAK,
+                "stalePages": FAVOUR_STALE_PAGES,
             }
         ),
     )

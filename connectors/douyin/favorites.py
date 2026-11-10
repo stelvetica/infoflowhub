@@ -24,8 +24,8 @@ DOUYIN_FAVORITE_URL = "https://www.douyin.com/user/self?from_tab_name=main&showT
 DOUYIN_SCROLL_ROUNDS = 10              # 增量模式轮数上限
 DOUYIN_DEEP_SCROLL_MAX_ROUNDS = 150    # 深度全量上限；撞上限视为没拿全（与 30 分钟预算对齐）
 DOUYIN_SCROLL_EMPTY_ROUNDS = 2         # 连续零新增轮数（增量模式收工条件/深度模式确认条件）
-# 日常短抓取：列表按收藏时间倒序，连续遇到这么多条已知条目即认定已追平历史。
-DOUYIN_KNOWN_STREAK = 3
+# 日常短抓取收工条件：连续这么多轮「没有未入库条目」才算追平历史。
+DOUYIN_STALE_ROUNDS = 2
 # 深度模式的「到底」必须由滚动几何证明：收藏页是内层滚动容器，滚轮没落到容器上时
 # 卡片不会新增，旧逻辑（连续两轮无新增即到底）会把「滚动卡住」当成「扫完了」，
 # 进而把仍在收藏里的条目整批误标「源内已移除」（2026-11-08 误标 780 条即此）。
@@ -239,7 +239,7 @@ def fetch_douyin_favorites(
         for tail in [str(url).split("/video/")[-1]]
         if "/video/" in str(url)
     }
-    known_streak = 0
+    round_unknown = 0
 
     seen: dict[str, dict[str, Any]] = {}
     rounds = 0
@@ -254,7 +254,7 @@ def fetch_douyin_favorites(
 
         def _absorb(extracted: list[dict[str, Any]]) -> int:
             # 必须跨轮累积：收藏页虚拟列表会把滚出视口的卡片从 DOM 摘掉，每轮覆盖会丢条目。
-            nonlocal known_streak
+            nonlocal round_unknown
             added = 0
             for item in extracted:
                 key = str(item.get("video_id") or item.get("url") or "").strip()
@@ -262,8 +262,8 @@ def fetch_douyin_favorites(
                     continue
                 seen[key] = item
                 added += 1
-                # 列表按收藏时间倒序：连续撞上已知条目说明已追平历史，日常短抓取可收工。
-                known_streak = known_streak + 1 if key in known_ids else 0
+                if key not in known_ids:
+                    round_unknown += 1
             return added
 
         _absorb(_extract_visible_items(page))
@@ -271,24 +271,32 @@ def fetch_douyin_favorites(
         limit = DOUYIN_DEEP_SCROLL_MAX_ROUNDS if deep else DOUYIN_SCROLL_ROUNDS
         step = DOUYIN_DEEP_SCROLL_STEP_PX if deep else DOUYIN_SCROLL_STEP_PX
         empty_rounds = 0
+        stale_rounds = 0
         last_top: float | None = None
         for round_no in range(limit):
-            if not deep and known_streak >= DOUYIN_KNOWN_STREAK:
-                break
             _wheel_with_retry(page, step, reinstall=_install_stabilizer)
             page.wait_for_timeout(_scroll_wait_ms(round_no))
             rounds = round_no + 1
+            round_unknown = 0
             added = _absorb(_extract_visible_items(page))
+            # 「追平」的判据是连续多轮没有未入库条目，而不只是撞到几条已知：
+            # 排序若被置顶/重排打乱，只撞 3 条已知就可能提前收工漏掉下面的新条目。
+            # added==0（本轮无任何新面孔）与 round_unknown==0（本轮全是已入库）都算停滞。
+            if added == 0 or round_unknown == 0:
+                stale_rounds += 1
+            else:
+                stale_rounds = 0
+            if not deep:
+                if stale_rounds >= DOUYIN_STALE_ROUNDS:
+                    reached_bottom = True
+                    break
+                continue
             if added:
                 empty_rounds = 0
                 continue
             empty_rounds += 1
             if empty_rounds < DOUYIN_SCROLL_EMPTY_ROUNDS:
                 continue
-            if not deep:
-                # 增量模式只为追新，零新增即可收工；complete 恒 False，不参与移除判定。
-                reached_bottom = True
-                break
             # 深度模式必须拿到「容器已滚到头」的几何证据；只凭零新增会把滚动卡住当成扫完，
             # 把仍在收藏里的条目整批误标「源内已移除」（2026-11-08 误标 780 条即此）。
             state = _scroll_state(page)
