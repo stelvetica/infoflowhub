@@ -79,7 +79,7 @@ python "<skill_dir>\scripts\extract_pool.py" "C:\Users\ETT\Playground\infoflowhu
 | 2 | 股票名称 |
 | 6 | 仓位比例（0–1 浮点；≤0 视为空仓） |
 
-**输出**：`标的池.json`，含 `as_of`/`product_order`/`count`/`stocks`（每只含 `code/name/holders/max_weight`），按 `max_weight` 降序。
+**输出**：`标的池.json`，含 `as_of`/`product_order`/`count`/`stocks`（每只含 `code/name/holders/max_weight`），按 `max_weight` 降序；A 股若有同名港股，另带 `hk_code`（港股孪生计，独立字段、不单独计仓、不增 `count`，供公告监控借港股标题判类）。
 
 ### 1.2 取新闻
 
