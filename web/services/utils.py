@@ -95,9 +95,14 @@ def parse_datetime(value: str) -> datetime | None:
         except ValueError:
             continue
     try:
-        return datetime.fromisoformat(normalized.replace(" ", "T").replace("Z", "+00:00")).replace(tzinfo=None)
+        parsed = datetime.fromisoformat(normalized.replace(" ", "T").replace("Z", "+00:00"))
     except Exception:
         return None
+    # 带时区的 ISO 串（laterhub 的 created_at 是 UTC）必须先换算本地再丢 tzinfo：
+    # 直接 replace(tzinfo=None) 会把 07:15(+08) 存成 23:15，面板按 UTC 日期渲染成前一天。
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed
 
 
 def format_datetime(value: str) -> str:
