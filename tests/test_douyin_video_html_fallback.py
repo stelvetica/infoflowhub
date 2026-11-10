@@ -1,16 +1,20 @@
 """抖音取直链兜底路径的回归测试（不触网络、不开浏览器）。
 
-背景：取链有三条通道——扩展网络缓冲 → resource timing → 页面 HTML。
+背景：取链有四条通道——用户脚本 DOM 标记 → 扩展网络缓冲 → resource timing → 页面 HTML。
 只看 resource timing 时，「播放器没起播」和「播放中被 strict 策略拒 evaluate」都会
 被误报成失败（现场即 2049 条里的 2099/1752）。
 """
 
 from __future__ import annotations
 
+import base64
+import json
+
 from connectors._shared.bsk_browser import BskError
 from connectors.douyin.video import (
     DouyinVideoMedia,
     _media_urls_from_html,
+    _media_urls_from_marker,
     _media_urls_from_network,
     _split_media_urls,
     resolve_douyin_video_media,
@@ -210,3 +214,58 @@ def test_resolve_raises_when_first_navigation_denied():
         pass
     else:  # pragma: no cover
         raise AssertionError("首跳失败必须抛错")
+
+
+# --- 用户脚本 DOM 标记通道 -----------------------------------------------------
+
+MARKER_URL = "https://v26-web.douyinvod.com/mark/.../video/tos/cn/y/?a=1&br=1141"
+
+
+def _marker_html(entries: list[dict]) -> str:
+    raw = json.dumps({"entries": entries}, ensure_ascii=False).encode("utf-8")
+    packed = base64.b64encode(raw).decode()
+    return f'<html><head><meta id="ifh-douyin-media" name="ifh-douyin-media" content="{packed}"></head></html>'
+
+
+def test_marker_returns_play_urls_for_matching_video():
+    html = _marker_html([{"id": VIDEO_ID, "desc": "x", "playUrls": [MARKER_URL], "gears": []}])
+    assert _media_urls_from_marker(FakePage(html), VIDEO_ID) == [MARKER_URL]
+
+
+def test_marker_ignores_other_videos_and_unsafe_hosts():
+    html = _marker_html([
+        {"id": "999", "playUrls": ["https://v26-web.douyinvod.com/other/"]},
+        {"id": VIDEO_ID, "playUrls": [
+            "http://evil.example/v.mp4",
+            "javascript:alert(1)",
+            "https://evil.douyinvod.com.evil.example/v.mp4",
+            MARKER_URL,
+        ]},
+    ])
+    assert _media_urls_from_marker(FakePage(html), VIDEO_ID) == [MARKER_URL]
+
+
+def test_marker_tolerates_broken_payload():
+    broken = '<meta id="ifh-douyin-media" content="@@not-base64@@">'
+    assert _media_urls_from_marker(FakePage(broken), VIDEO_ID) == []
+
+
+def test_resolve_prefers_marker_over_network_and_evaluate():
+    # 主通道命中后不应再碰 evaluate/network（真实页面里 evaluate 会被 strict 反复拒）
+    page = FakePage(
+        _marker_html([{"id": VIDEO_ID, "playUrls": [MARKER_URL]}]),
+        evaluate_error=True,
+        network_after_nav=[{"sequence": 9, "url": V_STREAM, "status": 206}],
+    )
+    media = resolve_douyin_video_media(URL, session=FakeSession(page))
+    assert media == DouyinVideoMedia(video_url=MARKER_URL, audio_url=None)
+
+
+def test_resolve_falls_back_to_network_when_marker_is_for_other_video():
+    page = FakePage(
+        _marker_html([{"id": "123", "playUrls": [MARKER_URL]}]),
+        evaluate_error=True,
+        network_after_nav=[{"sequence": 9, "url": V_STREAM, "status": 206}],
+    )
+    media = resolve_douyin_video_media(URL, session=FakeSession(page))
+    assert media.video_url == V_STREAM
