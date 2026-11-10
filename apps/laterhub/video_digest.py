@@ -42,6 +42,10 @@ DOUYIN_BATCH_GAP_SECONDS = 15
 DOUYIN_VIDEO_PREFIX = "douyin.com/video/"
 
 
+class NoSpeechDetected(RuntimeError):
+    """两个 ASR 引擎都跑通、但结果为空/过短：这条视频本身没有人声（纯音乐、画面剪辑）。"""
+
+
 @dataclass(slots=True)
 class DigestOutcome:
     link_id: int
@@ -90,7 +94,10 @@ def _asr_min_chars(duration_seconds: int | None) -> int:
 def _transcribe_with_videocaptioner(
     video_path: Path, workdir: Path, *, duration_seconds: int | None = None
 ) -> Path:
-    """调用 videocaptioner 转录，返回有效 SRT 路径。外部 CLI 缺失/失败抛 RuntimeError。
+    """调用 videocaptioner 转录，返回有效 SRT 路径。
+
+    CLI 缺失/引擎报错抛 RuntimeError；两个引擎都跑通却只拿到空结果时抛 NoSpeechDetected
+    （说明视频本来就没人声，调用方可以换文案兜底）。
 
     bijian（必剪）与 jianying（剪映）同源互备：bijian 对无 cookie 高频访问会限流
     （实测任务创建成功、查结果 412），换 jianying 通常即成，两引擎依次尝试。
@@ -103,6 +110,7 @@ def _transcribe_with_videocaptioner(
     srt_path = workdir / "asr.srt"
     min_chars = _asr_min_chars(duration_seconds)
     errors: list[str] = []
+    only_short_results = True
     for asr in ("bijian", "jianying"):
         srt_path.unlink(missing_ok=True)
         result = subprocess.run(
@@ -117,29 +125,24 @@ def _transcribe_with_videocaptioner(
                 return srt_path
             errors.append(f"{asr}: 结果过短({len(text)}字，需≥{min_chars})")
             continue
+        only_short_results = False
         tail = (result.stderr or result.stdout or "").strip().splitlines()
         errors.append(f"{asr}: exit={result.returncode} {tail[-1] if tail else '无输出'}")
-    raise RuntimeError(f"videocaptioner 未识别到有效语音（bijian/jianying 均失败）: {'; '.join(errors)}")
+    message = f"videocaptioner 未识别到有效语音（bijian/jianying 均失败）: {'; '.join(errors)}"
+    # 两个引擎都跑通、只是结果是空/过短 → 判定「本来就没有人声」，可换文案兜底；
+    # 有引擎报错(exit≠0) 说明工具链坏了，属于真失败，不能拿文案顶替字幕。
+    raise (NoSpeechDetected(message) if only_short_results else RuntimeError(message))
 
 
-def _format_duration(seconds: int | None) -> str:
-    if not seconds or seconds <= 0:
-        return "未知"
-    minutes, sec = divmod(seconds, 60)
-    return f"{minutes}分{sec:02d}秒"
+def _split_douyin_caption(title: str) -> tuple[str | None, str]:
+    """把抖音标题拆成 (作者, 文案)。抖音采集的标题形如「作者：文案 #话题」。
 
-
-def _source_label(source: str) -> str:
-    return {"bilibili_watchlater": "B站稍后看", "douyin_favorites": "抖音收藏"}.get(source, source)
-
-
-def _subtitle_source_label(subtitle_source: str) -> str:
-    return {
-        "bilibili_cc": "B站字幕",
-        "videocaptioner_bijian": "语音转写",
-        "bilibili_desc": "B站简介",
-        "glm_video": "AI 视频理解",
-    }.get(subtitle_source, subtitle_source)
+    拿不准就不拆（作者 None，整条当文案）——拆错只会让简报里多个错误作者名。
+    """
+    author, sep, caption = title.partition("：")
+    if sep and 0 < len(author.strip()) <= 20 and caption.strip():
+        return author.strip(), caption.strip()
+    return None, title
 
 
 def _finalize(
@@ -193,8 +196,27 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
             workdir.mkdir(parents=True, exist_ok=True)
             video_path, duration_seconds = download_douyin_video(url, dest_dir=workdir)
             step = "语音转写"
-            srt_path = _transcribe_with_videocaptioner(video_path, workdir, duration_seconds=duration_seconds)
-            subtitle_text = _srt_to_text(srt_path)
+            try:
+                subtitle_text = _srt_to_text(
+                    _transcribe_with_videocaptioner(video_path, workdir, duration_seconds=duration_seconds)
+                )
+            except NoSpeechDetected as exc:
+                # 纯音乐/画面剪辑：抖音没有独立简介字段，作品文案就是标题（「作者：文案 #话题」）
+                step = "生成简报"
+                owner, caption = _split_douyin_caption(title)
+                digest = llm.generate_from_description(title=title, owner=owner, description=caption)
+                path = _finalize(
+                    db,
+                    link_id,
+                    row,
+                    digest,
+                    subtitle_source="douyin_desc",
+                    reports_dir=reports_dir,
+                    owner=owner,
+                    duration_seconds=duration_seconds,
+                    process_note=f"整段音频未识别到人声（{exc}），简报依据作品文案生成。",
+                )
+                return DigestOutcome(link_id, url, title, "succeeded", str(path))
             step = "生成简报"
             digest = llm.generate_from_subtitle(title=title, owner=None, subtitle_text=subtitle_text)
             path = _finalize(

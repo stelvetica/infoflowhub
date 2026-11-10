@@ -413,6 +413,7 @@ _SUBTITLE_SOURCE_LABELS = {
     "bilibili_cc": "B站字幕",
     "videocaptioner_bijian": "语音转写",
     "bilibili_desc": "B站简介",
+    "douyin_desc": "抖音文案",
     "glm_video": "AI 视频理解",
 }
 
