@@ -306,8 +306,9 @@ def _sample_report() -> dict[str, Any]:
 def test_render_markdown_structure_and_placeholders():
     markdown = hotspot.render_markdown(_sample_report())
     assert markdown.startswith("# 市场热点 2026-11-09")
-    for heading in ("## 结论速览", "## 口径", "## 申万二级 Top 5（主表）", "## 原因分析（申万二级 Top 5）", "## 申万一级 Top 5（对照）", "## 全量排名", "## 数据质量"):
+    for heading in ("## 结论速览", "## 口径", "## 申万二级 Top 5（主表）", "## 原因分析（申万二级 Top 5）", "## 申万一级 Top 5（对照）", "## 全量概况", "## 数据质量"):
         assert heading in markdown
+    assert "<details>" not in markdown
     assert markdown.count("<!-- AI 填写 -->") == 2
 
 

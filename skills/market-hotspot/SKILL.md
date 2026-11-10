@@ -81,4 +81,4 @@ C:\Users\ETT\Playground\infoflowhub\.venv\Scripts\python.exe "<skill_dir>\script
 
 - `--selftest` 退出 0。
 - `--dry-run` 的窗口应为最近 3 个完整交易日，Top 5 行业与强势股数量合理。
-- 正式运行后 MD 含申万二级 Top 5 表、5 个原因小节、一级对照与全量排名 `<details>`；JSON 计数恒等式成立且无 NaN/Infinity。
+- 正式运行后 MD 含申万二级 Top 5 表、5 个原因小节、一级对照与全量概况；JSON 计数恒等式成立且无 NaN/Infinity。

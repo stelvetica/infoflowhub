@@ -800,10 +800,6 @@ def fmt_pp(value: float | None) -> str:
     return f"{value * 100:+.2f}pp"
 
 
-def fmt_amount(value: float | None) -> str:
-    return "—" if value is None else f"{value:,.0f}"
-
-
 def data_status_tokens(detail: dict[str, Any]) -> str:
     tokens: list[str] = []
     breadth = detail["breadth"]
@@ -909,26 +905,23 @@ def render_markdown(report: dict[str, Any]) -> str:
     if not report["top_sw1"]:
         lines.append("| — | 一级数据不可用 | — | — |")
     lines.append("")
-    lines.append("## 全量排名")
+    lines.append("## 全量概况")
     lines.append("")
     for label, key in (("申万二级", "sw2"), ("申万一级", "sw1")):
         ranking = report["industry_rankings"][key]
-        lines.append("<details>")
-        lines.append(f"<summary>{label}（{ranking['valid_count']} 个有效 / 目录 {ranking['expected_count']} 个）</summary>")
-        lines.append("")
-        lines.append("| 排名 | 行业 | 3日涨幅 | 超额 | 日均成交额（万元） |")
-        lines.append("| --- | --- | --- | --- | --- |")
-        for index, item in enumerate(ranking["ranking"], 1):
-            lines.append(
-                f"| {index} | {item['name']} | {fmt_pct(item['r3'])} | {fmt_pp(item['excess'])} | "
-                f"{fmt_amount(item['amount_avg_wan'])} |"
-            )
-        if ranking["excluded"]:
-            lines.append("")
-            lines.append("剔除：" + "；".join(f"{item['name']}（{item['reason']}）" for item in ranking["excluded"]))
-        lines.append("")
-        lines.append("</details>")
-        lines.append("")
+        rows = ranking["ranking"]
+        if not rows:
+            lines.append(f"- {label}：无有效数据（目录 {ranking['expected_count']} 个）。")
+            continue
+        up = sum(1 for item in rows if item["r3"] > 0)
+        beat = sum(1 for item in rows if item["excess"] > 0)
+        lines.append(
+            f"- {label}：有效 {ranking['valid_count']}/{ranking['expected_count']}，"
+            f"上涨 {up} / 下跌 {len(rows) - up}，跑赢基准 {beat}；"
+            f"领涨 {rows[0]['name']}（{fmt_pct(rows[0]['r3'])}），"
+            f"垫底 {rows[-1]['name']}（{fmt_pct(rows[-1]['r3'])}）。"
+        )
+    lines.append("")
     lines.append("## 数据质量")
     lines.append("")
     issues = report["data_quality"]["issues"]
