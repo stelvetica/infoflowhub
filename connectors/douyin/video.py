@@ -10,6 +10,12 @@ performance / 网络缓冲里，douyinvod.com 直链带完整签名，Python 直
 Referer）即可下载。直链是 video/audio 分离流，ffmpeg 合流即得完整 mp4；直链时效约
 几分钟，拿到必须立刻下载。播放中的页面整页基线一直在变，evaluate 会被 strict 策略拒，
 所以只读的 `bsk network` 才是取链主通道。
+
+参考实现（未采用，留档）：https://github.com/WhiteSevs/TamperMonkeyScript 「抖音优化」脚本
+从 /aweme/v1/web/aweme/detail/ 的响应体读 video.bit_rate[].play_addr.url_list（含备用 CDN），
+或读 React fiber 的 awemeInfo.playApi。前者更精确、且 play_addr 多为已合流 mp4，但 bsk 扩展
+默认不保留响应体（实测 response_body chars=0 / redacted，pin 也不补存），DOM 那条又依赖
+evaluate（播放中会被拒）。故目前只用请求清单取链；等 bsk 支持保留指定 URL 响应体再切。
 """
 
 from __future__ import annotations
