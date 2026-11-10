@@ -37,9 +37,14 @@ class FakeLLM:
         self.digest = DigestContent(summary="总结", key_points=["一", "二", "三"], note=None)
         self.subtitle_calls: list[dict] = []
         self.video_calls: list[dict] = []
+        self.desc_calls: list[dict] = []
 
     def generate_from_subtitle(self, **kwargs) -> DigestContent:
         self.subtitle_calls.append(kwargs)
+        return self.digest
+
+    def generate_from_description(self, **kwargs) -> DigestContent:
+        self.desc_calls.append(kwargs)
         return self.digest
 
     def generate_from_video_url(self, **kwargs) -> DigestContent:
@@ -140,6 +145,88 @@ def test_douyin_transcribe_error_marks_failed(tmp_path, monkeypatch):
     row = db.get_digest_row(link_id)
     assert row["digest_status"] == "failed"
     assert "转写" in row["digest_error"]
+
+
+# ---------- 无人声：退回作品文案 ----------
+
+
+def test_douyin_no_speech_falls_back_to_caption(tmp_path, monkeypatch):
+    db = DBManager(tmp_path / "d4.sqlite3")
+    title = "uo：孩子ne老不好，多半是废了 #卡黄 #已屏蔽正主 #snh48"
+    link_id = _add(db, DOUYIN, title=title)
+    _patch_tmp(monkeypatch, tmp_path)
+    monkeypatch.setattr(vd, "download_douyin_video", _fake_download(duration=13))
+    monkeypatch.setattr(
+        vd,
+        "_transcribe_with_videocaptioner",
+        lambda *a, **k: (_ for _ in ()).throw(vd.NoSpeechDetected("结果过短(0字)")),
+    )
+
+    llm = FakeLLM()
+    outcome = vd.process_one(db, db.get_digest_row(link_id), llm=llm, reports_dir=tmp_path / "reports")
+
+    assert outcome.status == "succeeded"
+    assert llm.subtitle_calls == []
+    call = llm.desc_calls[0]
+    assert call["owner"] == "uo"
+    assert call["description"].startswith("孩子ne老不好")
+    row = db.get_digest_row(link_id)
+    assert row["digest_status"] == "succeeded"
+    report = (tmp_path / "reports" / row["digest_path"]).read_text(encoding="utf-8")
+    assert "抖音文案" in report
+    assert "未识别到人声" in report
+
+
+def test_douyin_no_speech_without_author_prefix_keeps_title_as_caption(tmp_path, monkeypatch):
+    db = DBManager(tmp_path / "d5.sqlite3")
+    link_id = _add(db, DOUYIN, title="纯音乐剪辑")
+    _patch_tmp(monkeypatch, tmp_path)
+    monkeypatch.setattr(vd, "download_douyin_video", _fake_download(duration=10))
+    monkeypatch.setattr(
+        vd,
+        "_transcribe_with_videocaptioner",
+        lambda *a, **k: (_ for _ in ()).throw(vd.NoSpeechDetected("结果过短(0字)")),
+    )
+
+    llm = FakeLLM()
+    vd.process_one(db, db.get_digest_row(link_id), llm=llm, reports_dir=tmp_path / "reports")
+
+    call = llm.desc_calls[0]
+    assert call["owner"] is None
+    assert call["description"] == "纯音乐剪辑"
+
+
+def test_split_douyin_caption_guards():
+    assert vd._split_douyin_caption("uo：文案 #tag") == ("uo", "文案 #tag")
+    # 冒号前过长/为空都不拆
+    long_prefix = "x" * 30
+    assert vd._split_douyin_caption(f"{long_prefix}：文案") == (None, f"{long_prefix}：文案")
+    assert vd._split_douyin_caption("：文案") == (None, "：文案")
+    assert vd._split_douyin_caption("无冒号文案") == (None, "无冒号文案")
+
+
+def test_transcribe_raises_no_speech_only_when_engines_actually_ran(monkeypatch, tmp_path):
+    import pytest
+
+    monkeypatch.setattr(vd.shutil, "which", lambda name: "videocaptioner")
+
+    def empty_run(cmd, **kwargs):
+        # 两个引擎都 exit=0，但产出的 SRT 没有正文（纯音乐/无人声）
+        Path(cmd[cmd.index("-o") + 1]).write_text("1\n00:00:00,000 --> 00:00:01,000\n\n", encoding="utf-8")
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(vd.subprocess, "run", empty_run)
+    with pytest.raises(vd.NoSpeechDetected):
+        vd._transcribe_with_videocaptioner(tmp_path / "v.mp4", tmp_path, duration_seconds=13)
+
+    def broken_run(cmd, **kwargs):
+        # 引擎自己报错：工具链坏了，属于真失败，不能拿文案顶替
+        return types.SimpleNamespace(returncode=1, stdout="", stderr="boom")
+
+    monkeypatch.setattr(vd.subprocess, "run", broken_run)
+    with pytest.raises(RuntimeError) as excinfo:
+        vd._transcribe_with_videocaptioner(tmp_path / "v.mp4", tmp_path, duration_seconds=13)
+    assert not isinstance(excinfo.value, vd.NoSpeechDetected)
 
 
 def test_douyin_long_subtitle_is_passed_whole_to_llm(tmp_path, monkeypatch):
