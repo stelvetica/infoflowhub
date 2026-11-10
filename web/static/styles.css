@@ -411,7 +411,9 @@ td { font-size: var(--fs-sm); }
 .laterhub-table .col-title { width: auto; }
 .laterhub-table .col-action { width: 62px; }
 .laterhub-table .col-digest { width: 58px; }
-/* 「解析」「完成」两列整列居中：表头文字与按钮视觉中心一致（列宽为最宽状态预留） */
+/* 「解析」「完成」两列整列居中：表头文字与按钮视觉中心一致（列宽为最宽状态预留）。
+   按钮列垂直居中：行高由「标题 + 分类」两行撑起，全局 td 是 top 对齐，
+   按钮会贴着行顶边（实测离上边框只差 padding），与两行文字不在同一条视觉中线上。 */
 .laterhub-table th:nth-child(3),
 .laterhub-table th:nth-child(4),
 .laterhub-table .laterhub-digest-cell,
@@ -419,6 +421,10 @@ td { font-size: var(--fs-sm); }
   padding-left: 4px;
   padding-right: 4px;
   text-align: center;
+}
+.laterhub-table .laterhub-digest-cell,
+.laterhub-table .laterhub-action-cell {
+  vertical-align: middle;
 }
 /* 「解析」列：灰(ghost)未解析 / 蓝(btn)已解析，尺寸跟随行内小按钮 */
 .laterhub-digest-cell { white-space: nowrap; }
