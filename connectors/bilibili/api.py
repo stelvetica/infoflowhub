@@ -22,8 +22,8 @@ BILIBILI_PAGE_REQUEST_TIMEOUT_MS = 20000
 BILIBILI_WATCHLATER_MAX_PAGES = 50
 # 日常短抓取最多翻这么多页（只用于追新）；每 15 天一次的深扫才跑满上限。
 BILIBILI_WATCHLATER_SHORT_MAX_PAGES = 3
-# 日常短抓取：按收藏时间倒序，连续命中这么多条已入库条目即认为已追平历史。
-BILIBILI_WATCHLATER_KNOWN_STREAK = 3
+# 日常短抓取收工条件：连续这么多页没有未入库条目才算追平历史（只撞几条已知不算）。
+BILIBILI_WATCHLATER_STALE_PAGES = 2
 # 增量翻页：连续命中已入库标题达到该条数即认为已追上历史，停止继续翻页。
 BILIBILI_DUPLICATE_STOP_STREAK = 3
 # 安全上限：全新库/无已知键时最多翻这么多页，避免无限翻历史。
@@ -82,8 +82,7 @@ async (argsJson) => {
   const all = [];
   const seen = new Set();
   const known = new Set(args.knownKeys || []);
-  let knownStreak = 0;
-  let stoppedByKnown = false;
+  let stalePages = 0;
   // 用接口自报的 count 做完整性校验；字段缺失时为 null，退回「短页即到底」判断。
   let total = null;
   const itemKey = (it) =>
@@ -114,20 +113,21 @@ async (argsJson) => {
       if (container && typeof container.count === "number") total = container.count;
     }
     let added = 0;
+    let pageNew = 0;
     for (const item of pageItems) {
       const key = itemKey(item);
       if (seen.has(key)) continue;
       seen.add(key);
       all.push(item);
       added++;
-      // 日常短抓取：连续命中已知即认为已追平，剩下的历史不必再翻。
-      if (!args.deep) {
-        const bv = String(item.bvid || item.bv_id || "");
-        knownStreak = bv && known.has(bv) ? knownStreak + 1 : 0;
-        if (knownStreak >= args.knownStreak) stoppedByKnown = true;
-      }
+      const bv = String(item.bvid || item.bv_id || "");
+      if (!(bv && known.has(bv))) pageNew++;
     }
-    if (stoppedByKnown) return { items: all, complete: false, stopped: "known" };
+    // 日常短抓取：连续多页没有未入库条目才算追平；只看「撞到几条已知」会被置顶/重排骗到。
+    if (!args.deep) {
+      stalePages = pageNew === 0 ? stalePages + 1 : 0;
+      if (stalePages >= args.stalePages) return { items: all, complete: false, stopped: "no_new" };
+    }
     if (total !== null && all.length >= total) return { items: all, complete: true };
     // 短页通常意味着到底；但若接口自报 count 还没拿够，或整页零新增（pn 被忽略），
     // 都不能当完整列表——否则会把源里仍在的条目误判成「已移除」。
@@ -181,7 +181,7 @@ def fetch_bilibili_watchlater_with_page(
                 "requestTimeoutMs": BILIBILI_PAGE_REQUEST_TIMEOUT_MS,
                 "deep": bool(deep),
                 "knownKeys": _watchlater_known_bvids(known_urls),
-                "knownStreak": BILIBILI_WATCHLATER_KNOWN_STREAK,
+                "stalePages": BILIBILI_WATCHLATER_STALE_PAGES,
             }
         ),
         timeout=eval_timeout,

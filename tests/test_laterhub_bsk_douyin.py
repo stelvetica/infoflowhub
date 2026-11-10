@@ -389,8 +389,8 @@ def test_source_no_longer_references_copy_runner():
     assert "9224" not in source
 
 
-def test_incremental_stops_when_known_streak_reached():
-    """日常短抓取：首屏就连续撞到 3 条已知 → 已追平历史，不必再滚。"""
+def test_incremental_stops_after_consecutive_rounds_without_new_items():
+    """日常短抓取：连续两轮都没有未入库条目才算追平（只撞几条已知还不够）。"""
     known_urls = [f"https://www.douyin.com/video/{n}" for n in (1, 2, 3)]
     page = FakePage(round_items=[[_video(n) for n in (1, 2, 3)]])
 
@@ -398,6 +398,6 @@ def test_incremental_stops_when_known_streak_reached():
         session=FakeSession(page), known_urls=known_urls
     )
 
-    assert page.mouse.wheel_calls == []
-    assert page.extract_rounds == 1
+    assert len(page.mouse.wheel_calls) == favorites.DOUYIN_STALE_ROUNDS
+    assert page.extract_rounds == 1 + favorites.DOUYIN_STALE_ROUNDS
     assert batch.complete is False

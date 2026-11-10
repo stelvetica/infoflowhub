@@ -364,8 +364,8 @@ def test_external_session_not_started_or_shutdown(monkeypatch):
     assert session.shutdown_calls == 0
 
 
-def test_zero_items_logs_explicit_warn(monkeypatch):
-    """抓取完成但 0 条：必须打明确 WARN，不能只记新增/更新 0 条。"""
+def test_zero_items_logs_warn_only_on_deep_scan(monkeypatch):
+    """深扫 0 条才可疑；日常短抓取追平历史后天然 0 条，不打 WARN。"""
     from apps.laterhub.sources import SOURCE_BY_ID
 
     messages: list[str] = []
@@ -376,11 +376,21 @@ def test_zero_items_logs_explicit_warn(monkeypatch):
         fetcher=lambda env_path, *, session=None: [],
         db=FakeDB(),
         session=None,
+        deep=True,
     )
 
     warn_lines = [message for message in messages if "WARN" in message]
     assert warn_lines, messages
     assert "0 条" in warn_lines[0]
+
+    messages.clear()
+    pipeline._fetch_source(
+        source=SOURCE_BY_ID["douyin_favorite"],
+        fetcher=lambda env_path, *, session=None: [],
+        db=FakeDB(),
+        session=None,
+    )
+    assert not [message for message in messages if "WARN" in message], messages
 
 
 def test_copy_symbols_removed():
