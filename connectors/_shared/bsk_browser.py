@@ -762,6 +762,31 @@ class BskBrowser:
         )
         return result.stdout
 
+    def network_entries(self, *, limit: int = 200, max_text_chars: int = 1200) -> list[dict[str, Any]]:
+        """读扩展缓冲的网络日志（只读命令，不需要 cooperate 上下文）。
+
+        视频页播放时整页基线一直在变，evaluate 会被 strict 策略反复拒绝；网络缓冲不受
+        影响，是「页面到底发过哪些请求」唯一稳定的证据来源。
+        """
+        result = self._run(
+            [
+                "network",
+                "--json",
+                "--session",
+                self._require_session(),
+                "--limit",
+                str(limit),
+                "--max-text-chars",
+                str(max_text_chars),
+            ],
+            label="network",
+            timeout=self._control_timeout(),
+            help_watchdog=False,
+        )
+        payload = _read_json_object(result.stdout, "network")
+        entries = payload.get("entries")
+        return [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
+
     def _slow_budget(self, timeout: float | None) -> float:
         if timeout is not None:
             return float(timeout)
@@ -941,6 +966,9 @@ class BskPage:
     def content(self) -> str:
         # 仅用于失败调试，token 成本高，不要在正常路径里调用。
         return self._browser.get_html()
+
+    def network_entries(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return self._browser.network_entries(**kwargs)
 
     def close(self) -> None:
         # page 不持有独立浏览器上下文，关页不能误杀共享 session：故意空实现。

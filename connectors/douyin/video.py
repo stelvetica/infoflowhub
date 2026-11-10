@@ -1,13 +1,15 @@
 """抖音视频能力 connector：直链解析 / 下载合流。
 
 供编排层（video digest）调用，链路：
-- resolve_douyin_video_media  用 bsk 打开视频页，从 performance entries 提取 douyinvod 直链
+- resolve_douyin_video_media  用 bsk 打开视频页取 douyinvod 直链：扩展网络缓冲优先，
+  其次 resource timing，最后页面 HTML
 - download_douyin_video       resolve → 立即流式下载 → ffmpeg 合流为 mp4 → ffprobe 读时长
 
-取数姿势（主 Agent 实测验证）：抖音播放器是 MSE（video.src 为 blob:），但播放器发出的
-媒体请求会留在 performance.getEntriesByType('resource') 里，douyinvod.com 直链带完整签名，
-Python 直接 GET（仅需 UA + Referer）即可下载。直链是 video/audio 分离流，ffmpeg 合流即得
-完整 mp4；直链时效约几分钟，拿到必须立刻下载。
+取数姿势（主 Agent 实测验证）：抖音播放器是 MSE（video.src 为 blob:），媒体请求留在
+performance / 网络缓冲里，douyinvod.com 直链带完整签名，Python 直接 GET（仅需 UA +
+Referer）即可下载。直链是 video/audio 分离流，ffmpeg 合流即得完整 mp4；直链时效约
+几分钟，拿到必须立刻下载。播放中的页面整页基线一直在变，evaluate 会被 strict 策略拒，
+所以只读的 `bsk network` 才是取链主通道。
 """
 
 from __future__ import annotations
@@ -62,6 +64,34 @@ def _split_media_urls(media_urls: list[str]) -> tuple[str | None, str | None]:
     if not video_url and not audio_url:
         video_url = media_urls[0] if media_urls else None
     return video_url, audio_url
+
+
+def _media_urls_from_network(page: BskPage, *, exclude: set[str] | None = None) -> list[str]:
+    """从扩展网络缓冲里取媒体请求（主通道），新请求优先。
+
+    bsk 的 network 是只读命令，不需要 cooperate 上下文：视频页一边播放一边改整页基线，
+    evaluate 会被 strict 策略反复拒绝，而缓冲里照样能看到播放器发出的 douyinvod 请求。
+    exclude 用于剔除导航前就已在缓冲里的旧链接——宁可回退其它通道，也不拿上一条视频的
+    直链冒充本条。
+    """
+    try:
+        entries = page.network_entries()
+    except BskError:
+        return []
+    stale = exclude or set()
+    urls: list[str] = []
+    # 倒序（sequence 大 = 新）：同一条视频页会重复请求同一路径，取最新签名才不过期。
+    for entry in sorted(entries, key=lambda e: e.get("sequence") or 0, reverse=True):
+        url = str(entry.get("url") or "")
+        if not url or url in stale or url in urls:
+            continue
+        if "douyinvod.com" not in url and "/aweme/v1/play/" not in url:
+            continue
+        # 只认真正拿到流的响应；403/失败的请求不算证据
+        if entry.get("status") not in (200, 206):
+            continue
+        urls.append(url)
+    return urls
 
 
 def _media_urls_from_html(page: BskPage) -> list[str]:
@@ -128,6 +158,8 @@ def resolve_douyin_video_media(
         media_urls: list[str] = []
         evaluate_error = ""
         navigated = False
+        # 导航前缓冲里已有的媒体链接：页面这条视频若一个请求都没发，绝不能拿旧链接冒充
+        stale_media = set(_media_urls_from_network(page))
         # 播放器发媒体请求的时机不固定，且 bsk 会话冷启动后首个抖音页可能加载不出播放器
         # （实测：独立会话能拿到、连续编排偶发拿不到）——最多两次导航机会，每次 3 轮补等。
         for attempt in range(2):
@@ -136,13 +168,16 @@ def resolve_douyin_video_media(
             except BskError:
                 # strict 策略按整页基线校验：视频页加载中基线一直在变，重复导航会被拒。
                 # 首跳就失败说明页面没停在目标页，只能报错；二次导航被拒时页面已在目标页，
-                # 丢掉整次解析亏了——交给下面的 HTML 兜底。
+                # 丢掉整次解析亏了——交给下面的兜底通道。
                 if not navigated:
                     raise
                 break
             navigated = True
             for _ in range(3):
                 page.wait_for_timeout(PLAYER_WAIT_MS)
+                media_urls = _media_urls_from_network(page, exclude=stale_media)
+                if media_urls:
+                    break
                 try:
                     value = page.evaluate(_RESOLVE_JS)
                 except BskError as exc:
@@ -160,13 +195,13 @@ def resolve_douyin_video_media(
                     break
             if media_urls:
                 break
-        # resource timing 只证明「播放器发过请求」；没起播就一条都没有，改从 HTML 取直链。
+        # 两条通道都空（页面没播放、也没渲染 <source>）时再读 HTML 兜一次
         media_urls = media_urls or _media_urls_from_html(page)
         video_url, audio_url = _split_media_urls(media_urls)
         # 播放器可能只发了音频流（实测个别视频如此）——ASR 只需音轨，仅音频也接受
         if not video_url and not audio_url:
             detail = f"（页内提取失败: {evaluate_error}）" if evaluate_error else ""
-            raise RuntimeError(f"未从抖音视频页提取到可下载直链，resource timing 与 HTML 均无媒体链接{detail}: {url}")
+            raise RuntimeError(f"未从抖音视频页提取到可下载直链，网络缓冲/resource timing/HTML 均无媒体链接{detail}: {url}")
         return DouyinVideoMedia(
             video_url=str(video_url or audio_url),
             audio_url=str(audio_url) if audio_url else None,

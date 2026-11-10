@@ -1,7 +1,8 @@
 """抖音取直链兜底路径的回归测试（不触网络、不开浏览器）。
 
-背景：播放器没起播时 resource timing 里一条媒体请求都没有，但页面 HTML 的 <source src>
-本来就带签名直链。此前只看 resource timing，于是「取不到」被误报成风控失败。
+背景：取链有三条通道——扩展网络缓冲 → resource timing → 页面 HTML。
+只看 resource timing 时，「播放器没起播」和「播放中被 strict 策略拒 evaluate」都会
+被误报成失败（现场即 2049 条里的 2099/1752）。
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from connectors._shared.bsk_browser import BskError
 from connectors.douyin.video import (
     DouyinVideoMedia,
     _media_urls_from_html,
+    _media_urls_from_network,
     _split_media_urls,
     resolve_douyin_video_media,
 )
@@ -18,16 +20,28 @@ VIDEO_ID = "7664439615676275451"
 URL = f"https://www.douyin.com/video/{VIDEO_ID}"
 MUXED = "https://v26-web.douyinvod.com/abc/def/video/tos/cn/tos-cn-ve-15c000-ce/x/?a=1&amp;br=813&amp;mime_type=video_mp4"
 MUXED_HTML = f'<video id="x"><source class="" src="{MUXED}" type=""></video><source src="{MUXED}">'
+V_STREAM = "https://v26-web.douyinvod.com/aaa/video/tos/cn/x/media-video-avc1/?sig=1"
+A_STREAM = "https://v26-web.douyinvod.com/bbb/video/tos/cn/x/media-audio-und-mp4a/?sig=2"
 
 
 class FakePage:
-    def __init__(self, html: str, *, evaluate_error: bool = False) -> None:
+    def __init__(
+        self,
+        html: str,
+        *,
+        evaluate_error: bool = False,
+        network: list | None = None,
+        network_after_nav: list | None = None,
+    ) -> None:
         self._html = html
         self._evaluate_error = evaluate_error
+        self._network = list(network or [])
+        self._network_after_nav = network_after_nav or []
         self.navigations: list[str] = []
 
     def goto(self, url: str, wait_until: str | None = None, timeout: float | None = None) -> None:
         self.navigations.append(url)
+        self._network.extend(self._network_after_nav)
 
     def wait_for_timeout(self, ms: int) -> None:
         pass
@@ -39,6 +53,9 @@ class FakePage:
 
     def content(self) -> str:
         return self._html
+
+    def network_entries(self, **kwargs):
+        return self._network
 
 
 class FakeSession:
@@ -100,10 +117,66 @@ def test_resolve_raises_when_no_link_anywhere():
     try:
         resolve_douyin_video_media(URL, session=FakeSession(FakePage("<video></video>", evaluate_error=True)))
     except RuntimeError as exc:
-        assert "resource timing 与 HTML 均无媒体链接" in str(exc)
+        assert "网络缓冲/resource timing/HTML 均无媒体链接" in str(exc)
         assert "permission_denied" in str(exc)  # 失败原因不能丢
     else:  # pragma: no cover
         raise AssertionError("无直链时必须抛 RuntimeError")
+
+
+# --- 网络缓冲通道 -------------------------------------------------------------
+
+OLD_V = "https://v26-web.douyinvod.com/old/.../media-video-avc1/?sig=old"
+
+
+def test_network_prefers_newest_streams_and_skips_failed():
+    entries = [
+        {"sequence": 10, "url": OLD_V, "status": 206},
+        {"sequence": 30, "url": V_STREAM, "status": 206},
+        {"sequence": 32, "url": V_STREAM, "status": 206},  # 同一路径重复请求
+        {"sequence": 31, "url": A_STREAM, "status": 206},
+        {"sequence": 33, "url": "https://x.douyinvod.com/bad/media-video-avc1/?sig=403", "status": 403},
+    ]
+    urls = _media_urls_from_network(FakePage("", network=entries))
+    assert urls == [V_STREAM, A_STREAM, OLD_V]
+
+
+def test_network_excludes_links_seen_before_navigation():
+    entries = [{"sequence": 1, "url": OLD_V, "status": 206}]
+    assert _media_urls_from_network(FakePage("", network=entries), exclude={OLD_V}) == []
+
+
+def test_network_unavailable_returns_empty():
+    class BrokenPage(FakePage):
+        def network_entries(self, **kwargs):
+            raise BskError("network 失败")
+
+    assert _media_urls_from_network(BrokenPage("")) == []
+
+
+def test_resolve_uses_network_when_evaluate_denied_and_html_empty():
+    # 真实故障现场（2099）：视频播放中整页基线一直在变 → evaluate 全拒、HTML 也没有
+    # <source>（MSE），但网络缓冲里明明有播放器发出的两条流。
+    page = FakePage(
+        "",
+        evaluate_error=True,
+        network_after_nav=[
+            {"sequence": 407, "url": V_STREAM, "status": 206},
+            {"sequence": 406, "url": A_STREAM, "status": 206},
+        ],
+    )
+    media = resolve_douyin_video_media(URL, session=FakeSession(page))
+    assert media == DouyinVideoMedia(video_url=V_STREAM, audio_url=A_STREAM)
+
+
+def test_resolve_does_not_reuse_links_from_before_navigation():
+    # 本条视频一个请求都没发时，缓冲里上一条视频的直链不能当成本条的结果
+    page = FakePage("", network=[{"sequence": 10, "url": OLD_V, "status": 206}], network_after_nav=[])
+    try:
+        resolve_douyin_video_media(URL, session=FakeSession(page))
+    except RuntimeError as exc:
+        assert "均无媒体链接" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("旧链接不能冒充本条视频")
 
 
 class FlakyNavPage(FakePage):
