@@ -387,6 +387,10 @@ td { font-size: var(--fs-sm); }
 .entries-table .col-time { width: 96px; }
 .entries-table .col-source { width: 160px; }
 .entries-table .col-title { width: auto; }
+.entries-table .col-action { width: 64px; }
+/* 「稍后读」列：与稍后处理面板的小按钮同尺寸 */
+.entries-add-th, .entries-add-cell { text-align: center; white-space: nowrap; }
+.entries-add-cell .btn { font-size: var(--fs-xs); padding: 4px 8px; }
 
 /* 订阅源表 */
 .sources-table .col-index { width: 4%; }

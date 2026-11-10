@@ -62,6 +62,8 @@ ENTRIES_STATE_COOKIE = "ifh_entries_state_v1"
 NEWS_STATE_COOKIE = "ifh_news_state_v1"
 # 纯文字条目正文上限（/quick 页与后端校验共用；正文完整存 title）
 NOTE_MAX_CHARS = 4000
+# 订阅条目的展示链接：alphapai/九阳公社这类源的正文是仓内路由，加入稍后读时需放行
+MARKDOWN_URL_PREFIX = "/markdown/"
 # 图片上传上限与可识别格式。后缀只认文件头，不信客户端文件名和 Content-Type。
 IMAGE_MAX_BYTES = 15 * 1024 * 1024
 IMAGE_MAGIC_SUFFIXES = (
@@ -509,7 +511,7 @@ async def bulk_finish_laterhub_action(request: Request):
 
 
 def add_laterhub_link(url: str, title: str | None) -> dict:
-    """网页剪藏收链（油猴脚本/bookmarklet 等前端的唯一入口）：仅入库为未标签条目。
+    """网页剪藏收链（油猴脚本/bookmarklet/订阅条目按钮共用的唯一入口）：仅入库为未标签条目。
 
     打标签全权归属每日 8:10 自动流程（_tag_pending_rows 全表扫无标签行），这里不触发打标；
     source=manual_verify 复用面板已有的「人工补录」元数据。重复收录复用 upsert 语义：
@@ -518,8 +520,11 @@ def add_laterhub_link(url: str, title: str | None) -> dict:
     if not url or len(url) > 2048:
         raise ValueError("url 缺失或超长（上限 2048 字符）")
     parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        raise ValueError("url 必须是 http/https 链接")
+    # 订阅条目的展示链接可能是仓内正文路由（/markdown/...）：与图片条目的 /attachments/ 一样
+    # 是本地面板可点开的合法条目，不能按外链规则拒掉
+    is_external = parsed.scheme in ("http", "https") and bool(parsed.netloc)
+    if not (is_external or url.startswith(MARKDOWN_URL_PREFIX)):
+        raise ValueError("url 必须是 http/https 链接或仓内正文路由")
     db = DBManager(DB_PATH)
     duplicated = db.find_url(url) is not None
     link_id = db.upsert_link(LinkRecord(url=url, title=(title or url)[:500], source="manual_verify"))

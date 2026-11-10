@@ -472,6 +472,7 @@
       }
       updateAutoLoadCount(descriptor, state);
       applyReadState();
+      setupLaterhubAddButtons();
       setupLaterhubOpenedTracking();
       setupLaterhubFinishForms();
       setupLaterhubDigestButtons();
@@ -861,6 +862,50 @@
     });
   }
 
+  // 订阅条目「加入」→ 稍后处理：按钮就地反馈，右栏刷新一次让新条目立即可见。
+  const LATERHUB_ADD_LABEL_MS = 1600;
+
+  function refreshLaterhubPanel() {
+    if (!window.htmx) return;
+    window.htmx.ajax("GET", `/fragments/laterhub${getLaterhubQueryString()}`, {
+      target: "#laterhub-panel",
+      swap: "innerHTML",
+    });
+  }
+
+  function setupLaterhubAddButtons() {
+    document.querySelectorAll("[data-laterhub-add]").forEach((button) => {
+      if (button.dataset.addReady === "1") return;
+      button.dataset.addReady = "1";
+      const label = button.textContent;
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+          const response = await fetch("/actions/laterhub/add-link", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              url: button.dataset.addUrl || "",
+              title: button.dataset.addTitle || "",
+            }),
+            credentials: "same-origin",
+          });
+          if (!response.ok) throw new Error(String(response.status));
+          const data = await response.json();
+          button.textContent = data.duplicated ? "已在" : "已加入";
+          refreshLaterhubPanel();
+        } catch {
+          button.textContent = "失败";
+        } finally {
+          window.setTimeout(() => {
+            button.textContent = label;
+            button.disabled = false;
+          }, LATERHUB_ADD_LABEL_MS);
+        }
+      });
+    });
+  }
+
   function closeModal(event) {
     if (event.target.classList.contains("modal-backdrop")) clearModal();
   }
@@ -936,6 +981,7 @@
     applyReadState();
     panels.forEach((panel) => setupUnreadToggle(panel));
     setupGlobalSearch();
+    setupLaterhubAddButtons();
     setupLaterhubOpenedTracking();
     setupLaterhubTagsToggle();
     setupSplitResizer();

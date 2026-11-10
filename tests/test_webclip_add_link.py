@@ -47,8 +47,23 @@ class WebclipAddLinkTest(unittest.TestCase):
         result = add_laterhub_link("https://example.com/no-title", "")
         self.assertEqual(self._fetch_row(result["id"])[1], "https://example.com/no-title")
 
+    def test_accepts_local_markdown_route_from_subscription_entry(self):
+        # 订阅面板里 alphapai/九阳公社 的标题链到仓内正文路由，加入稍后读须同样可入库
+        url = "/markdown/alphapai/2026-11-10_%E5%85%A8%E7%90%83.md"
+        result = add_laterhub_link(url, "全球蓝宝书")
+        self.assertFalse(result["duplicated"])
+        self.assertEqual(self._fetch_row(result["id"])[0], url)
+
     def test_rejects_non_http_or_bad_url(self):
-        for bad in ("ftp://example.com/x", "javascript:alert(1)", "", "https://", "x" * 2049):
+        for bad in (
+            "ftp://example.com/x",
+            "javascript:alert(1)",
+            "",
+            "https://",
+            "//example.com/markdown/a.md",
+            "/etc/passwd",
+            "x" * 2049,
+        ):
             with self.assertRaises(ValueError):
                 add_laterhub_link(bad, "标题")
 

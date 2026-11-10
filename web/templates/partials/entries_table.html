@@ -15,12 +15,14 @@
         <col class="col-time">
         <col class="col-source">
         <col class="col-title">
+        <col class="col-action">
       </colgroup>
       <thead>
         <tr>
           <th><a class="sort" href="/fragments/entries?{{ base_params|urlencode }}&entries_sort=sort_time&entries_dir={{ 'desc' if entries.sort != 'sort_time' or entries.dir == 'asc' else 'asc' }}" hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort=sort_time&entries_dir={{ 'desc' if entries.sort != 'sort_time' or entries.dir == 'asc' else 'asc' }}" hx-target="#entries-panel" hx-swap="innerHTML">时间</a></th>
           <th><a class="sort" href="/fragments/entries?{{ base_params|urlencode }}&entries_sort=source_name&entries_dir={{ 'asc' if entries.sort != 'source_name' or entries.dir == 'desc' else 'desc' }}" hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort=source_name&entries_dir={{ 'asc' if entries.sort != 'source_name' or entries.dir == 'desc' else 'desc' }}" hx-target="#entries-panel" hx-swap="innerHTML">来源</a></th>
           <th><a class="sort" href="/fragments/entries?{{ base_params|urlencode }}&entries_sort=title&entries_dir={{ 'asc' if entries.sort != 'title' or entries.dir == 'desc' else 'desc' }}" hx-get="/fragments/entries?{{ base_params|urlencode }}&entries_sort=title&entries_dir={{ 'asc' if entries.sort != 'title' or entries.dir == 'desc' else 'desc' }}" hx-target="#entries-panel" hx-swap="innerHTML">标题</a></th>
+          <th class="entries-add-th">稍后读</th>
         </tr>
       </thead>
       <tbody>
@@ -37,10 +39,18 @@
               <span class="cell-ellipsis cell-link cell-link-disabled" title="该条目暂时没有可用跳转链接">{{ item.title }}</span>
               {% endif %}
             </td>
+            <td class="entries-add-cell">
+              {% if item.has_link %}
+              {# 提交交给 app.js：JSON 收链接口 + 按钮就地反馈「已加入」，不整块重绘订阅面板 #}
+              <button class="btn ghost" type="button" data-laterhub-add data-add-url="{{ item.link }}" data-add-title="{{ item.title }}" title="加入稍后读">加入</button>
+              {% else %}
+              <span class="cell-muted" aria-hidden="true">-</span>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         {% else %}
-          <tr><td colspan="3" class="empty">没有匹配内容</td></tr>
+          <tr><td colspan="4" class="empty">没有匹配内容</td></tr>
         {% endif %}
       </tbody>
     </table>
