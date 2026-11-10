@@ -11,6 +11,10 @@
 seen 留痕保证窗口拉长不重复输出。
 last_run 记录在 used_announcements.json，缺省回看 3 天；window_start 记当日实际用的窗口起点，
 当日重跑沿用它（last_run 已被推进到今日，沿用可避免丢掉挂昨日的行）。
+
+A+H 公司（标的池 hk_code 字段）：A 股常发「自愿性公告」「H股公告」这类壳标题，无法从标题判类，
+借港股同日描述性标题与港股类型判类；另补收港股独有实质类型（HK_ONLY_TYPES）。窄口径——港股
+「海外監管公告-*」多为 A 股文件副本、「月報表」等为程序性噪音，均不收。
 """
 import argparse
 import json
@@ -25,6 +29,9 @@ DEFAULT_POOL = Path(r"C:\Users\ETT\Playground\infoflowhub\data\reports\标的池
 DEFAULT_OUT_DIR = Path(r"C:\Users\ETT\Playground\infoflowhub\data\reports")
 API = "https://np-anotice-stock.eastmoney.com/api/security/ann"
 
+# 港股独有类型（A 股通道没有对应物）：仅对挂了 hk_code 的 A+H 标的补收
+HK_ONLY_TYPES = {"其他-業務發展最新情況", "其他-營運業績最新情況", "盈利警告", "董事會召開日期"}
+
 # P0 类型白名单（东财 columns[0].column_name 实测值；未枚举全，关键词兜底）
 # 报告"摘要"与全文重复，不取
 TYPE_WHITELIST = {
@@ -36,7 +43,7 @@ TYPE_WHITELIST = {
     "重大资产重组",
     # 港股（实测值；繁体）
     "中期/半年度報告", "中期業績", "全年業績",
-}
+} | HK_ONLY_TYPES
 
 # 标题关键词：覆盖藏身「其他」的关键事件（简繁兼顾），命中即 P0
 KEYWORDS = re.compile(
@@ -54,6 +61,19 @@ EXCLUDE = re.compile(r"超额配售|超額配售|绿鞋|綠鞋")
 # P2 类型噪音（《skill 口径》法律意见书一类程序性文件）：标题常含"分红/重组/要约"等 P0 关键词
 # 而误命中，按类型整体排除；且此类行若留在组内会被 dedupe 当成关键件，误剔真正的分红实施公告
 NOISE_TYPES = {"法律意见书"}
+
+# A 股壳标题：不含实质信息（「药明康德:自愿性公告」「XX:H股公告」），判类时借港股同日描述性标题
+GENERIC_TITLE = re.compile(
+    r"^(?:自愿性公告|自願公告|自愿公告|公告|提示性公告|H股公告|海外监管公告|海外監管公告)$")
+
+
+def bare_title(title):
+    """去掉「药明康德:」这类公司名前缀，得到判壳用的标题"""
+    return re.sub(r"^[^:：]{0,20}[:：]\s*", "", title).strip()
+
+
+def is_generic_title(title):
+    return bool(GENERIC_TITLE.match(bare_title(title)))
 
 # 程序性会议决议（董事会/监事会/股东大会）：无增量信息，实质事项均另有专项公告；
 # 标题含 P0 关键词的决议（如"利润分配…决议公告"）仍保留
@@ -127,6 +147,59 @@ def unseen_today(hits, seen, today_iso):
     """当日新增：art 未出现在当日已输出的留痕里；为空即当日重跑无新增（保留已有清单不覆盖）"""
     today_seen = {a for a, d in seen.items() if d == today_iso}
     return [h for h in hits if h["art"] not in today_seen]
+
+
+def collect_stock(stock, anns, h_anns, start, today_iso, seen):
+    """单标的取数：A 通道判类 → 壳标题借港股同日描述性标题/类型 → 补收港股独有实质类型。
+
+    hits 带 src_code（详情链接用）与 from_hk（展示标记）；同日 A 通道已出 P0 时港股不重复收。
+    """
+    hk_code = stock.get("hk_code")
+    h_by_date = {}
+    for h in h_anns:
+        h_by_date.setdefault(h.get("notice_date", "")[:10], []).append(h)
+
+    def fresh(art):
+        """当日已输出的仍纳入（当日重跑不丢行），跨日的才去重跳过"""
+        seen_date = seen.get(art)
+        return not seen_date or seen_date == today_iso
+
+    hits, used_h, day_p0 = [], set(), set()
+    for a in anns:
+        if not fresh(a.get("art_code", "")):
+            continue
+        if not in_window(a.get("notice_date", ""), start, today_iso):
+            continue
+        item, src = a, stock["code"]
+        if hk_code and is_generic_title(a.get("title", "")):
+            for h in h_by_date.get(a["notice_date"][:10], []):
+                if not is_generic_title(h.get("title", "")):
+                    item, src = h, hk_code
+                    used_h.add(h.get("art_code", ""))
+                    break
+        title = item.get("title", "")
+        col = (item.get("columns") or [{}])[0].get("column_name", "")
+        if is_p0(title, col):
+            hits.append({**stock, "date": item["notice_date"][:10], "type": col,
+                         "title": title, "art": item.get("art_code", ""),
+                         "src_code": src, "from_hk": src != stock["code"]})
+            day_p0.add(item["notice_date"][:10])
+
+    for h in h_anns:
+        art = h.get("art_code", "")
+        if art in used_h or not fresh(art):
+            continue
+        if not in_window(h.get("notice_date", ""), start, today_iso):
+            continue
+        date = h["notice_date"][:10]
+        col = (h.get("columns") or [{}])[0].get("column_name", "")
+        if col not in HK_ONLY_TYPES or date in day_p0:
+            continue
+        if is_p0(h.get("title", ""), col):
+            hits.append({**stock, "date": date, "type": col,
+                         "title": h.get("title", ""), "art": art,
+                         "src_code": hk_code, "from_hk": True})
+    return hits
 
 
 def fetch_list(num, ann_type, page_size=100, retries=2):
@@ -213,6 +286,49 @@ def main():
         raw5 = [mk("1", "XX:关于差异化分红事项之专项法律意见书", "法律意见书"),
                 mk("2", "XX:2026年半年度权益分派实施公告", "分配方案实施")]
         assert [h["art"] for h in dedupe([h for h in raw5 if is_p0(h["title"], h["col"])])] == ["2"]
+        # A+H 孪生：A 股壳标题借港股同日描述性标题/类型判类（药明康德 2026-11-10 真实回归）
+        assert to_em_code("02359.HK") == ("02359", "H")
+        assert is_generic_title("药明康德:自愿性公告")
+        assert is_generic_title("药明康德:H股公告")
+        assert is_generic_title("药明康德:海外监管公告")
+        assert not is_generic_title("药明康德:关于收到中国证监会立案通知的公告")
+        assert not is_generic_title("自愿公告 - 药明康德从1260H项下中国军工企业名单中移除")
+        assert is_p0("董事会会议召开日期", "董事會召開日期")
+        assert not is_p0("截至二零二六年十月三十一日止月份之股份发行人的证券变动月报表", "月報表")
+        S = {"code": "603259.SH", "name": "药明康德", "holders": ["X"], "max_weight": 0.1,
+             "hk_code": "02359.HK"}
+        a1 = [{"art_code": "A1", "notice_date": "2026-11-10", "title": "药明康德:自愿性公告",
+               "columns": [{"column_name": "其他"}]}]
+        h1 = [{"art_code": "H1", "notice_date": "2026-11-10",
+               "title": "自愿公告 - 药明康德从1260H项下中国军工企业名单中移除",
+               "columns": [{"column_name": "其他-業務發展最新情況"}]}]
+        r1 = collect_stock(S, a1, h1, "2026-11-09", "2026-11-10", {})
+        assert len(r1) == 1 and r1[0]["art"] == "H1"
+        assert r1[0]["from_hk"] and r1[0]["src_code"] == "02359.HK"
+        # A 通道同日已出 P0 → 港股不重复收（澜起科技 2026-10-20 业绩预增：A 业绩预告 + H 盈利警告）
+        S2 = {**S, "code": "688008.SH", "hk_code": "06809.HK"}
+        a2 = [{"art_code": "A2", "notice_date": "2026-10-20",
+               "title": "澜起科技:2026年前三季度业绩预增公告",
+               "columns": [{"column_name": "业绩预告"}]}]
+        h2 = [{"art_code": "H2", "notice_date": "2026-10-20",
+               "title": "2026年第三季度业绩预增公告",
+               "columns": [{"column_name": "盈利警告"}]}]
+        assert [x["art"] for x in collect_stock(S2, a2, h2, "2026-10-19", "2026-10-20", {})] == ["A2"]
+        # 港股独有实质类型且 A 股无同日项 → 收
+        h3 = [{"art_code": "H3", "notice_date": "2026-10-12", "title": "董事会会议召开日期",
+               "columns": [{"column_name": "董事會召開日期"}]}]
+        assert [x["art"] for x in collect_stock(S, [], h3, "2026-10-10", "2026-10-12", {})] == ["H3"]
+        # 港股噪音类型（月报表 / 海外监管公告副本）永不收
+        h4 = [{"art_code": "H4", "notice_date": "2026-10-12",
+               "title": "截至2026年9月30日止月份之股份发行人的证券变动月报表",
+               "columns": [{"column_name": "月報表"}]},
+              {"art_code": "H5", "notice_date": "2026-10-12",
+               "title": "海外监管公告 - 关于回购A股股份的进展公告",
+               "columns": [{"column_name": "海外監管公告-其他"}]}]
+        assert collect_stock(S, [], h4, "2026-10-10", "2026-10-12", {}) == []
+        # 无港股孪生：壳标题原样判类，不误收
+        assert collect_stock({"code": "600233.SH", "name": "圆通速递", "holders": ["X"],
+                              "max_weight": 0.01}, a1, [], "2026-11-09", "2026-11-10", {}) == []
         print("selftest PASS")
         return
 
@@ -230,19 +346,14 @@ def main():
         except Exception as e:
             failures.append(f"{s['code']} {type(e).__name__}: {e}")
             continue
-        for a in anns:
-            art = a.get("art_code", "")
-            seen_date = used["seen"].get(art)
-            # 当日已输出的仍纳入今日清单（当日重跑不丢行），跨日的才去重跳过
-            if seen_date and seen_date != today_iso:
-                continue
-            if not in_window(a.get("notice_date", ""), start, today_iso):
-                continue
-            title = a.get("title", "")
-            col = (a.get("columns") or [{}])[0].get("column_name", "")
-            if is_p0(title, col):
-                hits.append({**s, "date": a["notice_date"][:10], "type": col,
-                             "title": title, "art": art})
+        h_anns = []
+        if s.get("hk_code"):
+            try:
+                h_anns = fetch_list(*to_em_code(s["hk_code"]))
+            except Exception as e:
+                # 港股通道失败不影响 A 股结果，但必须留痕
+                failures.append(f"{s['hk_code']} {s['name']}（港股孪生）{type(e).__name__}: {e}")
+        hits.extend(collect_stock(s, anns, h_anns, start, today_iso, used["seen"]))
         time.sleep(0.2)
 
     hits = dedupe(hits)
@@ -268,9 +379,11 @@ def main():
                              f"{'/'.join(h['holders'])}）")
                 lines.append("| 日期 | 类型 | 公告名 | 介绍 |")
                 lines.append("|---|---|---|---|")
-            detail = f"https://data.eastmoney.com/notices/detail/{to_em_code(h['code'])[0]}/{h['art']}.html"
+            detail = (f"https://data.eastmoney.com/notices/detail/"
+                      f"{to_em_code(h['src_code'])[0]}/{h['art']}.html")
             title = h["title"].replace("|", "\\|")
-            lines.append(f"| {h['date']} | {h['type']} | [{title}]({detail}) | 待补 |")
+            type_cell = h["type"] + ("（港股）" if h.get("from_hk") else "")
+            lines.append(f"| {h['date']} | {type_cell} | [{title}]({detail}) | 待补 |")
         lines.append("")
         lines.append(f"共 {len(hits)} 条 P0，涉及 {len({h['code'] for h in hits})} 只标的。")
         if failures:
