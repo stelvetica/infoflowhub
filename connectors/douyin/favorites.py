@@ -23,7 +23,30 @@ DOUYIN_FAVORITE_URL = "https://www.douyin.com/user/self?from_tab_name=main&showT
 # 「源内已移除」），步长必须小于一屏，否则虚拟列表会跳过未渲染的卡片。
 DOUYIN_SCROLL_ROUNDS = 10              # 增量模式轮数上限
 DOUYIN_DEEP_SCROLL_MAX_ROUNDS = 150    # 深度全量上限；撞上限视为没拿全（与 30 分钟预算对齐）
-DOUYIN_SCROLL_EMPTY_ROUNDS = 2         # 连续零新增轮数 = 到底/追上已知区域
+DOUYIN_SCROLL_EMPTY_ROUNDS = 2         # 连续零新增轮数（增量模式收工条件/深度模式确认条件）
+# 深度模式的「到底」必须由滚动几何证明：收藏页是内层滚动容器，滚轮没落到容器上时
+# 卡片不会新增，旧逻辑（连续两轮无新增即到底）会把「滚动卡住」当成「扫完了」，
+# 进而把仍在收藏里的条目整批误标「源内已移除」（2026-11-08 误标 780 条即此）。
+DOUYIN_BOTTOM_TOLERANCE_PX = 48
+# 深度模式连续零新增且滚动位置不再前进的轮数：说明滚不动了（容器选错/页面卡住），
+# 按「未拿全」收工，绝不据此判定到底。
+DOUYIN_SCROLL_STALL_ROUNDS = 6
+DOUYIN_SCROLL_STATE_JS = r"""
+() => {
+  // 收藏页是内层滚动容器：取「可滚动距离最大」的元素，别拿整页 document 顶替。
+  let best = document.scrollingElement || document.documentElement;
+  let bestDelta = best ? best.scrollHeight - best.clientHeight : 0;
+  for (const n of document.querySelectorAll("div,main,section,ul")) {
+    const delta = n.scrollHeight - n.clientHeight;
+    if (delta > bestDelta + 4 && n.clientHeight > 200) {
+      best = n;
+      bestDelta = delta;
+    }
+  }
+  if (!best) return null;
+  return { top: best.scrollTop, height: best.scrollHeight, client: best.clientHeight };
+}
+"""
 DOUYIN_SCROLL_STEP_PX = 3000           # 增量步长：只为抓新的，滚大一点快
 DOUYIN_DEEP_SCROLL_STEP_PX = 900       # 深度步长：小于一屏，避免虚拟列表跳过卡片
 DOUYIN_SCROLL_WAIT_BASE_MS = 2500
@@ -154,6 +177,27 @@ def _scroll_wait_ms(round_no: int) -> int:
     )
 
 
+def _scroll_state(page) -> dict[str, float] | None:
+    """读滚动容器的几何位置；读不到/形状异常一律返回 None（下游按「未到底」处理）。"""
+    try:
+        value = page.evaluate(DOUYIN_SCROLL_STATE_JS)
+    except BskCommandError:
+        return None
+    if not isinstance(value, dict):
+        return None
+    try:
+        return {key: float(value.get(key) or 0) for key in ("top", "height", "client")}
+    except (TypeError, ValueError):
+        return None
+
+
+def _at_scroll_bottom(state: dict[str, float] | None) -> bool:
+    """容器明确可滚且已到末尾才算到底；容器不可滚/读不到状态都不算。"""
+    if not state or state["height"] <= state["client"]:
+        return False
+    return state["top"] + state["client"] >= state["height"] - DOUYIN_BOTTOM_TOLERANCE_PX
+
+
 def _wheel_with_retry(page, step: int, *, reinstall=None, attempts: int = 3) -> None:
     """滚动一次；被 strict 策略以 permission_denied 拒掉时重装停播器再试。
 
@@ -212,17 +256,33 @@ def fetch_douyin_favorites(
         limit = DOUYIN_DEEP_SCROLL_MAX_ROUNDS if deep else DOUYIN_SCROLL_ROUNDS
         step = DOUYIN_DEEP_SCROLL_STEP_PX if deep else DOUYIN_SCROLL_STEP_PX
         empty_rounds = 0
+        last_top: float | None = None
         for round_no in range(limit):
             _wheel_with_retry(page, step, reinstall=_install_stabilizer)
             page.wait_for_timeout(_scroll_wait_ms(round_no))
             rounds = round_no + 1
-            if _absorb(_extract_visible_items(page)) == 0:
-                empty_rounds += 1
-                if empty_rounds >= DOUYIN_SCROLL_EMPTY_ROUNDS:
-                    reached_bottom = True
-                    break
-            else:
+            added = _absorb(_extract_visible_items(page))
+            if added:
                 empty_rounds = 0
+                continue
+            empty_rounds += 1
+            if empty_rounds < DOUYIN_SCROLL_EMPTY_ROUNDS:
+                continue
+            if not deep:
+                # 增量模式只为追新，零新增即可收工；complete 恒 False，不参与移除判定。
+                reached_bottom = True
+                break
+            # 深度模式必须拿到「容器已滚到头」的几何证据；只凭零新增会把滚动卡住当成扫完，
+            # 把仍在收藏里的条目整批误标「源内已移除」（2026-11-08 误标 780 条即此）。
+            state = _scroll_state(page)
+            if _at_scroll_bottom(state):
+                reached_bottom = True
+                break
+            top = state["top"] if state else None
+            moved = top is not None and (last_top is None or top > last_top + 1)
+            last_top = top if top is not None else last_top
+            if empty_rounds >= DOUYIN_SCROLL_STALL_ROUNDS and not moved:
+                break  # 滚不动了：按未拿全收工，不判到底
         body_text = _body_text(page)
         try:
             page.close()

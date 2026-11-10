@@ -22,11 +22,13 @@ def _isolate(monkeypatch):
 class FakeDB:
     def __init__(self) -> None:
         self.saved: list = []
+        self.mark_calls: list[dict] = []
 
     def upsert_link(self, record) -> None:
         self.saved.append(record)
 
-    def mark_missing_finished(self, source_id, urls):
+    def mark_missing_finished(self, source_id, urls, **kwargs):
+        self.mark_calls.append({"source": source_id, "kwargs": kwargs})
         return []
 
 
@@ -46,10 +48,31 @@ def test_registry_marks_only_douyin_as_deep_capable():
     douyin = SOURCE_BY_ID["douyin_favorite"]
     assert douyin.finish_on_removed is True
     assert douyin.deep_scan_interval_days == 30
+    assert douyin.compare_after == "2026-03-24T08:48:36+00:00"
     for source in SOURCES:
         if source.id == "douyin_favorite":
             continue
         assert source.deep_scan_interval_days is None, source.id
+        assert source.compare_after is None, source.id
+
+
+def test_douyin_removal_comparison_passes_compare_after(monkeypatch):
+    monkeypatch.setattr(pipeline.scan_state, "record_deep_scan_done", lambda *a, **k: None)
+    db = FakeDB()
+
+    pipeline._fetch_source(
+        source=SOURCE_BY_ID["douyin_favorite"],
+        fetcher=lambda env_path, *, session=None, deep=False: FetchBatch(
+            items=[], complete=True
+        ),
+        db=db,
+        deep=True,
+        supports_deep=True,
+    )
+
+    assert db.mark_calls == [
+        {"source": "douyin_favorite", "kwargs": {"compare_after": "2026-03-24T08:48:36+00:00"}}
+    ]
 
 
 def test_fetch_source_passes_deep_only_when_asked(monkeypatch):

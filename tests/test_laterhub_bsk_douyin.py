@@ -60,13 +60,17 @@ def _debug() -> dict:
 class FakeMouse:
     """记录滚轮事件：懒加载必须靠真实 wheel（window.scrollTo 对内层滚动容器无效）。"""
 
-    def __init__(self, ops: list) -> None:
-        self._ops = ops
+    def __init__(self, page: "FakePage") -> None:
+        self._page = page
         self.wheel_calls: list = []
 
     def wheel(self, delta_x, delta_y) -> None:
         self.wheel_calls.append((delta_x, delta_y))
-        self._ops.append(("wheel", delta_y))
+        self._page.ops.append(("wheel", delta_y))
+        self._page.scroll_top = min(
+            self._page.scroll_top + delta_y,
+            self._page.scroll_height - self._page.scroll_client,
+        )
 
 
 class FakePage:
@@ -86,8 +90,12 @@ class FakePage:
         self.evaluate_calls: list = []
         self.extract_rounds = 0
         self.ops: list = []
-        self.mouse = FakeMouse(self.ops)
+        self.mouse = FakeMouse(self)
         self.closed = 0
+        # 滚动几何：深度模式判到底的依据（视口 500，内容 4000 → 可滚 3500）
+        self.scroll_top = 0
+        self.scroll_height = 4000
+        self.scroll_client = 500
 
     def goto(self, url, wait_until=None, timeout=None) -> None:
         self.goto_calls.append((url, wait_until, timeout))
@@ -113,8 +121,10 @@ class FakePage:
         self.ops.append(("evaluate", js))
         if "innerText" in js:
             return self.body_text
-        if "__bskPauseVideos" in js:
+        if "HTMLMediaElement" in js:
             return "installed"
+        if "scrollHeight" in js:
+            return {"top": self.scroll_top, "height": self.scroll_height, "client": self.scroll_client}
         return self._round_items()
 
     def close(self) -> None:
@@ -160,7 +170,7 @@ def test_external_session_is_used_but_never_started_or_shutdown():
     assert page.ops[0][1] == favorites.DOUYIN_FAVORITE_URL
     assert page.ops[1][1] == 5000
     # 停播器必须在第一次滚动之前装上：滚轮会触发卡片预览自动播放，媒体源一变后续动作全被拒
-    assert "__bskPauseVideos" in page.ops[2][1]
+    assert "HTMLMediaElement" in page.ops[2][1]
     # 第 5 个操作必须是真实滚轮事件（提取→滚动→等待→再提取，顺序不能颠倒）
     assert page.ops[4] == ("wheel", favorites.DOUYIN_SCROLL_STEP_PX)
     # 停播器之后、滚动前后的 evaluate 都是抽取 JS，不是滚动表达式

@@ -199,17 +199,23 @@ class DBManager:
             )
             return int(cursor.lastrowid)
 
-    def mark_missing_finished(self, source: str, present_urls: set[str]) -> list[sqlite3.Row]:
+    def mark_missing_finished(
+        self, source: str, present_urls: set[str], *, compare_after: str | None = None
+    ) -> list[sqlite3.Row]:
         """把该源下本轮完整列表里已不存在的未完成条目标为完成。
 
+        compare_after：只对照入库时间不早于该 ISO 时刻的条目；更早的多是外部迁移内容，
+        不在账号里属正常，拿来对照只会整批误标。
         差集在 Python 侧做：条目量大时 SQL 的 NOT IN 会拼出超长参数列表且不可读。
         """
         now = self._now_iso()
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM links WHERE source = ? AND is_finished = 0",
-                (source,),
-            ).fetchall()
+            query = "SELECT * FROM links WHERE source = ? AND is_finished = 0"
+            params: list[str] = [source]
+            if compare_after:
+                query += " AND created_at >= ?"
+                params.append(compare_after)
+            rows = conn.execute(query, params).fetchall()
             missing = [row for row in rows if row["url"] not in present_urls]
             for row in missing:
                 conn.execute(

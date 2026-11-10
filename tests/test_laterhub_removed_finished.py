@@ -154,3 +154,19 @@ def test_refetch_revives_auto_finished_item(tmp_path):
     )
 
     assert _state(db, REMOVED) == (0, None, 0)
+
+
+def test_compare_after_skips_entries_recorded_before_cutoff(tmp_path):
+    db = DBManager(tmp_path / "laterhub.sqlite3")
+    _add(db, PRESENT, BILI_SOURCE, created_at="2026-04-02T00:00:00+00:00")
+    _add(db, REMOVED, BILI_SOURCE, created_at="2026-04-02T00:00:00+00:00")
+    OLD = "https://www.bilibili.com/video/BV0old"
+    _add(db, OLD, BILI_SOURCE, created_at="2026-03-24T05:22:16+00:00")
+
+    finished = db.mark_missing_finished(
+        BILI_SOURCE, {PRESENT}, compare_after="2026-03-24T08:48:36+00:00"
+    )
+
+    assert [row["url"] for row in finished] == [REMOVED]
+    # 早于下界的条目保持未完成，不参与对照。
+    assert _state(db, OLD)[0] == 0

@@ -31,6 +31,9 @@ class LaterhubSource:
     finish_on_removed: bool
     # 非 None 表示该源支持「深度全量扫描」并按此天数到期：日常只抓增量，到期那轮才滚到底。
     deep_scan_interval_days: int | None = None
+    # ISO 时间下界：早于此刻入库的条目不参与「源内已移除」对照。入库早于此刻的多是外部
+    # 迁移/导入内容，本就不在账号收藏里，拿账号列表去比只会整批误标。None = 全部参与。
+    compare_after: str | None = None
 
 
 SOURCES: tuple[LaterhubSource, ...] = (
@@ -39,6 +42,9 @@ SOURCES: tuple[LaterhubSource, ...] = (
         "douyin_favorite", "抖音收藏", "收藏/稍后处理", "抖音", "网页抓取（bsk）", "douyin_shared", "fetch_douyin", "fetch_douyin_favorites", True,
         finish_on_removed=True,
         deep_scan_interval_days=30,
+        # 以账号内最早一条收藏（aweme 7547973316054977835）的收录时刻为界，
+        # 更早入库的条目不参与收藏对照。
+        compare_after="2026-03-24T08:48:36+00:00",
     ),
     LaterhubSource("xiaoheihe_favor", "小黑盒收藏", "收藏/稍后处理", "小黑盒", "网页抓取（bsk）", "xiaoheihe_shared", "fetch_xiaoheihe", "fetch_xiaoheihe_favorites", True, True),
     LaterhubSource("weread_shelf", "微信读书书架", "待读/稍后处理", "微信读书", "网页抓取（bsk）", "", "fetch_weread", "fetch_weread_shelf", True, False),

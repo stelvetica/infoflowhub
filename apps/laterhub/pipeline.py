@@ -305,7 +305,9 @@ def _fetch_source(
                     log_line(f"[3/6][WARN] {source.name} 未拿到完整列表，跳过源内移除判定")
             else:
                 finished_rows = db.mark_missing_finished(
-                    source.id, {item["url"] for item in batch.items}
+                    source.id,
+                    {item["url"] for item in batch.items},
+                    compare_after=source.compare_after,
                 )
                 for row in finished_rows:
                     log_line(f"[3/6][自动完成] {_brief_title(row)} | {source.name} | 源内已移除")
