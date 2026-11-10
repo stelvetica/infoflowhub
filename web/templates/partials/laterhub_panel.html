@@ -70,6 +70,12 @@
             <tr data-link-id="{{ item.id }}">
               <td class="cell-time cell-time-small">{{ item.display_time }}</td>
               <td class="laterhub-link-cell">
+                {# 纯文字条目没有可打开的原文：只显示一行摘要，全文看 title 提示；不参与「已打开」轨道 #}
+                {% if item.is_note %}
+                <div class="cell-ellipsis" title="{{ item.title }}">
+                  <span class="cell-note"><span class="cell-note-badge">文字</span>{{ item.title }}</span>
+                </div>
+                {% else %}
                 <div class="cell-ellipsis" title="{{ item.title }}">
                   <a
                     class="cell-link laterhub-read-track {% if item.is_opened %}cell-read{% else %}cell-unread{% endif %}"
@@ -79,6 +85,7 @@
                     data-link-id="{{ item.id }}"
                   >{{ item.title }}</a>
                 </div>
+                {% endif %}
                 <div class="subtle cell-ellipsis" title="{{ item.tags_text or '-' }}">{{ item.tags_text or '-' }}</div>
               </td>
               <td class="laterhub-digest-cell">

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
-from apps.laterhub.db import is_digest_video_url
+from apps.laterhub.db import NOTE_URL_PREFIX, is_digest_video_url
 from apps.laterhub.health import load_health as load_laterhub_source_health
 from apps.laterhub.sources import SOURCE_BY_ID, SOURCES as LATERHUB_SOURCES, load_enabled_map
 from apps.laterhub.tagger import TAG_OPTIONS
@@ -688,6 +688,8 @@ def _build_laterhub_rows() -> tuple[list[dict[str, Any]], str, dict[str, int]]:
             "batch_key": batch_key,
             "is_today": bool(local_created_date == today),
             "is_opened": bool(item.get("is_opened")),
+            # 纯文字条目：url 是 note:// 占位，面板不渲染成链接（见 laterhub_panel.html）
+            "is_note": str(item.get("url") or "").startswith(NOTE_URL_PREFIX),
             **build_laterhub_digest_item(item),
         }
         all_rows.append(row)

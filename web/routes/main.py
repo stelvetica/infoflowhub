@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import threading
 from pathlib import Path
@@ -12,7 +13,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 
 from apps.laterhub.config import DB_PATH
-from apps.laterhub.db import DBManager, LinkRecord, is_digest_video_url
+from apps.laterhub.db import DBManager, LinkRecord, NOTE_URL_PREFIX, is_digest_video_url
 from apps.laterhub.sources import set_enabled as set_laterhub_source_enabled
 from web.services import md_render
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
@@ -57,6 +58,8 @@ REPORTS_DIR = BASE_DIR / "data" / "reports"
 DIGEST_REPORTS_DIR = REPORTS_DIR / "video_digest"
 ENTRIES_STATE_COOKIE = "ifh_entries_state_v1"
 NEWS_STATE_COOKIE = "ifh_news_state_v1"
+# 纯文字条目正文上限（/quick 页与后端校验共用；正文完整存 title）
+NOTE_MAX_CHARS = 4000
 
 
 def _resolve_inside(root: Path, name: str, suffixes: tuple[str, ...]) -> Path | None:
@@ -191,6 +194,12 @@ def render_main(request: Request, params: dict[str, str]):
             "source_lookup": source_lookup,
         },
     )
+
+
+@router.get("/quick", response_class=HTMLResponse)
+async def quick_capture_page(request: Request):
+    """手机端快速收录页：单屏输入，不做列表（阅读仍回主面板）。"""
+    return templates.TemplateResponse(request, "quick.html", {"max_chars": NOTE_MAX_CHARS})
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -504,7 +513,24 @@ def add_laterhub_link(url: str, title: str | None) -> dict:
     db = DBManager(DB_PATH)
     duplicated = db.find_url(url) is not None
     link_id = db.upsert_link(LinkRecord(url=url, title=(title or url)[:500], source="manual_verify"))
-    return {"ok": True, "id": link_id, "duplicated": duplicated}
+    return {"ok": True, "id": link_id, "duplicated": duplicated, "kind": "link"}
+
+
+def add_laterhub_note(text: str) -> dict:
+    """纯文字收录：正文完整存 title（面板一行省略、tooltip 看全文、搜索可命中）。
+
+    与链接条目同池同流程（同一张表、同一轮 8:10 打标），只是 url 用内容哈希占位、天然去重。
+    """
+    body = text.strip()
+    if not body:
+        raise ValueError("文字不能为空")
+    if len(body) > NOTE_MAX_CHARS:
+        raise ValueError(f"文字超长（上限 {NOTE_MAX_CHARS} 字符）")
+    url = f"{NOTE_URL_PREFIX}{hashlib.sha1(body.encode('utf-8')).hexdigest()[:16]}"
+    db = DBManager(DB_PATH)
+    duplicated = db.find_url(url) is not None
+    link_id = db.upsert_link(LinkRecord(url=url, title=body, source="manual_verify"))
+    return {"ok": True, "id": link_id, "duplicated": duplicated, "kind": "note"}
 
 
 @router.post("/actions/laterhub/add-link")
@@ -517,8 +543,13 @@ async def add_laterhub_link_action(request: Request):
         raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
     url = str(payload.get("url") or "").strip()
     title = str(payload.get("title") or "").strip() or None
+    text = str(payload.get("text") or "")
     try:
-        return add_laterhub_link(url, title)
+        if url:
+            return add_laterhub_link(url, title)
+        if text.strip():
+            return add_laterhub_note(text)
+        raise ValueError("url 或 text 至少填一个")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

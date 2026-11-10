@@ -14,6 +14,10 @@ UTC = timezone.utc
 # 视频简报候选：只看视频条目（B站/抖音）。
 VIDEO_URL_CONDITION = "(url LIKE '%bilibili.com/video/%' OR url LIKE '%douyin.com/video/%')"
 
+# 纯文字条目的 url 占位前缀。links.url 是 UNIQUE，文字内容哈希后放在这里；
+# 展示层（面板）不得把它渲染成可点链接，业务判断也据此排除这些条目。
+NOTE_URL_PREFIX = "note://"
+
 
 def is_digest_video_url(url: str | None) -> bool:
     """是否 B站/抖音的视频页（UI 是否展示「解析」的唯一判据）。
