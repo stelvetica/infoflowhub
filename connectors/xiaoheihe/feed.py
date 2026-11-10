@@ -20,6 +20,10 @@ DEBUG_JSON_PATH = DEBUG_DIR / "tmp_pw_xiaoheihe_favorites.json"
 FAVOUR_API_PATH = "/bbs/app/favour/list"
 FAVOUR_PAGE_SIZE = 20
 FAVOUR_MAX_PAGES = 50  # 安全上限，防异常死循环
+# 日常短抓取：最多翻这么多页；每 30 天一次的深扫才跑满上限。
+FAVOUR_SHORT_MAX_PAGES = 3
+# 日常短抓取：按收藏时间倒序，连续命中这么多条已入库条目即认为已追平历史。
+FAVOUR_KNOWN_STREAK = 3
 
 
 def _log(msg: str) -> None:
@@ -97,6 +101,9 @@ async (argsJson) => {
     // 带 base：前端若发相对路径，裸 new URL 会 TypeError 且报错不可读。
     const base = new URL(captured, location.origin);
     const all = [];
+    const known = new Set(args.knownIds || []);
+    let knownStreak = 0;
+    let stoppedByKnown = false;
     let totalPage = 1;
     let totalPageKnown = false;
     let pagesFetched = 0;
@@ -131,7 +138,14 @@ async (argsJson) => {
         if (items.length === 0) { complete = true; break; }
         for (const it of items) {
             all.push({linkid: it.linkid, title: it.title || "", is_favour: it.is_favor || it.is_favour});
+            // 日常短抓取：连续命中已知 linkid 即认为已追平历史。
+            if (!args.deep) {
+                const id = String(it.linkid || "");
+                knownStreak = id && known.has(id) ? knownStreak + 1 : 0;
+                if (knownStreak >= args.knownStreak) stoppedByKnown = true;
+            }
         }
+        if (stoppedByKnown) { complete = false; break; }
         if (totalPageKnown) {
             if (i + 1 >= totalPage) { complete = true; break; }
         } else if (items.length < args.pageSize) {
@@ -152,12 +166,25 @@ async (argsJson) => {
 """
 
 
-def _fetch_favour_via_api(page) -> tuple[list[dict[str, Any]], bool]:
-    """页内借 $hbRequest 拿签名 → 手动 fetch 翻页拉全量收藏。
+def _known_link_ids(known_urls: list[str] | None) -> list[str]:
+    """从已入库 URL 提取 linkid，供页内做「已追平历史」判定。"""
+    found: list[str] = []
+    for url in known_urls or []:
+        match = re.search(r"/link/(\d+)", str(url))
+        if match and match.group(1) not in found:
+            found.append(match.group(1))
+    return found
+
+
+def _fetch_favour_via_api(
+    page, *, deep: bool = True, known_urls: list[str] | None = None
+) -> tuple[list[dict[str, Any]], bool]:
+    """页内借 $hbRequest 拿签名 → 手动 fetch 翻页拉收藏。
 
     $hbRequest 自动算 hkey 签名但吞没 query 参数（page/offset 均不进 URL），
     故先包一层 fetch/XHR 捕获它实际发出的签名 URL，再手动 fetch 带 offset 翻页。
     翻页靠 offset（page 无效）。签名与翻页全在页内一次 evaluate 内完成，不再依赖网络拦截。
+    deep=False 为日常短抓取：连续命中已知条目即收工，最多翻短页数。
     """
     payload = page.evaluate(
         _FAVOUR_LIST_JS,
@@ -165,7 +192,10 @@ def _fetch_favour_via_api(page) -> tuple[list[dict[str, Any]], bool]:
             {
                 "apiPath": FAVOUR_API_PATH,
                 "pageSize": FAVOUR_PAGE_SIZE,
-                "maxPages": FAVOUR_MAX_PAGES,
+                "maxPages": FAVOUR_MAX_PAGES if deep else FAVOUR_SHORT_MAX_PAGES,
+                "deep": bool(deep),
+                "knownIds": _known_link_ids(known_urls),
+                "knownStreak": FAVOUR_KNOWN_STREAK,
             }
         ),
     )
@@ -188,6 +218,8 @@ def fetch_xiaoheihe_favorites(
     env_path: str | Path | None = None,
     *,
     session: BskRunnerSession | None = None,
+    deep: bool = False,
+    known_urls: list[str] | None = None,
 ) -> FetchBatch:
     own_session = session is None
     if own_session:
@@ -225,7 +257,7 @@ def fetch_xiaoheihe_favorites(
         if not login_ok:
             raise RuntimeError("小黑盒登录态失效（restore_login 未返回 ok），请在日常 Chrome 中重新登录小黑盒")
 
-        items, truncated = _fetch_favour_via_api(page)
+        items, truncated = _fetch_favour_via_api(page, deep=deep, known_urls=known_urls)
 
         DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         DEBUG_JSON_PATH.write_text(
@@ -252,4 +284,4 @@ def fetch_xiaoheihe_favorites(
             continue
         seen.add(url)
         result.append(normalized)
-    return FetchBatch(items=result, complete=not truncated)
+    return FetchBatch(items=result, complete=bool(deep and not truncated))

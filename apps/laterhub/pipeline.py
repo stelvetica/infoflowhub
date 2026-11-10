@@ -178,6 +178,9 @@ SOURCE_FETCH_TIMEOUT_SECONDS = 180
 # 深度全量滚到底需要十几分钟（每轮还有递增等待），只能给深度模式单独放宽；
 # 普通抓取仍用 180s，防止浏览器假死拖垮整轮。
 SOURCE_DEEP_SCAN_TIMEOUT_SECONDS = 1800
+# 日常短抓取判断「已追平历史」时带给抓取器的已知 URL 上限：只用于碰到已知即收工，
+# 不需要全量（库再大也只影响误判概率，截断方向是「少停」，不会误标移除）。
+KNOWN_URLS_LIMIT = 2000
 
 
 class _SourceFetchTimeout(RuntimeError):
@@ -205,6 +208,7 @@ def _run_fetcher_with_timeout(
     owns_session: bool = False,
     deep: bool = False,
     supports_deep: bool = False,
+    known_urls: list[str] | None = None,
     timeout_seconds: int | None = None,
 ) -> list[dict[str, Any]]:
     """守护线程执行 fetcher，超时则停会话并抛 _SourceFetchTimeout。
@@ -219,15 +223,20 @@ def _run_fetcher_with_timeout(
     result_queue: "Queue[tuple[str, object]]" = Queue(maxsize=1)
     # 只有声明支持深度的抓取器才认 deep：否则会把关键字传给不认识它的旧抓取器。
     deep_mode = deep and supports_deep
+    known = list(known_urls or [])
 
     def _worker() -> None:
+        kwargs: dict[str, Any] = {}
+        if deep_mode:
+            kwargs["deep"] = True
+        # 已知集合只给会用它的抓取器（空集合不传，避免旧抓取器签名不兼容）。
+        if known:
+            kwargs["known_urls"] = known
         try:
-            if deep_mode:
-                fetched = fetcher(ENV_PATH, session=session, deep=True)
-            elif session is not None:
-                fetched = fetcher(ENV_PATH, session=session)
+            if session is not None:
+                fetched = fetcher(ENV_PATH, session=session, **kwargs)
             else:
-                fetched = fetcher(ENV_PATH)
+                fetched = fetcher(ENV_PATH, **kwargs)
             result_queue.put(("ok", fetched))
         except BaseException as exc:  # noqa: BLE001
             result_queue.put(("err", exc))
@@ -268,6 +277,7 @@ def _fetch_source(
     owns_session: bool = False,
     deep: bool = False,
     supports_deep: bool = False,
+    known_urls: list[str] | None = None,
 ):
     """抓取单个源并落库；返回会话（超时置空，调用方据此让后续源自建会话）。"""
     log_line(f"[3/6] 开始抓取{source.name}")
@@ -282,6 +292,7 @@ def _fetch_source(
             owns_session=owns_session,
             deep=deep,
             supports_deep=supports_deep,
+            known_urls=known_urls,
             timeout_seconds=timeout_seconds,
         )
         # 兼容尚未切到 FetchBatch 的抓取器：裸 list 无法证明拿到全量，一律按 complete=False。
@@ -290,6 +301,10 @@ def _fetch_source(
             if isinstance(fetched, FetchBatch)
             else FetchBatch(items=list(fetched), complete=False)
         )
+        if not deep:
+            # 日常短抓取永远不完整：抓取器就算自报 complete=True 也只用于内部判断，
+            # 不得进入「源内已移除」判定（唯一依据是深扫完整轮）。
+            batch = FetchBatch(items=batch.items, complete=False)
         _save_items(db, batch.items)
         record_result(source.id, ok=True)
         if batch.items:
@@ -299,10 +314,9 @@ def _fetch_source(
         # 只有确认拿到完整列表才敢按「源里没有 = 已移除」判定，抓取半途而废一律不动。
         if source.finish_on_removed:
             if not batch.complete:
-                # 增量模式本就不完整（抖音日常），只有当这一轮本该完整却没拿全时才值得报警：
-                # 深度轮没滚到底，或本来就不分增量的源（B站/小黑盒）没拉全。
-                if deep or source.deep_scan_interval_days is None:
-                    log_line(f"[3/6][WARN] {source.name} 未拿到完整列表，跳过源内移除判定")
+                # 增量短抓取本就不完整，属预期；只有「本该完整的深扫轮」没拿全才值得报警。
+                if deep:
+                    log_line(f"[3/6][WARN] {source.name} 深扫未拿到完整列表，跳过源内移除判定")
             else:
                 finished_rows = db.mark_missing_finished(
                     source.id,
@@ -376,6 +390,13 @@ def _fetch_enabled_sources(
                 )
             if deep:
                 log_line(f"[3/6] {source.name} 本轮为深度全量扫描")
+            # 已知集合只给支持深扫的源：日常短抓取靠「碰到已知条目即收工」，深扫不用它。
+            known_urls = None
+            if source.deep_scan_interval_days is not None:
+                try:
+                    known_urls = db.list_source_urls(source.id, limit=KNOWN_URLS_LIMIT)
+                except Exception as exc:  # noqa: BLE001
+                    log_line(f"[3/6][WARN] {source.name} 读取已知条目失败，按无已知集合抓取: {exc}")
             # globals() 解析保留单测 monkeypatch pipeline.<fetcher_name> 的打桩点
             fetcher = globals()[source.fetcher_name]
             if not source.needs_browser:
@@ -386,6 +407,7 @@ def _fetch_enabled_sources(
                     db=db,
                     deep=deep,
                     supports_deep=source.deep_scan_interval_days is not None,
+                    known_urls=known_urls,
                 )
                 continue
             if start_failed:
@@ -400,6 +422,7 @@ def _fetch_enabled_sources(
                 owns_session=own_session and bsk_session is not None,
                 deep=deep,
                 supports_deep=source.deep_scan_interval_days is not None,
+                known_urls=known_urls,
             )
             if bsk_session is not None and not _session_alive(bsk_session):
                 log_line("[3/6] bsk 会话已失效（上游超时自动停止），后续源将新建会话")

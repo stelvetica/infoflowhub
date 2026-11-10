@@ -99,7 +99,7 @@ def test_enabled_source_success_records_health(monkeypatch) -> None:
     monkeypatch.setattr(
         pipeline,
         "fetch_bilibili_watchlater",
-        lambda env_path, *, session=None: [{"url": "u1", "title": "t1", "source": "bilibili_watchlater"}],
+        lambda env_path, *, session=None, **kwargs: [{"url": "u1", "title": "t1", "source": "bilibili_watchlater"}],
     )
 
     scheduled = pipeline._fetch_enabled_sources(args=_args(fetch_bilibili=True), db=FakeDB(), session=None)

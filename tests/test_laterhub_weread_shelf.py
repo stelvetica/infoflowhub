@@ -114,7 +114,7 @@ def test_external_session_is_only_used_and_navigates_to_shelf():
     page = FakeBskPage(payload={"ids": 1, "books": [_book()], "badIds": ["mpbook"]})
     session = FakeExternalSession(page)
 
-    result = shelf.fetch_weread_shelf(session=session)
+    result = shelf.fetch_weread_shelf(session=session).items
 
     assert [r["url"] for r in result] == [READER]
     assert result[0]["source"] == "weread_shelf"
@@ -122,7 +122,7 @@ def test_external_session_is_only_used_and_navigates_to_shelf():
     assert session.started == 0 and session.shutdowns == 0
     assert page.closed == 1
     js, arg, kwargs = page.evaluated[0]
-    assert arg == json.dumps({"batchSize": 20, "timeoutMs": 20000})
+    assert arg == json.dumps({"batchSize": 20, "timeoutMs": 20000, "deep": False, "knownBookIds": []})
     assert kwargs == {"timeout": 120}
 
 
@@ -148,7 +148,7 @@ def test_self_built_session_starts_and_shuts_down_once(monkeypatch):
 
     monkeypatch.setattr(shelf, "BskRunnerSession", FakeBskSession)
 
-    result = shelf.fetch_weread_shelf()
+    result = shelf.fetch_weread_shelf().items
 
     assert len(created) == 1
     assert created[0].start_url == "about:blank"
@@ -231,3 +231,19 @@ def test_debug_json_reflects_failure():
     assert debug["ok"] is False
     assert debug["count"] == 0
     assert "boom" in debug["error"]
+
+
+def test_deep_scan_with_bad_book_id_is_not_complete():
+    """坏 bookId 无法确认对应书是否还在架：深扫不完整，宁可不做移除判定。"""
+    page = FakeBskPage(payload={"ids": 1, "books": [_book()], "badIds": ["mpbook"]})
+    batch = shelf.fetch_weread_shelf(session=FakeExternalSession(page), deep=True)
+
+    assert batch.complete is False
+    assert [item["url"] for item in batch.items] == [READER]
+
+
+def test_incremental_weread_scan_is_never_complete():
+    page = FakeBskPage(payload={"ids": 1, "books": [_book()], "badIds": []})
+    batch = shelf.fetch_weread_shelf(session=FakeExternalSession(page))
+
+    assert batch.complete is False

@@ -66,7 +66,7 @@ def test_watchlater_uses_bsk_page_and_official_api():
     page = FakePage(_batch_payload(SAMPLE_ITEM))
     session = FakeBskSession(page)
 
-    batch = bili.fetch_bilibili_watchlater("ignored.env", session=session)
+    batch = bili.fetch_bilibili_watchlater("ignored.env", session=session, deep=True)
 
     assert batch.items == [
         {
@@ -96,7 +96,7 @@ def test_multi_page_fetch_collects_all_in_single_evaluate():
     items = [_item(index) for index in range(45)]
     page = FakePage(_batch_payload(*items))
 
-    batch = bili.fetch_bilibili_watchlater(session=FakeBskSession(page))
+    batch = bili.fetch_bilibili_watchlater(session=FakeBskSession(page), deep=True)
 
     assert len(batch.items) == 45
     assert batch.items[0]["url"] == "https://www.bilibili.com/video/BV0"
@@ -109,7 +109,7 @@ def test_second_page_api_error_raises():
     page = FakePage({"code": -400, "message": "请求错误", "items": []})
 
     with pytest.raises(RuntimeError) as excinfo:
-        bili.fetch_bilibili_watchlater(session=FakeBskSession(page))
+        bili.fetch_bilibili_watchlater(session=FakeBskSession(page), deep=True)
 
     assert "code=-400" in str(excinfo.value)
 
@@ -118,7 +118,7 @@ def test_hitting_max_pages_marks_batch_incomplete():
     items = [_item(index) for index in range(1000)]
     page = FakePage(_batch_payload(*items, complete=False))
 
-    batch = bili.fetch_bilibili_watchlater(session=FakeBskSession(page))
+    batch = bili.fetch_bilibili_watchlater(session=FakeBskSession(page), deep=True)
 
     assert len(batch.items) == 1000
     assert batch.complete is False
@@ -128,7 +128,7 @@ def test_login_expired_raises_readable_error():
     page = FakePage({"code": -101, "message": "账号未登录"})
 
     with pytest.raises(RuntimeError) as excinfo:
-        bili.fetch_bilibili_watchlater(session=FakeBskSession(page))
+        bili.fetch_bilibili_watchlater(session=FakeBskSession(page), deep=True)
 
     assert "登录态失效" in str(excinfo.value)
     assert "-101" in str(excinfo.value)
@@ -138,7 +138,7 @@ def test_page_fetch_error_envelope_raises():
     page = FakePage({"error": "接口返回非 JSON（可能登录态失效）"})
 
     with pytest.raises(RuntimeError) as excinfo:
-        bili.fetch_bilibili_watchlater(session=FakeBskSession(page))
+        bili.fetch_bilibili_watchlater(session=FakeBskSession(page), deep=True)
 
     assert "非 JSON" in str(excinfo.value)
 
@@ -147,7 +147,7 @@ def test_unrecognized_structure_raises_readable_error():
     page = FakePage({"unrecognized": True})
 
     with pytest.raises(RuntimeError) as excinfo:
-        bili.fetch_bilibili_watchlater(session=FakeBskSession(page))
+        bili.fetch_bilibili_watchlater(session=FakeBskSession(page), deep=True)
 
     assert "无法识别" in str(excinfo.value)
 
@@ -156,7 +156,7 @@ def test_non_object_payload_raises():
     page = FakePage(["not", "an", "object"])
 
     with pytest.raises(RuntimeError) as excinfo:
-        bili.fetch_bilibili_watchlater(session=FakeBskSession(page))
+        bili.fetch_bilibili_watchlater(session=FakeBskSession(page), deep=True)
 
     assert "非对象" in str(excinfo.value)
 
@@ -165,7 +165,7 @@ def test_empty_watchlater_returns_empty_complete_batch():
     """用户把稍后看清空是合法结果：返回空批次且 complete=True，可见性由 pipeline 的「0 条」WARN 承担。"""
     page = FakePage(_batch_payload())
 
-    batch = bili.fetch_bilibili_watchlater(session=FakeBskSession(page))
+    batch = bili.fetch_bilibili_watchlater(session=FakeBskSession(page), deep=True)
 
     assert batch.items == []
     assert batch.complete is True
@@ -178,7 +178,7 @@ def test_without_session_builds_and_closes_own_bsk_session(monkeypatch):
 
     monkeypatch.setattr(bsk_session_mod, "BskRunnerSession", lambda **kwargs: session)
 
-    batch = bili.fetch_bilibili_watchlater()
+    batch = bili.fetch_bilibili_watchlater(deep=True)
 
     assert len(batch.items) == 1
     assert session.shutdown_calls == 1

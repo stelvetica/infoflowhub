@@ -15,6 +15,13 @@ from infra.utf8_json import dump_json_utf8, load_json_utf8
 
 SOURCES_PATH = PROJECT_ROOT / "config" / "laterhub_sources.json"
 
+# 统一抓取策略（SSOT）：日常短抓取（complete 恒 False，不参与移除判定），
+# 每 N 天一次全量（complete 由各源权威信号决定），只有「全量且完整」才允许自动完成。
+DEEP_SCAN_INTERVAL_DAYS = 30
+# 收藏对照的入库时间下界：早于此刻入库的条目多来自外部迁移，本就不在账号里，
+# 拿账号列表去比只会整批误标。四源共用同一时刻。
+COMPARE_AFTER = "2026-03-24T08:48:36+00:00"
+
 
 @dataclass(frozen=True, slots=True)
 class LaterhubSource:
@@ -37,17 +44,37 @@ class LaterhubSource:
 
 
 SOURCES: tuple[LaterhubSource, ...] = (
-    LaterhubSource("bilibili_watchlater", "B站稍后看", "收藏/稍后处理", "Bilibili", "网页抓取（bsk）", "", "fetch_bilibili", "fetch_bilibili_watchlater", True, True),
     LaterhubSource(
-        "douyin_favorite", "抖音收藏", "收藏/稍后处理", "抖音", "网页抓取（bsk）", "douyin_shared", "fetch_douyin", "fetch_douyin_favorites", True,
+        "bilibili_watchlater", "B站稍后看", "收藏/稍后处理", "Bilibili", "网页抓取（bsk）", "",
+        "fetch_bilibili", "fetch_bilibili_watchlater", True,
         finish_on_removed=True,
-        deep_scan_interval_days=30,
-        # 以账号内最早一条收藏（aweme 7547973316054977835）的收录时刻为界，
-        # 更早入库的条目不参与收藏对照。
-        compare_after="2026-03-24T08:48:36+00:00",
+        deep_scan_interval_days=DEEP_SCAN_INTERVAL_DAYS,
+        compare_after=COMPARE_AFTER,
     ),
-    LaterhubSource("xiaoheihe_favor", "小黑盒收藏", "收藏/稍后处理", "小黑盒", "网页抓取（bsk）", "xiaoheihe_shared", "fetch_xiaoheihe", "fetch_xiaoheihe_favorites", True, True),
-    LaterhubSource("weread_shelf", "微信读书书架", "待读/稍后处理", "微信读书", "网页抓取（bsk）", "", "fetch_weread", "fetch_weread_shelf", True, False),
+    LaterhubSource(
+        "douyin_favorite", "抖音收藏", "收藏/稍后处理", "抖音", "网页抓取（bsk）", "douyin_shared",
+        "fetch_douyin", "fetch_douyin_favorites", True,
+        finish_on_removed=True,
+        deep_scan_interval_days=DEEP_SCAN_INTERVAL_DAYS,
+        # 以账号内最早一条收藏（aweme 7547973316054977835）的收录时刻为下界。
+        compare_after=COMPARE_AFTER,
+    ),
+    LaterhubSource(
+        "xiaoheihe_favor", "小黑盒收藏", "收藏/稍后处理", "小黑盒", "网页抓取（bsk）", "xiaoheihe_shared",
+        "fetch_xiaoheihe", "fetch_xiaoheihe_favorites", True,
+        finish_on_removed=True,
+        deep_scan_interval_days=DEEP_SCAN_INTERVAL_DAYS,
+        compare_after=COMPARE_AFTER,
+    ),
+    LaterhubSource(
+        "weread_shelf", "微信读书书架", "待读/稍后处理", "微信读书", "网页抓取（bsk）", "",
+        "fetch_weread", "fetch_weread_shelf", True,
+        # 书架移除 = 读完/放弃，深扫完整时自动完成；keep_finished 仍保留：
+        # 重新加回书架不会自动复活（否则每次抓取都会把用户手动完成的书翻回待办）。
+        finish_on_removed=True,
+        deep_scan_interval_days=DEEP_SCAN_INTERVAL_DAYS,
+        compare_after=COMPARE_AFTER,
+    ),
 )
 SOURCE_BY_ID = {source.id: source for source in SOURCES}
 

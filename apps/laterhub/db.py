@@ -242,6 +242,15 @@ class DBManager:
             row = conn.execute("SELECT id FROM links WHERE url = ?", (url,)).fetchone()
         return int(row["id"]) if row else None
 
+    def list_source_urls(self, source: str, *, limit: int = 2000) -> list[str]:
+        """该源已入库的 URL（含已完成），按入库时间倒序，供抓取侧判断「已追平历史」。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT url FROM links WHERE source = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+                (source, limit),
+            ).fetchall()
+        return [str(row["url"]) for row in rows]
+
     def list_by_status(self, *statuses: str):
         if not statuses:
             statuses = ("pending",)
