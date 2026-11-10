@@ -20,7 +20,7 @@ BILIBILI_BSK_EVALUATE_TIMEOUT_SECONDS = 120.0
 BILIBILI_PAGE_REQUEST_TIMEOUT_MS = 20000
 # 稍后看全量翻页的安全上限：翻到上限仍每页满 = 没拿全，complete 置 False 不做按源比对。
 BILIBILI_WATCHLATER_MAX_PAGES = 50
-# 日常短抓取最多翻这么多页（只用于追新）；每 30 天一次的深扫才跑满上限。
+# 日常短抓取最多翻这么多页（只用于追新）；每 15 天一次的深扫才跑满上限。
 BILIBILI_WATCHLATER_SHORT_MAX_PAGES = 3
 # 日常短抓取：按收藏时间倒序，连续命中这么多条已入库条目即认为已追平历史。
 BILIBILI_WATCHLATER_KNOWN_STREAK = 3

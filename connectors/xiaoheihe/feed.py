@@ -20,7 +20,7 @@ DEBUG_JSON_PATH = DEBUG_DIR / "tmp_pw_xiaoheihe_favorites.json"
 FAVOUR_API_PATH = "/bbs/app/favour/list"
 FAVOUR_PAGE_SIZE = 20
 FAVOUR_MAX_PAGES = 50  # 安全上限，防异常死循环
-# 日常短抓取：最多翻这么多页；每 30 天一次的深扫才跑满上限。
+# 日常短抓取：最多翻这么多页；每 15 天一次的深扫才跑满上限。
 FAVOUR_SHORT_MAX_PAGES = 3
 # 日常短抓取：按收藏时间倒序，连续命中这么多条已入库条目即认为已追平历史。
 FAVOUR_KNOWN_STREAK = 3

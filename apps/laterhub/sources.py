@@ -16,8 +16,8 @@ from infra.utf8_json import dump_json_utf8, load_json_utf8
 SOURCES_PATH = PROJECT_ROOT / "config" / "laterhub_sources.json"
 
 # 统一抓取策略（SSOT）：日常短抓取（complete 恒 False，不参与移除判定），
-# 每 N 天一次全量（complete 由各源权威信号决定），只有「全量且完整」才允许自动完成。
-DEEP_SCAN_INTERVAL_DAYS = 30
+# 每 15 天一次全量（complete 由各源权威信号决定），只有「全量且完整」才允许自动完成。
+DEEP_SCAN_INTERVAL_DAYS = 15
 # 收藏对照的入库时间下界：早于此刻入库的条目多来自外部迁移，本就不在账号里，
 # 拿账号列表去比只会整批误标。四源共用同一时刻。
 COMPARE_AFTER = "2026-03-24T08:48:36+00:00"
