@@ -12,6 +12,7 @@ Python 直接 GET（仅需 UA + Referer）即可下载。直链是 video/audio �
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import shutil
@@ -21,6 +22,7 @@ from pathlib import Path
 
 import requests
 
+from connectors._shared.bsk_browser import BskError, BskPage
 from connectors._shared.bsk_session import BskRunnerSession
 
 USER_AGENT = (
@@ -41,6 +43,46 @@ _RESOLVE_JS = r"""
   return {media: media.slice(0, 8), all_count: media.length};
 }
 """
+
+# 兜底通道：播放器没起播时 resource timing 一条媒体请求都没有，但视频页 HTML 的
+# <source src> 里本来就带好完整签名直链（实测老视频沿用原生 <video>，非 MSE）。
+# 优先按 <source> 取（只可能是当前视频），没有再退回到全页任意 douyinvod 链接。
+_HTML_SOURCE_RE = re.compile(r"""<source[^>]+src=["']([^"']*douyinvod\.com[^"']*)["']""")
+_HTML_MEDIA_RE = re.compile(r"""https://[^"'<>\s]*douyinvod\.com/[^"'<>\s]*""")
+
+
+def _split_media_urls(media_urls: list[str]) -> tuple[str | None, str | None]:
+    """按流标记分出 (视频, 音频)。
+
+    无 media-video-/media-audio- 标记的是老式页面的单条直链（音视频已合流的 muxed mp4），
+    按视频流处理；ffmpeg 转容器即得含音轨的成片。
+    """
+    video_url = next((u for u in media_urls if "media-video-" in u), None)
+    audio_url = next((u for u in media_urls if "media-audio-" in u), None)
+    if not video_url and not audio_url:
+        video_url = media_urls[0] if media_urls else None
+    return video_url, audio_url
+
+
+def _media_urls_from_html(page: BskPage) -> list[str]:
+    """从当前视频页 HTML 里取直链（兜底用）。HTML 实体与 JSON 转义都还原成真实 URL。
+
+    取 HTML 不依赖 cooperate 上下文，evaluate 被 strict 策略拒绝时仍然可用；
+    页面已关闭/取不到时返回空表，由调用方按「无直链」处理。
+    """
+    try:
+        text = page.content()
+    except BskError:
+        return []
+    candidates = [m.group(1) for m in _HTML_SOURCE_RE.finditer(text)]
+    if not candidates:
+        candidates = [m.group(0) for m in _HTML_MEDIA_RE.finditer(text)]
+    urls: list[str] = []
+    for raw in candidates:
+        url = html.unescape(raw.replace("\\u0026", "&"))
+        if url not in urls:
+            urls.append(url)
+    return urls
 
 
 @dataclass(slots=True)
@@ -68,7 +110,7 @@ def resolve_douyin_video_media(
     session: BskRunnerSession | None = None,
     timeout: float = 60.0,
 ) -> DouyinVideoMedia:
-    """用 bsk 打开视频页，从 resource timing 提取音视频直链。
+    """用 bsk 打开视频页，取音视频直链：先读 resource timing，空则退回页面 HTML。
 
     session 非 None 时复用调用方会话且不关页（由调用方管理）；None 时自建自毁。
     video_url 为 None（无直链可下）时抛 RuntimeError。
@@ -83,31 +125,50 @@ def resolve_douyin_video_media(
 
     try:
         page = session.acquire_page()
-        value: dict | None = None
+        media_urls: list[str] = []
+        evaluate_error = ""
+        navigated = False
         # 播放器发媒体请求的时机不固定，且 bsk 会话冷启动后首个抖音页可能加载不出播放器
         # （实测：独立会话能拿到、连续编排偶发拿不到）——最多两次导航机会，每次 3 轮补等。
         for attempt in range(2):
-            page.goto(url, wait_until="domcontentloaded", timeout=int(timeout * 1000))
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=int(timeout * 1000))
+            except BskError:
+                # strict 策略按整页基线校验：视频页加载中基线一直在变，重复导航会被拒。
+                # 首跳就失败说明页面没停在目标页，只能报错；二次导航被拒时页面已在目标页，
+                # 丢掉整次解析亏了——交给下面的 HTML 兜底。
+                if not navigated:
+                    raise
+                break
+            navigated = True
             for _ in range(3):
                 page.wait_for_timeout(PLAYER_WAIT_MS)
-                value = page.evaluate(_RESOLVE_JS)
-                if isinstance(value, dict) and value.get("media"):
+                try:
+                    value = page.evaluate(_RESOLVE_JS)
+                except BskError as exc:
+                    # strict 策略按整页基线校验：视频页加载/播放中基线一直在变，evaluate
+                    # 会被拒（实测连续 8 次 permission_denied）。这不是「视频不可下」。
+                    evaluate_error = str(exc)[:200]
+                    continue
+                # 页内函数没被真正执行时 bsk 会回函数自身/非 dict（实测，函数按值序列化），
+                # 静默当「无直链」会把「提取失败」伪装成「视频不可下载」。
+                if not isinstance(value, dict):
+                    evaluate_error = f"页内提取返回异常类型: {type(value).__name__}"
+                    continue
+                media_urls = [str(u) for u in value.get("media") or [] if u]
+                if media_urls:
                     break
-            if isinstance(value, dict) and value.get("media"):
+            if media_urls:
                 break
-        # 信任边界校验：页内函数没被真正执行时 bsk 会回函数自身/非 dict（实测，函数按值序列化），
-        # 静默当「无直链」会把「提取失败」伪装成「视频不可下载」。
-        if not isinstance(value, dict):
-            raise RuntimeError(f"抖音视频页内提取返回异常类型: {type(value).__name__}")
-        media_urls = [str(u) for u in value.get("media") or [] if u]
-        video_url = next((u for u in media_urls if "media-video-" in u), None)
-        audio_url = next((u for u in media_urls if "media-audio-" in u), None)
+        # resource timing 只证明「播放器发过请求」；没起播就一条都没有，改从 HTML 取直链。
+        media_urls = media_urls or _media_urls_from_html(page)
+        video_url, audio_url = _split_media_urls(media_urls)
         # 播放器可能只发了音频流（实测个别视频如此）——ASR 只需音轨，仅音频也接受
         if not video_url and not audio_url:
-            raise RuntimeError(f"未从抖音视频页提取到可下载直链（同一视频页密集访问会触发抖音风控，冷却几分钟后 --retry-failed 重试通常可过）: {url}")
-        video_url = video_url or audio_url
+            detail = f"（页内提取失败: {evaluate_error}）" if evaluate_error else ""
+            raise RuntimeError(f"未从抖音视频页提取到可下载直链，resource timing 与 HTML 均无媒体链接{detail}: {url}")
         return DouyinVideoMedia(
-            video_url=str(video_url),
+            video_url=str(video_url or audio_url),
             audio_url=str(audio_url) if audio_url else None,
         )
     finally:
