@@ -309,8 +309,12 @@ def _fetch_source(
         record_result(source.id, ok=True)
         if batch.items:
             log_line(f"[3/6] {source.name}抓取完成，新增/更新 {len(batch.items)} 条")
+        elif deep:
+            # 深扫本该拿到全量，0 条才可疑（登录墙/页面结构变化）。
+            log_line(f"[3/6][WARN] {source.name}深扫完成但 0 条，可能是登录态失效或页面结构变更，请核对")
         else:
-            log_line(f"[3/6][WARN] {source.name}抓取完成但 0 条，可能是登录态失效或页面结构变更，请核对")
+            # 日常短抓取追平历史后天然是 0 条新增，不是异常。
+            log_line(f"[3/6] {source.name}本轮无新增（已追平）")
         # 只有确认拿到完整列表才敢按「源里没有 = 已移除」判定，抓取半途而废一律不动。
         if source.finish_on_removed:
             if not batch.complete:

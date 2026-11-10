@@ -122,7 +122,7 @@ def test_external_session_is_only_used_and_navigates_to_shelf():
     assert session.started == 0 and session.shutdowns == 0
     assert page.closed == 1
     js, arg, kwargs = page.evaluated[0]
-    assert arg == json.dumps({"batchSize": 20, "timeoutMs": 20000, "deep": False, "knownBookIds": []})
+    assert arg == json.dumps({"batchSize": 20, "timeoutMs": 20000, "deep": False})
     assert kwargs == {"timeout": 120}
 
 
@@ -246,4 +246,14 @@ def test_incremental_weread_scan_is_never_complete():
     page = FakeBskPage(payload={"ids": 1, "books": [_book()], "badIds": []})
     batch = shelf.fetch_weread_shelf(session=FakeExternalSession(page))
 
+    assert batch.complete is False
+
+
+def test_incremental_skips_books_already_in_db():
+    page = FakeBskPage(payload={"ids": 1, "books": [_book()], "badIds": []})
+    batch = shelf.fetch_weread_shelf(
+        session=FakeExternalSession(page), known_urls=[READER]
+    )
+
+    assert batch.items == []
     assert batch.complete is False

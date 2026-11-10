@@ -66,9 +66,9 @@ async (argsJson) => {
     return {error: '微信读书书架接口返回异常: ' + JSON.stringify(idsData).slice(0, 200)};
   }
   const ids = idsData.data.map(x => x && x.bookId).filter(Boolean);
-  const known = new Set(args.knownBookIds || []);
-  // 日常短抓取只取未入库的新书详情；深扫不看已知集合，必须全量才能判定移除。
-  const targets = args.deep ? ids : ids.filter(id => !known.has(id));
+  // 已知过滤放在 Python 侧按最终 URL 做：bookId 与 readerLink 里的 hash 不是同一个值，
+  // 在页内按 bookId 过滤永远匹配不上（实测日常轮仍返回全部书）。
+  const targets = ids;
   const books = new Map();
   const badIds = [];
   const fetchChunk = async (chunk) => {
@@ -115,16 +115,6 @@ async (argsJson) => {
 """
 
 
-def _known_book_ids(known_urls: list[str] | None) -> list[str]:
-    """从已入库 URL 提取 bookId（/web/reader/{bookId}），供日常短抓取跳过已入库书籍。"""
-    found: list[str] = []
-    for url in known_urls or []:
-        match = re.search(r"/web/reader/([0-9A-Za-z]+)", str(url))
-        if match and match.group(1) not in found:
-            found.append(match.group(1))
-    return found
-
-
 def fetch_weread_shelf(
     env_path: str | None = None,
     *,
@@ -155,7 +145,6 @@ def fetch_weread_shelf(
                     "batchSize": WEREAD_SHELF_BATCH_SIZE,
                     "timeoutMs": 20000,
                     "deep": bool(deep),
-                    "knownBookIds": _known_book_ids(known_urls),
                 }
             ),
             timeout=120,
@@ -171,12 +160,14 @@ def fetch_weread_shelf(
         raw_items = [item for item in books if isinstance(item, dict)]
 
         seen: set[str] = set()
+        # 日常短抓取只保留未入库的书；深扫必须全量，才能据此判定书架移除。
+        known_url_set = set() if deep else {str(url) for url in (known_urls or [])}
         for item in raw_items:
             normalized = normalize_weread_item(item)
             if not normalized:
                 continue
             url = normalized["url"]
-            if url in seen:
+            if url in seen or url in known_url_set:
                 continue
             seen.add(url)
             result.append(normalized)
