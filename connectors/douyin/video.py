@@ -1,25 +1,28 @@
 """抖音视频能力 connector：直链解析 / 下载合流。
 
 供编排层（video digest）调用，链路：
-- resolve_douyin_video_media  用 bsk 打开视频页取 douyinvod 直链：扩展网络缓冲优先，
-  其次 resource timing，最后页面 HTML
+- resolve_douyin_video_media  用 bsk 打开视频页取直链，四通道依次尝试：
+  ① 页面标记（用户脚本 scripts/douyin_media_export.user.js 写入的 play_addr）
+  ② bsk 网络缓冲  ③ resource timing  ④ 页面 HTML 的 <source src>
 - download_douyin_video       resolve → 立即流式下载 → ffmpeg 合流为 mp4 → ffprobe 读时长
 
-取数姿势（主 Agent 实测验证）：抖音播放器是 MSE（video.src 为 blob:），媒体请求留在
-performance / 网络缓冲里，douyinvod.com 直链带完整签名，Python 直接 GET（仅需 UA +
-Referer）即可下载。直链是 video/audio 分离流，ffmpeg 合流即得完整 mp4；直链时效约
-几分钟，拿到必须立刻下载。播放中的页面整页基线一直在变，evaluate 会被 strict 策略拒，
-所以只读的 `bsk network` 才是取链主通道。
+为什么主通道是用户脚本：抖音页面把作品数据放在 React props.videoDetail 与
+/aweme/v1/web/aweme/detail/ 响应里，play_addr 是**已合流 mp4**且带多 CDN 备用。但 bsk 的
+evaluate 要先过整页基线校验，视频一播放就整页在变、动作被拒（实测长视频 8/8 被拒），
+而用户脚本跑在页面自己里不受这道闸门约束，把直链写进 <meta id="ifh-douyin-media">，
+本地用 get-html 读（get-html 不需要协作上下文）。
 
-参考实现（未采用，留档）：https://github.com/WhiteSevs/TamperMonkeyScript 「抖音优化」脚本
-从 /aweme/v1/web/aweme/detail/ 的响应体读 video.bit_rate[].play_addr.url_list（含备用 CDN），
-或读 React fiber 的 awemeInfo.playApi。前者更精确、且 play_addr 多为已合流 mp4，但 bsk 扩展
-默认不保留响应体（实测 response_body chars=0 / redacted，pin 也不补存），DOM 那条又依赖
-evaluate（播放中会被拒）。故目前只用请求清单取链；等 bsk 支持保留指定 URL 响应体再切。
+其余通道是兜底：播放器实际发出的 douyinvod 请求（网络缓冲）→ resource timing →
+老式页面的 <source src>。直链时效约几分钟，拿到必须立刻下载。
+
+参考实现：https://github.com/WhiteSevs/TamperMonkeyScript 「抖音优化」脚本（同一取数点，
+本仓用户脚本按它的网络钩子思路实现）。
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
 import html
 import json
 import re
@@ -57,6 +60,43 @@ _RESOLVE_JS = r"""
 # 优先按 <source> 取（只可能是当前视频），没有再退回到全页任意 douyinvod 链接。
 _HTML_SOURCE_RE = re.compile(r"""<source[^>]+src=["']([^"']*douyinvod\.com[^"']*)["']""")
 _HTML_MEDIA_RE = re.compile(r"""https://[^"'<>\s]*douyinvod\.com/[^"'<>\s]*""")
+
+# 用户脚本（scripts/douyin_media_export.user.js）写进页面 head 的直链标记
+_MARKER_TAG_RE = re.compile(r"""<meta[^>]*\bid=["']ifh-douyin-media["'][^>]*>""", re.IGNORECASE)
+_MARKER_CONTENT_RE = re.compile(r"""\bcontent=["']([^"']*)["']""", re.IGNORECASE)
+# 只接受这两个域名的 https 直链：标记来自页面 DOM，属于不可信输入，不能把任意地址交给下载器
+_MEDIA_HOST_RE = re.compile(r"^https://([a-z0-9.-]+\.)?(douyinvod\.com|douyin\.com)/", re.IGNORECASE)
+
+
+def _media_urls_from_marker(page: BskPage, video_id: str) -> list[str]:
+    """读用户脚本的 DOM 标记（主通道）。标记里没有目标视频或校验不过时返回空表。
+
+    取 HTML 不依赖 cooperate 上下文，所以页面在播放也读得到——这正是它优于 evaluate 的地方。
+    """
+    if not video_id:
+        return []
+    try:
+        text = page.content()
+    except BskError:
+        return []
+    for tag in _MARKER_TAG_RE.findall(text):
+        match = _MARKER_CONTENT_RE.search(tag)
+        if not match:
+            continue
+        try:
+            data = json.loads(base64.b64decode(html.unescape(match.group(1))).decode("utf-8"))
+        except (ValueError, binascii.Error, UnicodeDecodeError):
+            continue
+        for entry in data.get("entries") or []:
+            if not isinstance(entry, dict) or str(entry.get("id") or "") != video_id:
+                continue
+            urls = [
+                url for url in (entry.get("playUrls") or [])
+                if isinstance(url, str) and _MEDIA_HOST_RE.match(url)
+            ]
+            if urls:
+                return urls
+    return []
 
 
 def _split_media_urls(media_urls: list[str]) -> tuple[str | None, str | None]:
@@ -164,6 +204,7 @@ def resolve_douyin_video_media(
         media_urls: list[str] = []
         evaluate_error = ""
         navigated = False
+        video_id = extract_douyin_video_id(url)
         # 导航前缓冲里已有的媒体链接：页面这条视频若一个请求都没发，绝不能拿旧链接冒充
         stale_media = set(_media_urls_from_network(page))
         # 播放器发媒体请求的时机不固定，且 bsk 会话冷启动后首个抖音页可能加载不出播放器
@@ -179,8 +220,14 @@ def resolve_douyin_video_media(
                     raise
                 break
             navigated = True
-            for _ in range(3):
+            for index in range(3):
                 page.wait_for_timeout(PLAYER_WAIT_MS)
+                # 主通道：用户脚本写进 DOM 的 play_addr（已合流、多 CDN）。只读一次，
+                # 脚本要在页面加载后 1~2 个轮询周期内才写好，首次 6s 等待足够覆盖。
+                if index == 0:
+                    media_urls = _media_urls_from_marker(page, video_id)
+                    if media_urls:
+                        break
                 media_urls = _media_urls_from_network(page, exclude=stale_media)
                 if media_urls:
                     break
@@ -201,13 +248,15 @@ def resolve_douyin_video_media(
                     break
             if media_urls:
                 break
-        # 两条通道都空（页面没播放、也没渲染 <source>）时再读 HTML 兜一次
+        # 三条通道都空（页面没播放、也没渲染 <source>）时再读 HTML 兜一次
         media_urls = media_urls or _media_urls_from_html(page)
         video_url, audio_url = _split_media_urls(media_urls)
         # 播放器可能只发了音频流（实测个别视频如此）——ASR 只需音轨，仅音频也接受
         if not video_url and not audio_url:
             detail = f"（页内提取失败: {evaluate_error}）" if evaluate_error else ""
-            raise RuntimeError(f"未从抖音视频页提取到可下载直链，网络缓冲/resource timing/HTML 均无媒体链接{detail}: {url}")
+            raise RuntimeError(
+                f"未从抖音视频页提取到可下载直链，页面标记/网络缓冲/resource timing/HTML 均无媒体链接{detail}: {url}"
+            )
         return DouyinVideoMedia(
             video_url=str(video_url or audio_url),
             audio_url=str(audio_url) if audio_url else None,
