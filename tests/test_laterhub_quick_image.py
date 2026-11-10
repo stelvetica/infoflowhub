@@ -118,3 +118,65 @@ def test_upload_endpoint_accepts_and_rejects(paths):
         files={"image": ("note.txt", b"hello", "text/plain")},
     )
     assert bad.status_code == 400
+
+
+def _encoded(fmt: str) -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+    from pillow_heif import register_heif_opener
+
+    register_heif_opener()
+    buf = BytesIO()
+    Image.new("RGB", (8, 8), (200, 30, 30)).save(buf, format=fmt)
+    return buf.getvalue()
+
+
+def test_sniff_recognizes_mobile_formats():
+    assert main_routes._sniff_image_suffix(b"\x00\x00\x00\x18ftypavif\x00\x00") == ".avif"
+    assert main_routes._sniff_image_suffix(b"\x00\x00\x00\x18ftypheic\x00\x00") == ".heic"
+    assert main_routes._sniff_image_suffix(b"\x00\x00\x00\x18ftypmif1\x00\x00") == ".heic"
+    assert main_routes._sniff_image_suffix(b"BM" + b"0" * 20) == ".bmp"
+    assert main_routes._sniff_image_suffix(b"II*\x00" + b"0" * 20) == ".tiff"
+
+
+def test_heic_is_converted_to_jpeg(paths):
+    _, attachments = paths
+
+    result = main_routes.save_laterhub_image(_encoded("HEIF"))
+
+    assert result["url"].endswith(".jpg")
+    name = result["url"].removeprefix("/attachments/")
+    assert (attachments / name).read_bytes().startswith(b"\xff\xd8\xff")
+
+
+def test_tiff_is_converted_to_jpeg(paths):
+    _, attachments = paths
+
+    result = main_routes.save_laterhub_image(_encoded("TIFF"))
+
+    assert result["url"].endswith(".jpg")
+    name = result["url"].removeprefix("/attachments/")
+    assert (attachments / name).read_bytes().startswith(b"\xff\xd8\xff")
+
+
+def test_bmp_is_stored_without_conversion(paths):
+    result = main_routes.save_laterhub_image(_encoded("BMP"))
+
+    assert result["url"].endswith(".bmp")
+
+
+def test_rejected_upload_logs_head(paths, caplog):
+    from fastapi.testclient import TestClient
+    from web.app import app
+
+    client = TestClient(app)
+
+    with caplog.at_level("WARNING", logger="web.routes.main"):
+        response = client.post(
+            "/actions/laterhub/add-image",
+            files={"image": ("photo.unknown", b"\x00\x01\x02\x03" * 4, "application/octet-stream")},
+        )
+
+    assert response.status_code == 400
+    assert "00010203" in caplog.text

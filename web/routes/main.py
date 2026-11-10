@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import logging
 import threading
 from datetime import datetime
@@ -549,7 +550,39 @@ def _sniff_image_suffix(data: bytes) -> str | None:
             return suffix
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return ".webp"
+    if data[:2] == b"BM":
+        return ".bmp"
+    if data[:4] in (b"II*\x00", b"MM\x00*"):
+        return ".tiff"
+    # ISO BMFF 容器：第 4-8 字节是 "ftyp"，品牌决定是 AVIF 还是 HEIC/HEIF
+    if len(data) >= 12 and data[4:8] == b"ftyp":
+        brand = data[8:12]
+        if brand in (b"avif", b"avis"):
+            return ".avif"
+        if brand in (b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1"):
+            return ".heic"
     return None
+
+
+# 浏览器不能直接显示的格式：落盘前转成 JPEG（内容不缩放，只做方向校正）
+_NEEDS_JPEG_CONVERSION = (".heic", ".tiff")
+
+
+def _convert_to_jpeg(data: bytes) -> bytes:
+    """HEIC/TIFF → JPEG。Pillow 打不开时抛 ValueError，由调用方转成 400。"""
+    from PIL import Image, ImageOps
+    from pillow_heif import register_heif_opener
+
+    register_heif_opener()
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            # exif_transpose 修手机拍摄方向：不转的话 iPhone 竖拍会横躺
+            rgb = ImageOps.exif_transpose(img).convert("RGB")
+            out = io.BytesIO()
+            rgb.save(out, format="JPEG", quality=90)
+            return out.getvalue()
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"图片无法转码：{exc}") from exc
 
 
 def save_laterhub_image(data: bytes) -> dict:
@@ -559,7 +592,10 @@ def save_laterhub_image(data: bytes) -> dict:
     """
     suffix = _sniff_image_suffix(data)
     if suffix is None:
-        raise ValueError("只支持 JPG、PNG、WebP、GIF 图片")
+        raise ValueError("不支持的图片格式（支持 JPG/PNG/WebP/GIF/AVIF/BMP，HEIC/TIFF 会自动转码）")
+    if suffix in _NEEDS_JPEG_CONVERSION:
+        data = _convert_to_jpeg(data)
+        suffix = ".jpg"
     ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now()
     base = stamp.strftime("%Y%m%d-%H%M%S")
@@ -590,7 +626,11 @@ def save_laterhub_image(data: bytes) -> dict:
 @router.get("/attachments/{filename}")
 async def laterhub_attachment(filename: str):
     """图片附件：只返回附件目录内的白名单后缀文件，防目录穿越与非图片内容。"""
-    target = _resolve_inside(ATTACHMENTS_DIR, filename, (".jpg", ".jpeg", ".png", ".webp", ".gif"))
+    target = _resolve_inside(
+        ATTACHMENTS_DIR,
+        filename,
+        (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp"),
+    )
     if target is None:
         return PlainTextResponse("Attachment not found", status_code=404)
     return FileResponse(target)
@@ -604,6 +644,14 @@ async def add_laterhub_image_action(image: UploadFile = File(...)):
     try:
         return save_laterhub_image(data)
     except ValueError as exc:
+        # 记下被拒文件的真实类型：手机端拿到的是同一句提示，只有日志能定位是哪种格式
+        logger.warning(
+            "图片被拒：filename=%s content_type=%s head=%s err=%s",
+            image.filename or "",
+            image.content_type or "",
+            data[:16].hex(),
+            exc,
+        )
         raise HTTPException(status_code=400, detail=str(exc))
 
 
