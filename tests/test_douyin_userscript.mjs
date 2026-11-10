@@ -86,6 +86,7 @@ const context = {
   window: {},
   document: documentStub,
   XMLHttpRequest: FakeXHR,
+  location: { pathname: "/video/7664439615676275451", search: "" },
   setInterval: () => 1,
   clearInterval: () => {},
   btoa: (text) => Buffer.from(text, "binary").toString("base64"),
@@ -141,6 +142,29 @@ assert(entry.playUrls[0].startsWith("https://v26-web.douyinvod.com/"), "http 直
 assert(entry.playUrls[0].includes("a=1&b=2"), "查询串保留完整签名");
 assert(Array.isArray(entry.gears) && entry.gears[0].bit === 1141, "bit_rate 档位一并导出");
 assert(typeof entry.at === "number" && entry.at > 0, "条目带时间戳");
+assert(!!payload.current && payload.current.id === "7664439615676275451", "当前页视频写入 current 槽位");
+
+// 相关推荐刷屏（>5 条）后，当前页视频仍在 current 里
+function publishAweme(awemeId) {
+  const noise = new FakeXHR();
+  noise.open("GET", `https://www.douyin.com/aweme/v1/web/aweme/post/?id=${awemeId}`);
+  noise.send();
+  noise.responseText = JSON.stringify({
+    aweme_detail: {
+      aweme_id: awemeId,
+      desc: `推荐 ${awemeId}`,
+      video: { play_addr: { url_list: [`https://v26-web.douyinvod.com/${awemeId}/video/tos/cn/z/`] } },
+    },
+  });
+  noise.emit("load");
+}
+for (let i = 0; i < 8; i += 1) publishAweme(`70000000000000000${i}`);
+
+const after = JSON.parse(Buffer.from(byId.get("ifh-douyin-media").getAttribute("content"), "base64").toString("utf8"));
+assert(after.entries.length === 5, "entries 只保留最近 5 条");
+assert(after.entries[0].id !== "7664439615676275451", "目标视频已被推荐挤出 entries（复现原问题）");
+assert(!!after.current && after.current.id === "7664439615676275451", "current 槽位不受淘汰影响");
+assert(after.current.playUrls[0].startsWith("https://v26-web.douyinvod.com/"), "current 直链完整保留");
 
 // 没有可用直链时不得写入标记
 byId.clear();
