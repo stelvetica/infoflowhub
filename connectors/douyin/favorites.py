@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from apps.laterhub.config import DEBUG_DIR
+from connectors._shared.bsk_browser import BskCommandError
 from connectors._shared.bsk_session import BskRunnerSession
 from connectors._shared.common import FetchBatch
 from connectors.douyin.feed import DOUYIN_LOGIN_WALL_MARKERS
@@ -32,21 +33,45 @@ DOUYIN_SCROLL_WAIT_MAX_MS = 10000
 # 收藏页卡片会在滚轮悬停时自动播放预览视频。bsk 的 wheel/evaluate 属无目标动作，strict 策略
 # 对它们保持整页基线校验：一旦有视频在播（媒体源持续变化），后续动作一律
 # `permission_denied: The media source changed` / `observed content changed`（实测裸滚 8/8 被拒，
-# 2026-11-04 07:14 抖音频道的整源失败即此）。滚动前先装一个停播器，把页面压成静态后再滚。
+# 2026-11-04 07:14 与 2026-11-09 07:13 的整源失败即此）。只靠「发现播放再 pause」不够：
+# 每轮滚动都会新挂载卡片并起播，250ms 轮询的空窗期足以让 sync→wheel 之间媒体变更被拒。
+# 故直接封死 play()，并用 MutationObserver 在卡片挂载瞬间压住，让页面全程保持静态。
 DOUYIN_STABILIZE_MEDIA_JS = r"""
 () => {
-  if (window.__bskPauseVideos) return "already";
-  window.__bskPauseVideos = true;
-  const pause = () => document.querySelectorAll("video").forEach((v) => {
-    try { if (!v.paused) v.pause(); v.autoplay = false; } catch (e) {}
+  // 幂等标记挂在被替换的函数上，而不是 window：bsk 复用标签页且抖音是 SPA，
+  // 同一 URL 二次进入可能不重建 window，window 上的旧标记会让新逻辑整段跳过（实测导致滚轮持续被拒）。
+  if (HTMLMediaElement.prototype.play.__bskBlocked) return "already";
+  const noPlay = function () { return Promise.resolve(); };
+  noPlay.__bskBlocked = true;
+  try { HTMLMediaElement.prototype.play = noPlay; } catch (e) {}
+  const pause = () => document.querySelectorAll("video,audio").forEach((v) => {
+    try { if (!v.paused) v.pause(); v.autoplay = false; v.muted = true; } catch (e) {}
   });
   pause();
-  setInterval(pause, 250);
+  new MutationObserver(pause).observe(document.documentElement, { childList: true, subtree: true });
+  setInterval(pause, 500);
   return "installed";
 }
 """
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 DEBUG_JSON_PATH = DEBUG_DIR / "tmp_pw_douyin_favorites.json"
+
+
+def _install_stabilizer(page, *, attempts: int = 3) -> None:
+    """装停播器，把收藏页压成静态再滚。
+
+    页面自播起播后连首个 evaluate 都会被 strict 策略拒（`permission_denied`，
+    2026-11-09 07:13 的整源失败即此）：等一拍让页面本身停稳再重试。
+    非权限类错误不重试，避免把真故障拖成三次等待。
+    """
+    for attempt in range(attempts):
+        try:
+            page.evaluate(DOUYIN_STABILIZE_MEDIA_JS)
+            return
+        except BskCommandError as exc:
+            if attempt + 1 >= attempts or "permission_denied" not in str(exc):
+                raise
+            page.wait_for_timeout(1000)
 
 
 def normalize_douyin_item(item: dict[str, Any]) -> dict[str, Any] | None:
@@ -129,6 +154,24 @@ def _scroll_wait_ms(round_no: int) -> int:
     )
 
 
+def _wheel_with_retry(page, step: int, *, reinstall=None, attempts: int = 3) -> None:
+    """滚动一次；被 strict 策略以 permission_denied 拒掉时重装停播器再试。
+
+    实测：页面内容（懒加载卡片/预览视频）在轮次间仍在变化时，wheel 会被拒；
+    等一拍、把页面重新压成静态后同一个滚动即可通过。非权限类错误不重试。
+    """
+    for attempt in range(attempts):
+        try:
+            page.mouse.wheel(0, step)
+            return
+        except BskCommandError as exc:
+            if attempt + 1 >= attempts or "permission_denied" not in str(exc):
+                raise
+            if reinstall is not None:
+                reinstall(page)
+            page.wait_for_timeout(1000)
+
+
 def fetch_douyin_favorites(
     env_path: str | None = None,
     *,
@@ -151,7 +194,7 @@ def fetch_douyin_favorites(
         page.goto(DOUYIN_FAVORITE_URL, wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(5000)
         # 先停掉预览视频再滚：滚动会触发卡片自动播放，媒体源一变后续 wheel/evaluate 全被拒。
-        page.evaluate(DOUYIN_STABILIZE_MEDIA_JS)
+        _install_stabilizer(page)
 
         def _absorb(extracted: list[dict[str, Any]]) -> int:
             # 必须跨轮累积：收藏页虚拟列表会把滚出视口的卡片从 DOM 摘掉，每轮覆盖会丢条目。
@@ -170,7 +213,7 @@ def fetch_douyin_favorites(
         step = DOUYIN_DEEP_SCROLL_STEP_PX if deep else DOUYIN_SCROLL_STEP_PX
         empty_rounds = 0
         for round_no in range(limit):
-            page.mouse.wheel(0, step)
+            _wheel_with_retry(page, step, reinstall=_install_stabilizer)
             page.wait_for_timeout(_scroll_wait_ms(round_no))
             rounds = round_no + 1
             if _absorb(_extract_visible_items(page)) == 0:
