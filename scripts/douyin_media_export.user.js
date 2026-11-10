@@ -15,10 +15,11 @@
  *
  * 数据契约（本地解析方按此读取，改动需同步 connectors/douyin/video.py）：
  *   <meta id="ifh-douyin-media" content="<base64(UTF-8 JSON)>">
- *   JSON: {"entries": [{"id": "<aweme_id>", "desc": "...", "playUrls": ["https://..."],
+ *   JSON: {"current": <当前页视频条目|null>,
+ *          "entries": [{"id": "<aweme_id>", "desc": "...", "playUrls": ["https://..."],
  *                       "gears": [{"gear": "normal_1080_0", "bit": 1200, "url": "https://..."}],
  *                       "at": 1794283...}]}
- *   最近 5 条按时间倒序保留，同名视频以最新一次为准。
+ *   current 是 URL 里的视频，永不参与淘汰；entries 只留最近 5 条（多用于人工排查）。
  *
  * 安装（一次性）：Chrome 里装 Tampermonkey → 扩展详情页打开「允许用户脚本」→
  * 新建脚本，粘贴本文件全部内容并保存。装好后无需重启服务：取链时读到标记就用它，
@@ -30,6 +31,14 @@
   var MARKER_ID = 'ifh-douyin-media';
   var MAX_ENTRIES = 5;
   var entries = [];
+  var currentEntry = null;  // 当前页 URL 指向的那条视频，单独留一个槽位
+
+  function currentVideoId() {
+    // 视频页形如 /video/<id>；分享弹层用 ?modal_id=<id>
+    var match = String(location.pathname || '').match(/\/video\/(\d+)/) ||
+      String(location.search || '').match(/[?&]modal_id=(\d+)/);
+    return match ? match[1] : '';
+  }
 
   function isMediaUrl(url) {
     return typeof url === 'string' && /^https:\/\/([a-z0-9.-]+\.)?(douyinvod\.com|douyin\.com)\//i.test(url);
@@ -68,13 +77,16 @@
 
   function publish(entry) {
     if (!entry || !entry.id) return;
+    // 相关推荐会源源不断刷进列表，把当前页视频挤出 5 条上限（实测 8 秒内就被顶掉），
+    // 所以当前页视频单独存一个槽位，且不参与淘汰。
+    if (entry.id === currentVideoId()) currentEntry = entry;
     entries = entries.filter(function (item) { return item.id !== entry.id; });
     entries.unshift(entry);
     entries = entries.slice(0, MAX_ENTRIES);
 
     var payload = null;
     try {
-      payload = btoa(unescape(encodeURIComponent(JSON.stringify({ entries: entries }))));
+      payload = btoa(unescape(encodeURIComponent(JSON.stringify({ current: currentEntry, entries: entries }))));
     } catch (err) {
       return;
     }

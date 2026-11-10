@@ -87,7 +87,9 @@ def _media_urls_from_marker(page: BskPage, video_id: str) -> list[str]:
             data = json.loads(base64.b64decode(html.unescape(match.group(1))).decode("utf-8"))
         except (ValueError, binascii.Error, UnicodeDecodeError):
             continue
-        for entry in data.get("entries") or []:
+        # current 是脚本按 URL 认定的当前视频（不参与淘汰）；entries 是最近几条（含相关推荐）
+        candidates = [data.get("current")] + list(data.get("entries") or [])
+        for entry in candidates:
             if not isinstance(entry, dict) or str(entry.get("id") or "") != video_id:
                 continue
             urls = [

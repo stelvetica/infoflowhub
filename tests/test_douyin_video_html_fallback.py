@@ -221,8 +221,11 @@ def test_resolve_raises_when_first_navigation_denied():
 MARKER_URL = "https://v26-web.douyinvod.com/mark/.../video/tos/cn/y/?a=1&br=1141"
 
 
-def _marker_html(entries: list[dict]) -> str:
-    raw = json.dumps({"entries": entries}, ensure_ascii=False).encode("utf-8")
+def _marker_html(entries: list[dict], current: dict | None = None) -> str:
+    payload = {"entries": entries}
+    if current is not None:
+        payload["current"] = current
+    raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     packed = base64.b64encode(raw).decode()
     return f'<html><head><meta id="ifh-douyin-media" name="ifh-douyin-media" content="{packed}"></head></html>'
 
@@ -269,3 +272,10 @@ def test_resolve_falls_back_to_network_when_marker_is_for_other_video():
     )
     media = resolve_douyin_video_media(URL, session=FakeSession(page))
     assert media.video_url == V_STREAM
+
+
+def test_marker_finds_current_even_after_entries_evicted():
+    # 线上复现：相关推荐把当前视频挤出 entries，current 槽位仍保留它
+    noise = [{"id": f"70000{i}", "playUrls": [f"https://v26-web.douyinvod.com/{i}/v/"]} for i in range(5)]
+    html = _marker_html(noise, current={"id": VIDEO_ID, "playUrls": [MARKER_URL]})
+    assert _media_urls_from_marker(FakePage(html), VIDEO_ID) == [MARKER_URL]
