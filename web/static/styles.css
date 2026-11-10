@@ -659,6 +659,34 @@ td { font-size: var(--fs-sm); }
 .quick-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
 .quick-meta { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.quick-meta-left { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; flex-wrap: wrap; }
+
+/* 图片入口：视觉是按钮，实际是原生 file input（label 触发选择，键盘可达） */
+.quick-file {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.quick-photo {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+}
+.quick-photo:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.quick-file:focus-visible + .quick-photo { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 .quick-kind {
   display: inline-flex; align-items: center;
   padding: 3px 10px;
@@ -743,9 +771,9 @@ a.quick-recent-text:focus-visible { outline: 2px solid var(--accent); outline-of
 
 .quick-hint { margin: 0; color: var(--muted); font-size: var(--fs-2xs); text-align: center; }
 
-/* 稍后处理面板里的纯文字条目：不可点，一行摘要 */
+/* 稍后处理面板里的条目类型徽标：文字条目不可点，图片条目可点开原图 */
 .cell-note { color: var(--text); }
-.cell-note-badge {
+.cell-kind-badge {
   display: inline-block;
   margin-right: 6px;
   padding: 0 6px;

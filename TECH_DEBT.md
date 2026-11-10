@@ -38,3 +38,4 @@
 | `web/services/skill_runner.py`（skill 执行模型钉死） | 通过生成 `runtime/skill_provider_config.json`（强制 `defaultModelSelection`）钉住执行模型；**CLI 升级后若该配置 schema 变更，钉死会静默失效**——skill 结果只判退出码，看不出实际跑的是哪个模型 | 把本次实际生效的模型 id 落一行到 flow 状态，便于事后核对（漂移可见即可，不阻断流程） |
 | `connectors/youtube/feed.py` `fetch_youtube_subscriptions_with_page`（订阅流） | 只解析首屏 `ytInitialData`（上限 30 条），不跟 continuation 翻页：关注频道多、更新快时，首屏之外的条目抓不到（下次抓取仍只拿首屏，可能长期漏条） | 按 `ytInitialData` 里的 continuation token 调 `youtubei/v1/browse` 拉后续页（复用同一套 renderer 解析） |
 | `connectors/douyin/favorites.py` 深度全量扫描（`deep=True`） | 「到底」只能靠连续 2 轮零新增推断，无独立底边信号：若收藏页是无尽推荐流，深度扫描永远判不完整（`complete=False`，安全但每月深度扫描等于白跑）；撞 150 轮上限时也不记已扫时间、次日重试 | 改走收藏接口 cursor 分页（有明确 `has_more`），或从页面内 API 响应读取总数做交叉校验 |
+| `data/laterhub_attachments/`（/quick 上传的图片） | 只增不删：原图长期占磁盘，面板没有删除入口，也与条目完成状态脱钩；同一张图重复上传不会去重（文件名按时间生成） | 加「删除条目同时删附件」，或按月清理无人引用的孤儿文件（反查 `links.url` 里的 `/attachments/<name>`） |

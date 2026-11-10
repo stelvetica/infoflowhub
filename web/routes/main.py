@@ -4,16 +4,17 @@ import asyncio
 import hashlib
 import logging
 import threading
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote, urlencode, urlparse
 
-from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 
-from apps.laterhub.config import DB_PATH
-from apps.laterhub.db import DBManager, LinkRecord, NOTE_URL_PREFIX, is_digest_video_url
+from apps.laterhub.config import ATTACHMENTS_DIR, DB_PATH
+from apps.laterhub.db import DBManager, IMAGE_URL_PREFIX, LinkRecord, NOTE_URL_PREFIX, is_digest_video_url
 from apps.laterhub.sources import set_enabled as set_laterhub_source_enabled
 from web.services import md_render
 from web.services.fetch_runtime import fetch_laterhub_now, fetch_now
@@ -60,6 +61,14 @@ ENTRIES_STATE_COOKIE = "ifh_entries_state_v1"
 NEWS_STATE_COOKIE = "ifh_news_state_v1"
 # 纯文字条目正文上限（/quick 页与后端校验共用；正文完整存 title）
 NOTE_MAX_CHARS = 4000
+# 图片上传上限与可识别格式。后缀只认文件头，不信客户端文件名和 Content-Type。
+IMAGE_MAX_BYTES = 15 * 1024 * 1024
+IMAGE_MAGIC_SUFFIXES = (
+    (b"\xff\xd8\xff", ".jpg"),
+    (b"\x89PNG\r\n\x1a\n", ".png"),
+    (b"GIF87a", ".gif"),
+    (b"GIF89a", ".gif"),
+)
 
 
 def _resolve_inside(root: Path, name: str, suffixes: tuple[str, ...]) -> Path | None:
@@ -531,6 +540,71 @@ def add_laterhub_note(text: str) -> dict:
     duplicated = db.find_url(url) is not None
     link_id = db.upsert_link(LinkRecord(url=url, title=body, source="manual_verify"))
     return {"ok": True, "id": link_id, "duplicated": duplicated, "kind": "note"}
+
+
+def _sniff_image_suffix(data: bytes) -> str | None:
+    """按文件头识别图片格式；识别不了的一律拒绝（不落盘）。"""
+    for magic, suffix in IMAGE_MAGIC_SUFFIXES:
+        if data.startswith(magic):
+            return suffix
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    return None
+
+
+def save_laterhub_image(data: bytes) -> dict:
+    """图片收录：文件名固定为本地「日期-时间」，同秒冲突加序号。
+
+    图片只有时间标题、没有可分类语义，直接标成已打标，不占每日打标额度。
+    """
+    suffix = _sniff_image_suffix(data)
+    if suffix is None:
+        raise ValueError("只支持 JPG、PNG、WebP、GIF 图片")
+    ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now()
+    base = stamp.strftime("%Y%m%d-%H%M%S")
+    counter = 1
+    while True:
+        name = f"{base}{suffix}" if counter == 1 else f"{base}-{counter}{suffix}"
+        try:
+            # xb = 原子创建：同秒并发时由文件系统裁决，不靠先查后写
+            with (ATTACHMENTS_DIR / name).open("xb") as fh:
+                fh.write(data)
+            break
+        except FileExistsError:
+            counter += 1
+            if counter > 99:
+                raise ValueError("同一秒内图片过多，请稍后重试")
+    url = f"{IMAGE_URL_PREFIX}{name}"
+    title = stamp.strftime("%Y-%m-%d %H:%M:%S")
+    db = DBManager(DB_PATH)
+    try:
+        link_id = db.upsert_link(LinkRecord(url=url, title=title, source="manual_verify"))
+    except Exception:
+        (ATTACHMENTS_DIR / name).unlink(missing_ok=True)
+        raise
+    db.update_tags(url, "", tag_status="done")
+    return {"ok": True, "id": link_id, "duplicated": False, "kind": "image", "title": title, "url": url}
+
+
+@router.get("/attachments/{filename}")
+async def laterhub_attachment(filename: str):
+    """图片附件：只返回附件目录内的白名单后缀文件，防目录穿越与非图片内容。"""
+    target = _resolve_inside(ATTACHMENTS_DIR, filename, (".jpg", ".jpeg", ".png", ".webp", ".gif"))
+    if target is None:
+        return PlainTextResponse("Attachment not found", status_code=404)
+    return FileResponse(target)
+
+
+@router.post("/actions/laterhub/add-image")
+async def add_laterhub_image_action(image: UploadFile = File(...)):
+    data = await image.read(IMAGE_MAX_BYTES + 1)
+    if len(data) > IMAGE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"图片超过 {IMAGE_MAX_BYTES // (1024 * 1024)}MB 上限")
+    try:
+        return save_laterhub_image(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/actions/laterhub/add-link")

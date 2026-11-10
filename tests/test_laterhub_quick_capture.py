@@ -76,6 +76,6 @@ def test_quick_page_and_panel_fragment(db_path):
 
     fragment = client.get("/fragments/laterhub")
     assert fragment.status_code == 200
-    assert 'class="cell-note-badge"' in fragment.text
+    assert 'class="cell-kind-badge"' in fragment.text
     # 纯文字不得变成可点链接（note:// 是内部占位，不出现在页面上）
     assert "note://" not in fragment.text

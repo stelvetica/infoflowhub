@@ -18,6 +18,9 @@ VIDEO_URL_CONDITION = "(url LIKE '%bilibili.com/video/%' OR url LIKE '%douyin.co
 # 展示层（面板）不得把它渲染成可点链接，业务判断也据此排除这些条目。
 NOTE_URL_PREFIX = "note://"
 
+# 图片条目的 url 前缀：指向 /attachments/<文件名>，面板据此渲染图片样式。
+IMAGE_URL_PREFIX = "/attachments/"
+
 
 def is_digest_video_url(url: str | None) -> bool:
     """是否 B站/抖音的视频页（UI 是否展示「解析」的唯一判据）。

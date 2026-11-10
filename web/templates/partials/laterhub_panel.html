@@ -73,7 +73,17 @@
                 {# 纯文字条目没有可打开的原文：只显示一行摘要，全文看 title 提示；不参与「已打开」轨道 #}
                 {% if item.is_note %}
                 <div class="cell-ellipsis" title="{{ item.title }}">
-                  <span class="cell-note"><span class="cell-note-badge">文字</span>{{ item.title }}</span>
+                  <span class="cell-note"><span class="cell-kind-badge">文字</span>{{ item.title }}</span>
+                </div>
+                {% elif item.is_image %}
+                <div class="cell-ellipsis" title="{{ item.title }}">
+                  <a
+                    class="cell-link laterhub-read-track {% if item.is_opened %}cell-read{% else %}cell-unread{% endif %}"
+                    href="{{ item.url }}"
+                    target="_blank"
+                    rel="noreferrer"
+                    data-link-id="{{ item.id }}"
+                  ><span class="cell-kind-badge">图片</span>{{ item.title }}</a>
                 </div>
                 {% else %}
                 <div class="cell-ellipsis" title="{{ item.title }}">

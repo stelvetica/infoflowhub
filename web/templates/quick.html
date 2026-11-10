@@ -34,7 +34,14 @@
           enterkeyhint="enter"
         ></textarea>
         <div class="quick-meta">
-          <span class="quick-kind" id="quick-kind" data-kind="empty">等待输入</span>
+          <div class="quick-meta-left">
+            <input class="quick-file" id="quick-image" type="file" accept="image/*" multiple>
+            <label class="quick-photo" id="quick-photo" for="quick-image">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+              图片
+            </label>
+            <span class="quick-kind" id="quick-kind" data-kind="empty">等待输入</span>
+          </div>
           <span class="quick-count" id="quick-count">0 字</span>
         </div>
         <button class="quick-submit" id="quick-submit" type="submit">发到稍后读</button>
@@ -61,6 +68,8 @@
         const countEl = document.getElementById("quick-count");
         const recent = document.getElementById("quick-recent");
         const recentList = document.getElementById("quick-recent-list");
+        const imageInput = document.getElementById("quick-image");
+        const photoLabel = document.getElementById("quick-photo");
 
         const MAX_LEN = {{ max_chars }};
         const HISTORY_KEY = "infoflowhub:quick-sent:v1";
@@ -68,6 +77,7 @@
         // 避免把「链接 + 说明」误判成链接后丢掉说明。
         const LINK_RE = /^https?:\/\/\S+$/i;
         const KIND_TEXT = { empty: "等待输入", link: "识别为链接", text: "识别为文字" };
+        const KIND_LABEL = { link: "链接", text: "文字", image: "图片" };
 
         let sending = false;
         let statusTimer = 0;
@@ -133,13 +143,13 @@
 
             const badge = document.createElement("span");
             badge.className = "quick-recent-badge";
-            badge.textContent = entry.kind === "link" ? "链接" : "文字";
+            badge.textContent = KIND_LABEL[entry.kind] || "条目";
 
-            const body = entry.kind === "link" ? document.createElement("a") : document.createElement("span");
+            const body = entry.url ? document.createElement("a") : document.createElement("span");
             body.className = "quick-recent-text";
             body.textContent = entry.text;
-            if (entry.kind === "link") {
-              body.href = entry.text;
+            if (entry.url) {
+              body.href = entry.url;
               body.target = "_blank";
               body.rel = "noreferrer";
             } else {
@@ -197,7 +207,10 @@
             form.classList.add("is-sent");
             window.setTimeout(() => form.classList.remove("is-sent"), 1100);
             setStatus(data.duplicated ? "已在稍后读中（重复收录）" : "已收进稍后读", "ok");
-            writeHistory([{ kind, text: value, at: Date.now() }, ...readHistory()]);
+            writeHistory([
+              { kind, text: value, url: kind === "link" ? value : "", at: Date.now() },
+              ...readHistory(),
+            ]);
             renderHistory();
             input.focus();
           } catch (error) {
@@ -212,7 +225,48 @@
           }
         }
 
+        async function uploadImage(file) {
+          setStatus("正在发送图片…", "");
+          const payload = new FormData();
+          payload.append("image", file);
+          try {
+            const response = await fetch("/actions/laterhub/add-image", {
+              method: "POST",
+              credentials: "same-origin",
+              body: payload,
+            });
+            let data = {};
+            try {
+              data = await response.json();
+            } catch {
+              /* 非 JSON 错误体：交给失败分支 */
+            }
+            if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+
+            setStatus("已收进稍后读（图片）", "ok");
+            writeHistory([
+              { kind: "image", text: data.title, url: data.url, at: Date.now() },
+              ...readHistory(),
+            ]);
+            renderHistory();
+          } catch (error) {
+            const reason =
+              error instanceof TypeError ? "连不上服务器，检查 Tailscale 或服务状态" : error.message;
+            setStatus(`图片发送失败：${reason}。请重新选择。`, "error");
+          }
+        }
+
+        async function onImagesChosen() {
+          const files = Array.from(imageInput.files || []);
+          // 先清空 value：同一张图再次选择也要触发 change
+          imageInput.value = "";
+          for (const file of files) {
+            await uploadImage(file);
+          }
+        }
+
         input.addEventListener("input", updateMeta);
+        imageInput.addEventListener("change", onImagesChosen);
         form.addEventListener("submit", (event) => {
           event.preventDefault();
           send();
