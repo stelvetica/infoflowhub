@@ -38,6 +38,7 @@ class FakeLLM:
         self.subtitle_calls: list[dict] = []
         self.video_calls: list[dict] = []
         self.desc_calls: list[dict] = []
+        self.frame_calls: list[dict] = []
 
     def generate_from_subtitle(self, **kwargs) -> DigestContent:
         self.subtitle_calls.append(kwargs)
@@ -45,6 +46,10 @@ class FakeLLM:
 
     def generate_from_description(self, **kwargs) -> DigestContent:
         self.desc_calls.append(kwargs)
+        return self.digest
+
+    def generate_from_frames(self, **kwargs) -> DigestContent:
+        self.frame_calls.append(kwargs)
         return self.digest
 
     def generate_from_video_url(self, **kwargs) -> DigestContent:
@@ -200,6 +205,98 @@ def test_douyin_no_speech_without_author_prefix_keeps_title_as_caption(tmp_path,
     call = llm.desc_calls[0]
     assert call["owner"] is None
     assert call["description"] == "纯音乐剪辑"
+
+
+def _fake_frames(tmp_path: Path, count: int = 2) -> list[Path]:
+    frames = []
+    for index in range(count):
+        frame = tmp_path / f"frame_{index}.jpg"
+        frame.write_bytes(b"\xff\xd8\xff\xd9")
+        frames.append(frame)
+    return frames
+
+
+def _douyin_no_speech_case(tmp_path, monkeypatch, db_name: str, title: str = "芊：某教程 #tag"):
+    db = DBManager(tmp_path / db_name)
+    link_id = _add(db, DOUYIN, title=title)
+    _patch_tmp(monkeypatch, tmp_path)
+    monkeypatch.setattr(vd, "download_douyin_video", _fake_download(duration=13))
+    monkeypatch.setattr(
+        vd,
+        "_transcribe_with_videocaptioner",
+        lambda *a, **k: (_ for _ in ()).throw(vd.NoSpeechDetected("结果过短(0字)")),
+    )
+    return db, link_id, tmp_path / "reports"
+
+
+def test_douyin_no_speech_prefers_frames(tmp_path, monkeypatch):
+    db, link_id, reports_dir = _douyin_no_speech_case(tmp_path, monkeypatch, "d6.sqlite3")
+    monkeypatch.setattr(vd, "_extract_frames", lambda *a, **k: _fake_frames(tmp_path))
+
+    llm = FakeLLM()
+    outcome = vd.process_one(db, db.get_digest_row(link_id), llm=llm, reports_dir=reports_dir)
+
+    assert outcome.status == "succeeded"
+    assert llm.desc_calls == []  # 看图成功就不必退回文案
+    call = llm.frame_calls[0]
+    assert call["owner"] == "芊"
+    assert len(call["frames"]) == 2
+    assert call["description"].startswith("某教程")
+    report = (reports_dir / db.get_digest_row(link_id)["digest_path"]).read_text(encoding="utf-8")
+    assert "视频截图理解" in report
+    assert "截图做画面理解" in report
+
+
+def test_douyin_frames_failure_falls_back_to_caption(tmp_path, monkeypatch):
+    db, link_id, reports_dir = _douyin_no_speech_case(tmp_path, monkeypatch, "d7.sqlite3")
+    monkeypatch.setattr(vd, "_extract_frames", lambda *a, **k: _fake_frames(tmp_path))
+
+    llm = FakeLLM()
+    monkeypatch.setattr(
+        llm, "generate_from_frames", lambda **k: (_ for _ in ()).throw(RuntimeError("看图挂了"))
+    )
+    outcome = vd.process_one(db, db.get_digest_row(link_id), llm=llm, reports_dir=reports_dir)
+
+    assert outcome.status == "succeeded"  # 看图失败不连坐整条
+    assert llm.desc_calls
+    report = (reports_dir / db.get_digest_row(link_id)["digest_path"]).read_text(encoding="utf-8")
+    assert "抖音文案" in report
+
+
+def test_douyin_no_frames_falls_back_to_caption(tmp_path, monkeypatch):
+    db, link_id, reports_dir = _douyin_no_speech_case(tmp_path, monkeypatch, "d8.sqlite3")
+    monkeypatch.setattr(vd, "_extract_frames", lambda *a, **k: [])
+
+    llm = FakeLLM()
+    outcome = vd.process_one(db, db.get_digest_row(link_id), llm=llm, reports_dir=reports_dir)
+
+    assert outcome.status == "succeeded"
+    assert llm.frame_calls == []
+    assert llm.desc_calls
+
+
+def test_extract_frames_without_ffmpeg_returns_empty(monkeypatch, tmp_path):
+    monkeypatch.setattr(vd.shutil, "which", lambda name: None)
+    assert vd._extract_frames(tmp_path / "v.mp4", 13, tmp_path) == []
+
+
+def test_extract_frames_uses_midpoints_and_skips_empty_output(monkeypatch, tmp_path):
+    monkeypatch.setattr(vd.shutil, "which", lambda name: "ffmpeg")
+    seen: list[str] = []
+
+    def fake_run(cmd, **kwargs):
+        seen.append(cmd[cmd.index("-ss") + 1])
+        Path(cmd[-1]).write_bytes(b"jpeg")
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(vd.subprocess, "run", fake_run)
+    frames = vd._extract_frames(tmp_path / "v.mp4", 11, tmp_path, count=4)
+
+    assert len(frames) == 4
+    assert len(seen) == 4
+    timestamps = [float(value) for value in seen]
+    assert timestamps == sorted(timestamps)
+    assert all(0 < value < 11 for value in timestamps)
 
 
 def test_split_douyin_caption_guards():

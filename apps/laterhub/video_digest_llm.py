@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -84,6 +85,14 @@ MERGE_HINT = """
 
 VIDEO_URL_HINT = """
 补充要求：材料是视频本身（多模态输入），请直接观看视频内容后按要求总结。
+"""
+
+FRAMES_HINT = """
+补充要求：本次没有可用字幕或语音，材料是同一段视频的若干张均匀截图（含片头、字幕卡与画面文字）。
+- 只写截图中确实可见的内容；看不清或截断的写「截图中无法辨认」；
+- 截图之间是跳跃的，看不到连续动作，禁止据截图编造剧情、步骤或对话；
+- 截图中若有字幕条/文字卡，原意转述其信息，但不要臆测未出现的上下文；
+- 必须在 note 中注明「未获取到有效字幕/人声，本简报基于视频截图」。
 """
 
 
@@ -250,6 +259,32 @@ class VideoDigestLLM:
             {"type": "text", "text": prompt},
             {"type": "video_url", "video_url": {"url": video_url}},
         ]
+        return self._with_fallback(system, content)
+
+    def generate_from_frames(
+        self,
+        *,
+        title: str,
+        owner: str | None,
+        frames: list[bytes],
+        description: str = "",
+        image_mime: str = "image/jpeg",
+    ) -> DigestContent:
+        """无人声时看图：帧以 base64 data URL 内联（抖音画面不能对外发公网链接）。"""
+        if not frames:
+            raise ValueError("没有可用截图")
+        desc_block = _description_block(description)
+        system = SYSTEM_PROMPT + FRAMES_HINT + (DESCRIPTION_HINT if desc_block else "")
+        prompt = (
+            f"视频标题：{title}\n"
+            f"作者：{owner or '未知'}\n\n"
+            f"{desc_block}"
+            f"下面是按时间均匀抽取的 {len(frames)} 张视频截图，请严格按要求只返回 JSON 简报对象。"
+        )
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for raw in frames:
+            encoded = base64.b64encode(raw).decode()
+            content.append({"type": "image_url", "image_url": {"url": f"data:{image_mime};base64,{encoded}"}})
         return self._with_fallback(system, content)
 
     def _with_fallback(self, system: str, user_content: Any) -> DigestContent:
@@ -425,6 +460,7 @@ _SUBTITLE_SOURCE_LABELS = {
     "videocaptioner_bijian": "语音转写",
     "bilibili_desc": "B站简介",
     "douyin_desc": "抖音文案",
+    "douyin_frames": "视频截图理解",
     "glm_video": "AI 视频理解",
 }
 

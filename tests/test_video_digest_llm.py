@@ -262,6 +262,35 @@ def test_video_url_uses_multimodal_content_array(monkeypatch):
     assert result.summary == "一句话总结"
 
 
+# ---------- generate_from_frames ----------
+
+
+def test_frames_are_inlined_as_base64_image_parts(monkeypatch):
+    calls, payloads = _patch_post(monkeypatch, {PRIMARY.model: _ok(_digest_json())})
+
+    result = VideoDigestLLM(PRIMARY).generate_from_frames(
+        title="标题", owner="作者", frames=[b"\xff\xd8one", b"\xff\xd8two"], description="作品文案"
+    )
+
+    content = payloads[0]["messages"][1]["content"]
+    assert isinstance(content, list)
+    assert content[0]["type"] == "text"
+    assert "2 张视频截图" in content[0]["text"]
+    assert "作品文案" in content[0]["text"]  # 文案作为补充材料
+    assert [part["type"] for part in content[1:]] == ["image_url", "image_url"]
+    for part in content[1:]:
+        assert part["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    assert calls == [PRIMARY.model]
+    assert result.summary == "一句话总结"
+
+
+def test_frames_empty_raises_before_calling_llm(monkeypatch):
+    calls, _ = _patch_post(monkeypatch, {PRIMARY.model: _ok(_digest_json())})
+    with pytest.raises(ValueError):
+        VideoDigestLLM(PRIMARY).generate_from_frames(title="标题", owner=None, frames=[])
+    assert calls == []
+
+
 # ---------- build_digest_filename ----------
 
 
