@@ -60,10 +60,9 @@ def _write_state(runtime: Path, flow: dict | None) -> None:
 def test_flow_products_uses_mtime_baseline(env: dict[str, Path]):
     _write_report(env["reports"], NEWS_MD, STARTED_TS - 60)  # 流程开始前生成，不算本次产物
     _write_report(env["reports"], ANNOUNCE_MD, STARTED_TS + 60)  # 流程内生成，算
-    _write_report(env["reports"], TODAY_NEWS_MD, STARTED_TS + 1)
+    _write_report(env["reports"], TODAY_NEWS_MD, STARTED_TS + 1)  # 中间产物：落盘但不算产物
     names = [item["name"] for item in auto_runner._flow_products(STARTED_AT)]
-    # 顺序跟随 REPORT_PATTERNS（公告清单在今日新闻之前）
-    assert names == [ANNOUNCE_MD, TODAY_NEWS_MD]
+    assert names == [ANNOUNCE_MD]
     assert auto_runner._flow_products("非法时间") == []
 
 
@@ -86,12 +85,12 @@ def test_news_scope_flow_returns_today_products(env: dict[str, Path], temp_db: P
     _write_report(env["reports"], today_news, STARTED_TS - 3600)
     _write_report(env["reports"], today_announce, STARTED_TS - 3600)
     _write_report(env["reports"], today_announce_png, STARTED_TS - 3600)
-    _write_report(env["reports"], TODAY_NEWS_MD, now_ts)  # 文件名无日期，按 mtime 判今天
+    _write_report(env["reports"], TODAY_NEWS_MD, now_ts)  # 中间产物：今天落盘也不进面板
     _write_report(env["reports"], NEWS_MD, STARTED_TS + 60)  # 旧日期的产物即便在流程内也不进本次
     _write_state(env["runtime"], {"flow_id": "x", "status": "success", "products": [{"name": NEWS_MD, "kind": "新闻影响分析", "is_image": False}]})
     view = views.get_news_view({"news_scope": "flow"})
     assert view["scope"] == "flow"
-    assert {row["name"] for row in view["rows"]} == {today_news, today_announce, today_announce_png, TODAY_NEWS_MD}
+    assert {row["name"] for row in view["rows"]} == {today_news, today_announce, today_announce_png}
     # 本次不分批：有几条返回几条，避免第 6 条在无滚动条时永远看不到
     assert view["next_cursor"] == ""
     assert len(view["rows"]) == view["filtered_total"]
@@ -107,11 +106,11 @@ def test_news_scope_defaults_to_flow(env: dict[str, Path], temp_db: Path):
 
 
 def test_news_scope_all_returns_whole_whitelist(env: dict[str, Path], temp_db: Path):
-    for name in (NEWS_MD, ANNOUNCE_MD, ANNOUNCE_PNG, TODAY_NEWS_MD):
+    for name in (NEWS_MD, ANNOUNCE_MD, ANNOUNCE_PNG):
         _write_report(env["reports"], name, STARTED_TS - 600)
     view = views.get_news_view({"news_scope": "all"})
     assert view["scope"] == "all"
-    assert view["filtered_total"] == 4
+    assert view["filtered_total"] == 3
 
 
 def test_news_scope_flow_ignores_old_dated_products(env: dict[str, Path], temp_db: Path):
