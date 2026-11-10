@@ -50,8 +50,9 @@ class FakeRequestsSession:
 
 
 class FakePage:
-    def __init__(self, value) -> None:
+    def __init__(self, value, html: str = "") -> None:
         self._value = value
+        self._html = html
         self.goto_calls: list[str] = []
         self.waited: list[int] = []
 
@@ -63,6 +64,10 @@ class FakePage:
 
     def evaluate(self, js):
         return self._value
+
+    def content(self) -> str:
+        # resource timing 为空时会退回 HTML 取直链（见 _media_urls_from_html）
+        return self._html
 
 
 class FakeBskSession:
