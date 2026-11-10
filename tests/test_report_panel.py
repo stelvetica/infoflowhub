@@ -22,7 +22,7 @@ from web.services.utils import read_entry_key, read_link_key, split_read_keys, s
 REPORT_MD = "新闻影响分析_2026-09-20.md"
 ANNOUNCE_MD = "公告清单_2026-09-20.md"
 ANNOUNCE_PNG = "公告清单_2026-09-20.png"
-# 流程中间产物：本次需求有意纳入白名单（用户要求流程中间产物也要能看到）
+# 流程中间产物（模型输入，不是给人看的结论）：今天仍要落盘，但不得进面板
 TODAY_NEWS_MD = "今日新闻.md"
 NOISE_JSON = "used_news.json"
 SAMPLE_MD = "# 标题\n\n| 项目 | 值 |\n| --- | --- |\n| A | 1 |\n"
@@ -87,10 +87,10 @@ def _write_flow(runtime: Path, flow: dict | None) -> None:
 def test_news_view_only_lists_whitelisted_reports(reports_dir: Path, temp_db: Path):
     # 用 all 范围断言白名单全集（flow 范围是最近一次流程的子集，另见 test_news_flow_snapshot.py）
     view = views.get_news_view({"news_scope": "all"})
-    assert view["filtered_total"] == 4
-    assert {row["kind"] for row in view["rows"]} == {"新闻影响分析", "公告清单", "公告图片", "今日热点"}
-    assert {row["name"] for row in view["rows"]} == {REPORT_MD, ANNOUNCE_MD, ANNOUNCE_PNG, TODAY_NEWS_MD}
-    assert {row["read_key"] for row in view["rows"]} == {f"report:{name}" for name in (REPORT_MD, ANNOUNCE_MD, ANNOUNCE_PNG, TODAY_NEWS_MD)}
+    assert view["filtered_total"] == 3
+    assert {row["kind"] for row in view["rows"]} == {"新闻影响分析", "公告清单", "公告图片"}
+    assert {row["name"] for row in view["rows"]} == {REPORT_MD, ANNOUNCE_MD, ANNOUNCE_PNG}
+    assert {row["read_key"] for row in view["rows"]} == {f"report:{name}" for name in (REPORT_MD, ANNOUNCE_MD, ANNOUNCE_PNG)}
     assert all(row["link"].startswith("/reports/view/") for row in view["rows"])
 
 
@@ -340,7 +340,7 @@ def test_news_scope_flow_lists_only_today_products(reports_dir: Path, temp_db: P
     # 同一份产物目录，all 范围仍返回整个白名单
     all_view = views.get_news_view({"news_scope": "all"})
     assert all_view["scope"] == "all"
-    assert all_view["filtered_total"] == 5
+    assert all_view["filtered_total"] == 4
 
 
 def test_news_scope_flow_empty_for_old_dated_reports(reports_dir: Path, temp_db: Path):
@@ -405,7 +405,8 @@ def test_scope_is_not_persisted_between_page_loads(client: TestClient, reports_d
 
     all_resp = client.get("/fragments/news?news_scope=all")
     assert 'data-news-scope="all"' in all_resp.text
-    assert all(name in all_resp.text for name in (REPORT_MD, ANNOUNCE_MD, ANNOUNCE_PNG, TODAY_NEWS_MD))
+    assert all(name in all_resp.text for name in (REPORT_MD, ANNOUNCE_MD, ANNOUNCE_PNG))
+    assert TODAY_NEWS_MD not in all_resp.text  # 中间产物不进面板
     # 范围链接/排序链接都只带一次 news_scope，重复取值会依赖解析顺序
     assert "news_scope=all&amp;news_scope" not in all_resp.text
 
