@@ -38,6 +38,10 @@ TMP_DIR = DATA_DIR / "tmp" / "video_digest"
 # 长字幕不在编排层截断：video_digest_llm 按行分批整理后再合并（见 CHUNK_MAX_CHARS）。
 ASR_TIMEOUT_SECONDS = 1800
 DOUYIN_BATCH_GAP_SECONDS = 15
+# 无人声时的画面理解：均匀抽帧数。小红书式竖屏字幕一般在画面上，4 张足够覆盖片头与主体。
+FRAME_COUNT = 4
+FRAME_MAX_WIDTH = 512
+FRAME_EXTRACT_TIMEOUT_SECONDS = 120
 
 DOUYIN_VIDEO_PREFIX = "douyin.com/video/"
 
@@ -145,6 +149,39 @@ def _split_douyin_caption(title: str) -> tuple[str | None, str]:
     return None, title
 
 
+def _extract_frames(video_path: Path, duration_seconds: int | None, workdir: Path, *, count: int = FRAME_COUNT) -> list[Path]:
+    """按时间均匀抽 count 张截图（无人声时给 LLM 看图）。
+
+    取每段中点而不是首尾：片头/片尾常是黑场或片尾卡，中点更能代表内容。
+    时长未知或 ffmpeg 缺失时返回空表，由调用方退回文案通道。
+    """
+    exe = shutil.which("ffmpeg")
+    if not exe or not duration_seconds or duration_seconds <= 0:
+        return []
+    frames: list[Path] = []
+    for index in range(count):
+        timestamp = duration_seconds * (index + 0.5) / count
+        target = workdir / f"frame_{index}.jpg"
+        try:
+            subprocess.run(
+                [
+                    exe, "-y", "-v", "error",
+                    "-ss", f"{timestamp:.2f}",
+                    "-i", str(video_path),
+                    "-frames:v", "1",
+                    "-vf", f"scale={FRAME_MAX_WIDTH}:-2",
+                    str(target),
+                ],
+                capture_output=True,
+                timeout=FRAME_EXTRACT_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if target.exists() and target.stat().st_size > 0:
+            frames.append(target)
+    return frames
+
+
 def _finalize(
     db: DBManager,
     link_id: int,
@@ -203,20 +240,40 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
                     _transcribe_with_videocaptioner(video_path, workdir, duration_seconds=duration_seconds)
                 )
             except NoSpeechDetected as exc:
-                # 纯音乐/画面剪辑：抖音没有独立简介字段，作品文案就是标题（「作者：文案 #话题」）
-                step = "生成简报"
+                # 无人声：先看画面（这类剪辑常有字幕卡/文字），看图失败再退回作品文案
                 owner, caption = _split_douyin_caption(title)
-                digest = llm.generate_from_description(title=title, owner=owner, description=caption)
+                digest = None
+                frames = _extract_frames(video_path, duration_seconds, workdir)
+                if frames:
+                    step = "画面理解"
+                    try:
+                        digest = llm.generate_from_frames(
+                            title=title,
+                            owner=owner,
+                            frames=[frame.read_bytes() for frame in frames],
+                            description=caption,
+                        )
+                        subtitle_source = "douyin_frames"
+                        process_note = f"整段音频未识别到人声（{exc}），改用 {len(frames)} 张截图做画面理解。"
+                    except Exception as frame_exc:  # noqa: BLE001
+                        # 看图失败不该让整条失败：降级到作品文案，并把原因留在处理说明里
+                        errors.append(f"画面理解失败: {frame_exc}")
+                        digest = None
+                if digest is None:
+                    step = "生成简报"
+                    subtitle_source = "douyin_desc"
+                    process_note = f"整段音频未识别到人声（{exc}），简报依据作品文案生成。"
+                    digest = llm.generate_from_description(title=title, owner=owner, description=caption)
                 path = _finalize(
                     db,
                     link_id,
                     row,
                     digest,
-                    subtitle_source="douyin_desc",
+                    subtitle_source=subtitle_source,
                     reports_dir=reports_dir,
                     owner=owner,
                     duration_seconds=duration_seconds,
-                    process_note=f"整段音频未识别到人声（{exc}），简报依据作品文案生成。",
+                    process_note=process_note,
                     source_text=caption,
                 )
                 return DigestOutcome(link_id, url, title, "succeeded", str(path))
