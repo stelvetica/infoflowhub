@@ -16,6 +16,9 @@ dependencies = [
     "playwright>=1.40,<2",
     "openpyxl>=3.1,<4",
     "xlrd>=2,<3",
+    # 稍后读图片：HEIC（手机照片）与 TIFF 转 JPEG 需要 Pillow + HEIF 解码器
+    "pillow>=11,<14",
+    "pillow-heif>=1,<2",
 ]
 
 [project.optional-dependencies]
