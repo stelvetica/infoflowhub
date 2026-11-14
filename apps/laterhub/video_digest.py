@@ -303,7 +303,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
                     process_note="使用作品自带字幕（跳过语音转写）。",
                     source_text=subtitle_text,
                 )
-                return DigestOutcome(link_id, url, title, "succeeded", str(path))
+                return DigestOutcome(link_id, url, title, "succeeded", f"{path}（自带字幕）")
             step = "语音转写"
             try:
                 subtitle_text = _srt_to_text(
