@@ -495,3 +495,22 @@ def test_subtitle_to_text_supports_json_srt_vtt():
     assert vd._subtitle_to_text('{"utterances":[{"text":"甲"},{"content":"乙"}]}') == "甲\n乙"
     assert vd._subtitle_to_text("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n字幕行") == "字幕行"
     assert vd._subtitle_to_text("1\n00:00:01,000 --> 00:00:02,000\n<b>加粗行</b>") == "加粗行"
+
+
+# ---------- 抖音批次节奏 ----------
+
+
+def test_douyin_batch_gap_escalates_every_ten_and_caps(monkeypatch):
+    monkeypatch.setattr(vd, "DOUYIN_BATCH_GAP_JITTER_SECONDS", 0)
+    assert vd._douyin_batch_gap_seconds(0) == 10
+    assert vd._douyin_batch_gap_seconds(9) == 10
+    assert vd._douyin_batch_gap_seconds(10) == 18
+    assert vd._douyin_batch_gap_seconds(30) == 34
+    assert vd._douyin_batch_gap_seconds(10_000) == 40  # 撞上限，不会无限变慢
+
+
+def test_douyin_batch_gap_has_random_jitter(monkeypatch):
+    monkeypatch.setattr(vd, "DOUYIN_BATCH_GAP_JITTER_SECONDS", 12)
+    gaps = {vd._douyin_batch_gap_seconds(0) for _ in range(50)}
+    assert len(gaps) > 1  # 每次都带随机量
+    assert all(10 <= gap <= 22 for gap in gaps)

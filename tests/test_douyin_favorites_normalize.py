@@ -102,3 +102,19 @@ def test_list_digest_candidates_filters_by_tag(tmp_path):
 
     assert [int(r["id"]) for r in rows] == [ai]
     assert other not in [int(r["id"]) for r in rows]
+
+
+def test_list_digest_candidates_multi_tag_is_or(tmp_path):
+    db = DBManager(tmp_path / "t2.sqlite3")
+    ai_url = "https://www.douyin.com/video/7412345678901234571"
+    fit_url = "https://www.douyin.com/video/7412345678901234572"
+    other_url = "https://www.douyin.com/video/7412345678901234573"
+    for url, title in ((ai_url, "ai"), (fit_url, "fit"), (other_url, "other")):
+        db.upsert_link(LinkRecord(url=url, title=title, source="douyin_favorite"))
+    db.update_tags(ai_url, "技术_AI/工具/开发")
+    db.update_tags(fit_url, "生活_健身")
+    db.update_tags(other_url, "心理_职场")
+
+    rows = db.list_digest_candidates(limit=10, tag="技术_AI/工具/开发,生活_健身")
+
+    assert {r["url"] for r in rows} == {ai_url, fit_url}

@@ -401,10 +401,12 @@ class DBManager:
             sql += " AND source = ?"
             params.append(source)
         if tag:
-            # tags 是半角逗号拼接的白名单标签串；两头补逗号做整段匹配，避免「心理_职场」
-            # 命中「心理_职场/xxx」这类子串误伤。
-            sql += " AND instr(',' || COALESCE(tags, '') || ',', ?) > 0"
-            params.append(f",{tag},")
+            # tag 可传多个（半角逗号分隔），语义是「命中任一」。tags 列是半角逗号拼接的
+            # 白名单标签串；两头补逗号做整段匹配，避免「心理_职场」命中「心理_职场/xxx」。
+            names = [name.strip() for name in tag.split(",") if name.strip()]
+            clause = " OR ".join(["instr(',' || COALESCE(tags, '') || ',', ?) > 0"] * len(names))
+            sql += f" AND ({clause})"
+            params.extend(f",{name}," for name in names)
         sql += " ORDER BY id DESC LIMIT ?"
         params.append(limit)
         with self._connect() as conn:
