@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import random
 import re
 import shutil
@@ -152,95 +151,6 @@ def _asr_min_chars(duration_seconds: int | None) -> int:
     return 3
 
 
-SMARTSUB_TIMEOUT_SECONDS = 900
-SMARTSUB_MODEL = "paraformer-zh"  # SmartSub 内置 FunASR 中文模型（sherpa-onnx，纯 CPU）
-
-
-def _smartsub_cli() -> tuple[str, str] | None:
-    """SmartSub.exe 与 automation/cli.cjs 的路径；未安装返回 None。
-
-    SmartSub 的 CLI 由 Electron 以 node 模式跑（它自带的 smartsub.cmd 就是这么调的），
-    这不依赖系统 Node/Python，模型与引擎都在应用内。
-    """
-    root = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "SmartSub"
-    exe = root / "SmartSub.exe"
-    cli = root / "resources" / "automation" / "cli.cjs"
-    return (str(exe), str(cli)) if exe.is_file() and cli.is_file() else None
-
-
-def _run_smartsub(args: list[str], *, timeout: float = 60.0) -> dict:
-    """跑一条 SmartSub CLI 命令，返回其 --json 输出（失败抛 RuntimeError）。"""
-    cli = _smartsub_cli()
-    if cli is None:
-        raise RuntimeError("SmartSub 未安装")
-    exe, script = cli
-    result = subprocess.run(
-        [exe, script, *args, "--json"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=timeout,
-        env={**os.environ, "ELECTRON_RUN_AS_NODE": "1"},
-    )
-    for line in (result.stdout or "").splitlines():
-        line = line.strip()
-        if line.startswith("{"):
-            try:
-                return json.loads(line)
-            except json.JSONDecodeError:
-                continue
-    tail = (result.stderr or result.stdout or "").strip().splitlines()
-    raise RuntimeError(f"SmartSub CLI 未返回 JSON(exit={result.returncode}): {tail[-1] if tail else '无输出'}")
-
-
-def _transcribe_with_smartsub(video_path: Path, workdir: Path, *, duration_seconds: int | None = None) -> Path:
-    """用 SmartSub 本地 FunASR 转写，返回 SRT 路径（不联网、无频次限制）。
-
-    实测 250 秒音频约 19 秒转完（约 13 倍实时），适合几百条批量；失败抛 RuntimeError，
-    由上层回退到 videocaptioner 云引擎。
-    """
-    out_dir = workdir / "smartsub"
-    payload = _run_smartsub(
-        [
-            "transcribe",
-            "--files",
-            json.dumps([str(video_path.resolve()).replace("\\", "/")]),
-            "--engine",
-            "funasr",
-            "--model",
-            SMARTSUB_MODEL,
-            "--sourceLanguage",
-            "zh",
-            "--outputDir",
-            str(out_dir.resolve()).replace("\\", "/"),
-        ],
-        timeout=120.0,
-    )
-    job_id = str(payload.get("id") or "")
-    if not job_id:
-        raise RuntimeError(f"SmartSub 未返回任务 id: {str(payload)[:160]}")
-    deadline = time.time() + SMARTSUB_TIMEOUT_SECONDS
-    status: dict = {}
-    while time.time() < deadline:
-        status = _run_smartsub(["tasks", "get", "--id", job_id], timeout=60.0)
-        state = str(status.get("status") or "")
-        if state == "completed":
-            break
-        if state in ("failed", "cancelled"):
-            raise RuntimeError(f"SmartSub 转写失败: {status.get('error') or state}")
-        time.sleep(2)
-    else:
-        raise RuntimeError(f"SmartSub 转写超时（>{SMARTSUB_TIMEOUT_SECONDS}s）")
-    srt_path = next(
-        (str(item.get("path") or "") for item in (status.get("artifacts") or []) if item.get("kind") == "srt"),
-        "",
-    )
-    if not srt_path or not Path(srt_path).is_file():
-        raise RuntimeError("SmartSub 未产出 SRT 文件")
-    return Path(srt_path)
-
-
 def _transcribe_with_videocaptioner(
     video_path: Path, workdir: Path, *, duration_seconds: int | None = None
 ) -> Path:
@@ -282,29 +192,6 @@ def _transcribe_with_videocaptioner(
     # 两个引擎都跑通、只是结果是空/过短 → 判定「本来就没有人声」，可换文案兜底；
     # 有引擎报错(exit≠0) 说明工具链坏了，属于真失败，不能拿文案顶替字幕。
     raise (NoSpeechDetected(message) if only_short_results else RuntimeError(message))
-
-
-def _transcribe_media(video_path: Path, workdir: Path, *, duration_seconds: int | None = None) -> Path:
-    """转写总入口：必剪/剪映（云）优先，失败或限流时才用 SmartSub 本地兜底。
-
-    云引擎的专有名词与数字明显更准（同一段音频实测：必剪「李笑来/自我对话/精致碳水」
-    vs 本地 paraformer「李校来/自我兑换/精神碳水」），所以质量优先、不让本地抢主路；
-    本地只负责「云挂了这条也别丢」——批量时 429 很常见。
-    两个引擎都没内容才判无人声（NoSpeechDetected 原样上抛）。
-    """
-    min_chars = _asr_min_chars(duration_seconds)
-    try:
-        return _transcribe_with_videocaptioner(video_path, workdir, duration_seconds=duration_seconds)
-    except (NoSpeechDetected, RuntimeError) as cloud_error:
-        if _smartsub_cli() is None:
-            raise
-        try:
-            srt_path = _transcribe_with_smartsub(video_path, workdir, duration_seconds=duration_seconds)
-        except Exception as exc:  # noqa: BLE001
-            raise type(cloud_error)(f"{cloud_error}；本地兜底也失败: {exc}") from cloud_error
-        if len(_srt_to_text(srt_path)) >= min_chars:
-            return srt_path
-        raise type(cloud_error)(f"{cloud_error}；本地兜底结果过短") from cloud_error
 
 
 def _split_douyin_caption(title: str) -> tuple[str | None, str]:
@@ -438,7 +325,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
             step = "语音转写"
             try:
                 subtitle_text = _srt_to_text(
-                    _transcribe_media(video_path, workdir, duration_seconds=duration_seconds)
+                    _transcribe_with_videocaptioner(video_path, workdir, duration_seconds=duration_seconds)
                 )
             except NoSpeechDetected as exc:
                 # 无人声：先看画面（这类剪辑常有字幕卡/文字），看图失败再退回作品文案
@@ -549,7 +436,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
             else:
                 work_notes.append("已下载视频")
                 try:
-                    srt_path = _transcribe_media(video_path, workdir, duration_seconds=meta.duration_seconds)
+                    srt_path = _transcribe_with_videocaptioner(video_path, workdir, duration_seconds=meta.duration_seconds)
                     subtitle_text = _srt_to_text(srt_path)
                     subtitle_source = "videocaptioner_bijian"
                 except Exception as exc:  # noqa: BLE001
