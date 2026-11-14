@@ -58,3 +58,57 @@ def test_bgm_only_result_counts_as_failure(tmp_path, monkeypatch):
     assert calls == ["bijian", "jianying"]
     message = str(excinfo.value)
     assert "过短" in message and "bijian" in message and "jianying" in message
+
+
+
+# ---------- 云优先 / 本地兜底 ----------
+
+def _raise_no_speech(*args, **kwargs):
+    raise vd.NoSpeechDetected("两个云引擎都没有有效人声")
+
+
+def _write_srt(tmp_path, name: str, text: str):
+    path = tmp_path / name
+    path.write_text("1\n00:00:00,000 --> 00:00:02,000\n" + text + "\n", encoding="utf-8")
+    return path
+
+
+def test_transcribe_media_prefers_cloud_and_skips_local(tmp_path, monkeypatch):
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    cloud = _write_srt(tmp_path, "cloud.srt", "云引擎转写正文")
+    monkeypatch.setattr(vd, "_smartsub_cli", lambda: ("exe", "cli"))
+    monkeypatch.setattr(vd, "_transcribe_with_videocaptioner", lambda *a, **k: cloud)
+    monkeypatch.setattr(vd, "_transcribe_with_smartsub", lambda *a, **k: (_ for _ in ()).throw(AssertionError("不该调本地")))
+
+    assert vd._transcribe_media(video, tmp_path, duration_seconds=10) == cloud
+
+
+def test_transcribe_media_falls_back_to_local_when_cloud_raises(tmp_path, monkeypatch):
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    local = _write_srt(tmp_path, "local.srt", "本地兜底转写正文")
+    monkeypatch.setattr(vd, "_smartsub_cli", lambda: ("exe", "cli"))
+    monkeypatch.setattr(
+        vd, "_transcribe_with_videocaptioner",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("jianying: exit=5 429 Too Many Requests")),
+    )
+    monkeypatch.setattr(vd, "_transcribe_with_smartsub", lambda *a, **k: local)
+
+    assert vd._transcribe_media(video, tmp_path, duration_seconds=10) == local
+
+
+def test_transcribe_media_reraises_cloud_error_when_local_too_short(tmp_path, monkeypatch):
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    local = _write_srt(tmp_path, "local.srt", "嗯")
+    monkeypatch.setattr(vd, "_smartsub_cli", lambda: ("exe", "cli"))
+    monkeypatch.setattr(vd, "_transcribe_with_videocaptioner", _raise_no_speech)
+    monkeypatch.setattr(vd, "_transcribe_with_smartsub", lambda *a, **k: local)
+
+    try:
+        vd._transcribe_media(video, tmp_path, duration_seconds=60)
+    except vd.NoSpeechDetected as exc:
+        assert "过短" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("应当抛 NoSpeechDetected")

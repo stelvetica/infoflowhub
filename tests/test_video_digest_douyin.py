@@ -108,7 +108,7 @@ def test_douyin_full_chain_succeeds_and_cleans_workdir(tmp_path, monkeypatch):
     workdir = tmp / str(link_id)
 
     monkeypatch.setattr(vd, "download_douyin_video", _fake_download(duration=65))
-    monkeypatch.setattr(vd, "_transcribe_with_videocaptioner", _fake_transcribe("抖音字幕正文"))
+    monkeypatch.setattr(vd, "_transcribe_media", _fake_transcribe("抖音字幕正文"))
 
     llm = FakeLLM()
     assert db.claim_digest(link_id) is True
@@ -156,7 +156,7 @@ def test_douyin_transcribe_error_marks_failed(tmp_path, monkeypatch):
     _patch_tmp(monkeypatch, tmp_path)
     monkeypatch.setattr(vd, "download_douyin_video", _fake_download())
     monkeypatch.setattr(
-        vd, "_transcribe_with_videocaptioner", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("bijian boom"))
+        vd, "_transcribe_media", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("bijian boom"))
     )
 
     outcome = vd.process_one(db, db.get_digest_row(link_id), llm=FakeLLM(), reports_dir=tmp_path / "reports")
@@ -178,7 +178,7 @@ def test_douyin_no_speech_falls_back_to_caption(tmp_path, monkeypatch):
     monkeypatch.setattr(vd, "download_douyin_video", _fake_download(duration=13))
     monkeypatch.setattr(
         vd,
-        "_transcribe_with_videocaptioner",
+        "_transcribe_media",
         lambda *a, **k: (_ for _ in ()).throw(vd.NoSpeechDetected("结果过短(0字)")),
     )
 
@@ -206,7 +206,7 @@ def test_douyin_no_speech_without_author_prefix_keeps_title_as_caption(tmp_path,
     monkeypatch.setattr(vd, "download_douyin_video", _fake_download(duration=10))
     monkeypatch.setattr(
         vd,
-        "_transcribe_with_videocaptioner",
+        "_transcribe_media",
         lambda *a, **k: (_ for _ in ()).throw(vd.NoSpeechDetected("结果过短(0字)")),
     )
 
@@ -234,7 +234,7 @@ def _douyin_no_speech_case(tmp_path, monkeypatch, db_name: str, title: str = "�
     monkeypatch.setattr(vd, "download_douyin_video", _fake_download(duration=13))
     monkeypatch.setattr(
         vd,
-        "_transcribe_with_videocaptioner",
+        "_transcribe_media",
         lambda *a, **k: (_ for _ in ()).throw(vd.NoSpeechDetected("结果过短(0字)")),
     )
     return db, link_id, tmp_path / "reports"
@@ -350,7 +350,7 @@ def test_douyin_long_subtitle_is_passed_whole_to_llm(tmp_path, monkeypatch):
     _patch_tmp(monkeypatch, tmp_path)
     long_text = "字" * 30000
     monkeypatch.setattr(vd, "download_douyin_video", _fake_download())
-    monkeypatch.setattr(vd, "_transcribe_with_videocaptioner", _fake_transcribe(long_text))
+    monkeypatch.setattr(vd, "_transcribe_media", _fake_transcribe(long_text))
 
     llm = FakeLLM()
     outcome = vd.process_one(db, db.get_digest_row(link_id), llm=llm, reports_dir=tmp_path / "reports")
@@ -457,7 +457,7 @@ def test_douyin_subtitle_first_skips_asr(tmp_path, monkeypatch):
     )
 
     called = []
-    monkeypatch.setattr(vd, "_transcribe_with_videocaptioner", lambda *a, **k: called.append(1))
+    monkeypatch.setattr(vd, "_transcribe_media", lambda *a, **k: called.append(1))
 
     llm = FakeLLM()
     assert db.claim_digest(link_id) is True
@@ -481,7 +481,7 @@ def test_douyin_short_subtitle_falls_back_to_asr(tmp_path, monkeypatch):
         _fake_download(duration=120, subtitles=["https://v26-web.douyinvod.com/sub/short.srt"]),
     )
     monkeypatch.setattr(vd, "fetch_douyin_subtitle_text", lambda url, **kw: "只有一句")
-    monkeypatch.setattr(vd, "_transcribe_with_videocaptioner", _fake_transcribe("转写正文"))
+    monkeypatch.setattr(vd, "_transcribe_media", _fake_transcribe("转写正文"))
 
     llm = FakeLLM()
     assert db.claim_digest(link_id) is True
