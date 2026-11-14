@@ -12,7 +12,7 @@ import types
 from pathlib import Path
 
 try:  # 真 connector 若已就绪则用之；否则注入 stub 保证导入成功
-    import connectors.douyin.video  # noqa: F401
+    from connectors.douyin.video import DouyinVideoMedia  # noqa: F401
 except Exception:  # noqa: BLE001
     _stub = types.ModuleType("connectors.douyin.video")
 
@@ -20,6 +20,11 @@ except Exception:  # noqa: BLE001
         raise RuntimeError("stub connector")
 
     _stub.download_douyin_video = _stub_download
+
+    class DouyinVideoMedia:  # pragma: no cover - 仅在 connector 缺失时占位
+        def __init__(self, **kw):
+            self.__dict__.update(kw)
+
     sys.modules["connectors.douyin.video"] = _stub
 
 from apps.laterhub import tagger, video_digest as vd
@@ -67,11 +72,17 @@ def _patch_tmp(monkeypatch, tmp_path: Path) -> Path:
     return tmp
 
 
-def _fake_download(duration: int = 65):
-    def fake(url, *, dest_dir, session=None, max_bytes=2**31, timeout=1800.0):
+def _fake_download(duration: int = 65, subtitles: list[str] | None = None):
+    def fake(url, *, dest_dir, session=None, max_bytes=2**31, timeout=1800.0, resolved=None):
         dest_dir.mkdir(parents=True, exist_ok=True)
         video = dest_dir / "video.mp4"
         video.write_bytes(b"fake-mp4")
+        if resolved is not None:
+            resolved["media"] = DouyinVideoMedia(
+                video_url="https://v3-web.douyinvod.com/x/",
+                audio_url=None,
+                subtitle_urls=list(subtitles or []),
+            )
         return video, duration
 
     return fake
@@ -423,3 +434,64 @@ def test_parse_args_retry_unsupported():
     assert vd.parse_args([]).retry_unsupported is False
     assert vd.parse_args(["--retry-unsupported"]).retry_unsupported is True
     assert vd.parse_args(["--retry-unsupported", "--retry-failed"]).retry_failed is True
+
+
+# ---------- 自带字幕优先 ----------
+
+
+def test_douyin_subtitle_first_skips_asr(tmp_path, monkeypatch):
+    db = DBManager(tmp_path / "s.sqlite3")
+    link_id = _add(db, DOUYIN)
+    _patch_tmp(monkeypatch, tmp_path)
+    reports_dir = tmp_path / "reports"
+
+    subtitle_url = "https://v26-web.douyinvod.com/sub/abc.srt"
+    monkeypatch.setattr(vd, "download_douyin_video", _fake_download(duration=60, subtitles=[subtitle_url]))
+    monkeypatch.setattr(
+        vd,
+        "fetch_douyin_subtitle_text",
+        lambda url, **kw: (
+            "1\n00:00:00,000 --> 00:00:02,000\n自带字幕第一句，讲的是检索增强的完整链路\n"
+            "2\n00:00:02,000 --> 00:00:04,000\n自带字幕第二句，讲的是分块与召回评估\n"
+        ),
+    )
+
+    called = []
+    monkeypatch.setattr(vd, "_transcribe_with_videocaptioner", lambda *a, **k: called.append(1))
+
+    llm = FakeLLM()
+    assert db.claim_digest(link_id) is True
+    outcome = vd.process_one(db, db.get_digest_row(link_id), llm=llm, reports_dir=reports_dir)
+
+    assert outcome.status == "succeeded"
+    assert called == []  # 有字幕就不该再跑语音转写
+    assert llm.subtitle_calls and "自带字幕第一句" in llm.subtitle_calls[0]["subtitle_text"]
+    report = next((reports_dir / vd.DIGEST_SUBDIR).glob("*.md")).read_text(encoding="utf-8")
+    assert "自带字幕" in report
+
+
+def test_douyin_short_subtitle_falls_back_to_asr(tmp_path, monkeypatch):
+    db = DBManager(tmp_path / "s2.sqlite3")
+    link_id = _add(db, DOUYIN)
+    _patch_tmp(monkeypatch, tmp_path)
+    reports_dir = tmp_path / "reports"
+
+    monkeypatch.setattr(
+        vd, "download_douyin_video",
+        _fake_download(duration=120, subtitles=["https://v26-web.douyinvod.com/sub/short.srt"]),
+    )
+    monkeypatch.setattr(vd, "fetch_douyin_subtitle_text", lambda url, **kw: "只有一句")
+    monkeypatch.setattr(vd, "_transcribe_with_videocaptioner", _fake_transcribe("转写正文"))
+
+    llm = FakeLLM()
+    assert db.claim_digest(link_id) is True
+    outcome = vd.process_one(db, db.get_digest_row(link_id), llm=llm, reports_dir=reports_dir)
+
+    assert outcome.status == "succeeded"
+    assert llm.subtitle_calls[0]["subtitle_text"].strip() == "转写正文"
+
+
+def test_subtitle_to_text_supports_json_srt_vtt():
+    assert vd._subtitle_to_text('{"utterances":[{"text":"甲"},{"content":"乙"}]}') == "甲\n乙"
+    assert vd._subtitle_to_text("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n字幕行") == "字幕行"
+    assert vd._subtitle_to_text("1\n00:00:01,000 --> 00:00:02,000\n<b>加粗行</b>") == "加粗行"

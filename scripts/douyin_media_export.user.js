@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         InfoFlowHub 抖音取链
 // @namespace    infoflowhub.local
-// @version      1.0.0
+// @version      1.1.0
 // @description  把当前抖音视频页的播放直链（videoDetail / aweme_detail 里的 play_addr）写进 DOM，供本地 InfoFlowHub 读取
 // @match        https://www.douyin.com/*
 // @run-at       document-start
@@ -17,9 +17,12 @@
  *   <meta id="ifh-douyin-media" content="<base64(UTF-8 JSON)>">
  *   JSON: {"current": <当前页视频条目|null>,
  *          "entries": [{"id": "<aweme_id>", "desc": "...", "playUrls": ["https://..."],
+ *                       "subtitleUrls": ["https://..."],
  *                       "gears": [{"gear": "normal_1080_0", "bit": 1200, "url": "https://..."}],
  *                       "at": 1794283...}]}
  *   current 是 URL 里的视频，永不参与淘汰；entries 只留最近 5 条（多用于人工排查）。
+ *   subtitleUrls 是作品自带字幕（作者上传或抖音自动生成）的下载地址，本地优先用它、
+ *   有字幕就不再跑语音转写；空数组表示这条没有自带字幕。
  *
  * 安装（一次性）：Chrome 里装 Tampermonkey → 扩展详情页打开「允许用户脚本」→
  * 新建脚本，粘贴本文件全部内容并保存。装好后无需重启服务：取链时读到标记就用它，
@@ -51,6 +54,29 @@
     return url.replace(/^http:\/\//i, 'https://');
   }
 
+  function isSubtitleUrl(url) {
+    // 字幕在抖音各 CDN 上（douyinvod / ixigua / byteimg 等），本地解析方另有白名单，
+    // 这里只挡掉非 https 与明显非法值。
+    return typeof url === 'string' && /^https:\/\/[^\s"'<>]+$/i.test(url);
+  }
+
+  function subtitlesOf(video) {
+    // subtitle_infos 是作品自带字幕轨道（作者上传或平台自动生成），有中文就优先用中文。
+    var infos = video.subtitle_infos || video.subtitleInfos || [];
+    if (!Array.isArray(infos)) return [];
+    var zh = [];
+    var other = [];
+    for (var i = 0; i < infos.length; i++) {
+      var s = infos[i];
+      if (!s || typeof s !== 'object') continue;
+      var url = normalizeUrl(s.Url || s.url || s.SubtitleUrl || '');
+      if (!isSubtitleUrl(url)) continue;
+      var lang = String(s.LanguageCodeName || s.language_code_name || s.Language || '').toLowerCase();
+      (lang.indexOf('zh') === 0 || lang.indexOf('cmn') === 0 || lang.indexOf('chs') === 0 ? zh : other).push(url);
+    }
+    return zh.concat(other).slice(0, 3);
+  }
+
   function fromAweme(aweme) {
     if (!aweme || typeof aweme !== 'object') return null;
     var video = aweme.video || aweme.videoInfo || {};
@@ -70,6 +96,7 @@
       id: String(aweme.aweme_id || aweme.awemeId || ''),
       desc: String(aweme.desc || ''),
       playUrls: list.slice(0, 3),
+      subtitleUrls: subtitlesOf(video),
       gears: gears.slice(0, 6),
       at: Date.now()
     };

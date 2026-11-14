@@ -391,7 +391,7 @@ class DBManager:
     # ---- 视频简报（digest）状态机 ----
 
     def list_digest_candidates(
-        self, *, limit: int, source: str | None = None, retry_failed: bool = False
+        self, *, limit: int, source: str | None = None, tag: str | None = None, retry_failed: bool = False
     ) -> list[sqlite3.Row]:
         statuses = ("pending", "failed") if retry_failed else ("pending",)
         placeholders = ", ".join("?" for _ in statuses)
@@ -400,6 +400,11 @@ class DBManager:
         if source:
             sql += " AND source = ?"
             params.append(source)
+        if tag:
+            # tags 是半角逗号拼接的白名单标签串；两头补逗号做整段匹配，避免「心理_职场」
+            # 命中「心理_职场/xxx」这类子串误伤。
+            sql += " AND instr(',' || COALESCE(tags, '') || ',', ?) > 0"
+            params.append(f",{tag},")
         sql += " ORDER BY id DESC LIMIT ?"
         params.append(limit)
         with self._connect() as conn:

@@ -32,7 +32,7 @@ ITEMS = [
     {
         "video_id": "999",
         "url": "https://www.douyin.com/note/999",
-        "title": "非视频链接应被过滤",
+        "title": "图文也应入库",
         "raw_text": "",
     },
 ]
@@ -154,11 +154,12 @@ def test_external_session_is_used_but_never_started_or_shutdown():
     batch = favorites.fetch_douyin_favorites(session=session)
 
     assert isinstance(batch, FetchBatch)
-    # 归一化 + 去重：同视频 id 的重复项与 /note/ 链接被剔除
-    assert len(batch.items) == 1
+    # 归一化 + 去重：同视频 id 的重复项被合并；/note/ 图文现在也入库（不再丢弃）
+    assert len(batch.items) == 2
     assert batch.items[0]["url"] == "https://www.douyin.com/video/7687074567461915914"
     assert batch.items[0]["title"] == "破壁狗：AI叛乱下"
     assert batch.items[0]["source"] == "douyin_favorite"
+    assert batch.items[1]["url"] == "https://www.douyin.com/note/999"
     # 增量模式即使已滚到底也不参与移除判定
     assert batch.complete is False
     # 页面操作确实发生
@@ -202,6 +203,7 @@ def test_incremental_stops_only_after_two_consecutive_empty_rounds():
     assert page.extract_rounds == 4  # 首屏 + 3 轮
     assert {item["url"] for item in batch.items} == {
         "https://www.douyin.com/video/7687074567461915914",
+        "https://www.douyin.com/note/999",
         "https://www.douyin.com/video/1",
     }
     debug = _debug()
@@ -219,8 +221,8 @@ def test_incremental_growing_always_rolls_max_rounds():
     assert len(page.mouse.wheel_calls) == favorites.DOUYIN_SCROLL_ROUNDS
     assert page.extract_rounds == 1 + favorites.DOUYIN_SCROLL_ROUNDS
     assert batch.complete is False
-    # 累积去重：首屏 1 条有效 + 每轮各 1 条新增
-    assert len(batch.items) == 1 + favorites.DOUYIN_SCROLL_ROUNDS
+    # 累积去重：首屏 2 条（视频 + 图文）+ 每轮各 1 条新增
+    assert len(batch.items) == 2 + favorites.DOUYIN_SCROLL_ROUNDS
     debug = _debug()
     assert debug["rounds"] == favorites.DOUYIN_SCROLL_ROUNDS
     assert debug["reached_bottom"] is False
@@ -261,8 +263,8 @@ def test_deep_scan_collects_until_bottom_and_marks_complete():
     batch = favorites.fetch_douyin_favorites(session=FakeSession(page), deep=True)
 
     assert page.mouse.wheel_calls == [(0, favorites.DOUYIN_DEEP_SCROLL_STEP_PX)] * 5
-    # 首屏 1 条 + 新增 3 条，且必须全部保留（跨轮累积，不能每轮覆盖）
-    assert len(batch.items) == 4
+    # 首屏 2 条（视频 + 图文）+ 新增 3 条，且必须全部保留（跨轮累积，不能每轮覆盖）
+    assert len(batch.items) == 5
     assert batch.complete is True
     debug = _debug()
     assert debug["mode"] == "deep"
@@ -314,7 +316,7 @@ def test_own_session_started_and_shutdown_once(monkeypatch):
 
     batch = favorites.fetch_douyin_favorites()
 
-    assert len(batch.items) == 1
+    assert len(batch.items) == 2
     assert session.start_calls == 1
     assert session.shutdown_calls == 1
 
