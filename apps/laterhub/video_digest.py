@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import random
 import re
 import shutil
@@ -41,6 +42,12 @@ DIGEST_SUBDIR = "video_digest"
 TMP_DIR = DATA_DIR / "tmp" / "video_digest"
 # 长字幕不在编排层截断：video_digest_llm 按行分批整理后再合并（见 CHUNK_MAX_CHARS）。
 ASR_TIMEOUT_SECONDS = 1800
+# 本地兜底转写：VideoCaptioner 同源的 faster-whisper 独立程序（Purfview 构建）。
+# 云引擎（必剪/剪映）被限流时接管；turbo 实测 251s 音频约 192s（1.3 倍实时），
+# large-v3 约 0.44 倍实时，故默认用 turbo。
+WHISPER_FALLBACK_MODEL = "large-v3-turbo"
+WHISPER_FALLBACK_THREADS = 16
+WHISPER_FALLBACK_TIMEOUT_SECONDS = 1800
 # 抖音条目之间的间隔：基础 10s，每跑满 10 条再追加 8s（上限 40s），末尾叠 0~12s 随机抖动。
 # 连续同会话导航最容易触发验证，越往后越慢；上限防止长批次被间隔拖死。
 DOUYIN_BATCH_GAP_BASE_SECONDS = 10
@@ -151,6 +158,59 @@ def _asr_min_chars(duration_seconds: int | None) -> int:
     return 3
 
 
+def _whisper_exe() -> str | None:
+    """本地 faster-whisper 程序的路径；未安装返回 None。
+
+    默认找 `~/Tools/whisper-faster/Whisper-Faster/whisper-faster.exe`，
+    可用环境变量 INFOFLOW_WHISPER_EXE 覆盖（换盘/换版本不必改代码）。
+    """
+    env_path = os.getenv("INFOFLOW_WHISPER_EXE", "").strip()
+    candidates = [Path(env_path)] if env_path else []
+    candidates.append(Path.home() / "Tools" / "whisper-faster" / "Whisper-Faster" / "whisper-faster.exe")
+    return next((str(path) for path in candidates if path.is_file()), None)
+
+
+def _transcribe_with_whisper(video_path: Path, workdir: Path) -> Path:
+    """用本地 faster-whisper 转写，返回 SRT 路径（不联网；模型在程序目录的 _models 下）。"""
+    exe = _whisper_exe()
+    if exe is None:
+        raise RuntimeError("未找到本地 Whisper 程序（faster-whisper）")
+    out_dir = workdir / "whisper"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        [
+            exe,
+            str(video_path),
+            "--model",
+            WHISPER_FALLBACK_MODEL,
+            "--model_dir",
+            str(Path(exe).parent / "_models"),
+            "--language",
+            "zh",
+            "--output_format",
+            "srt",
+            "--output_dir",
+            str(out_dir),
+            "--vad_filter",
+            "True",
+            "--compute_type",
+            "int8",
+            "--threads",
+            str(WHISPER_FALLBACK_THREADS),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=WHISPER_FALLBACK_TIMEOUT_SECONDS,
+    )
+    srt_path = next(iter(sorted(out_dir.glob("*.srt"))), None)
+    if result.returncode != 0 or srt_path is None:
+        tail = (result.stderr or result.stdout or "").strip().splitlines()
+        raise RuntimeError(f"本地 Whisper 转写失败(exit={result.returncode}): {tail[-1] if tail else '无输出'}")
+    return srt_path
+
+
 def _transcribe_with_videocaptioner(
     video_path: Path, workdir: Path, *, duration_seconds: int | None = None
 ) -> Path:
@@ -192,6 +252,28 @@ def _transcribe_with_videocaptioner(
     # 两个引擎都跑通、只是结果是空/过短 → 判定「本来就没有人声」，可换文案兜底；
     # 有引擎报错(exit≠0) 说明工具链坏了，属于真失败，不能拿文案顶替字幕。
     raise (NoSpeechDetected(message) if only_short_results else RuntimeError(message))
+
+
+def _transcribe_media(video_path: Path, workdir: Path, *, duration_seconds: int | None = None) -> Path:
+    """转写总入口：必剪/剪映（云）优先，被限流或失败时才用本地 faster-whisper 兜底。
+
+    云引擎的专有名词更准（同一段音频实测：必剪「李笑来」vs Whisper「李萧莱」），
+    所以质量优先、不让本地抢主路；本地只负责「云挂了这条也别丢」——批量时 429 很常见。
+    两个引擎都没内容才判无人声（NoSpeechDetected 原样上抛）。
+    """
+    min_chars = _asr_min_chars(duration_seconds)
+    try:
+        return _transcribe_with_videocaptioner(video_path, workdir, duration_seconds=duration_seconds)
+    except (NoSpeechDetected, RuntimeError) as cloud_error:
+        if _whisper_exe() is None:
+            raise
+        try:
+            srt_path = _transcribe_with_whisper(video_path, workdir)
+        except Exception as exc:  # noqa: BLE001
+            raise type(cloud_error)(f"{cloud_error}；本地 Whisper 也失败: {exc}") from cloud_error
+        if len(_srt_to_text(srt_path)) >= min_chars:
+            return srt_path
+        raise type(cloud_error)(f"{cloud_error}；本地 Whisper 结果过短") from cloud_error
 
 
 def _split_douyin_caption(title: str) -> tuple[str | None, str]:
@@ -325,7 +407,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
             step = "语音转写"
             try:
                 subtitle_text = _srt_to_text(
-                    _transcribe_with_videocaptioner(video_path, workdir, duration_seconds=duration_seconds)
+                    _transcribe_media(video_path, workdir, duration_seconds=duration_seconds)
                 )
             except NoSpeechDetected as exc:
                 # 无人声：先看画面（这类剪辑常有字幕卡/文字），看图失败再退回作品文案
@@ -436,7 +518,7 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
             else:
                 work_notes.append("已下载视频")
                 try:
-                    srt_path = _transcribe_with_videocaptioner(video_path, workdir, duration_seconds=meta.duration_seconds)
+                    srt_path = _transcribe_media(video_path, workdir, duration_seconds=meta.duration_seconds)
                     subtitle_text = _srt_to_text(srt_path)
                     subtitle_source = "videocaptioner_bijian"
                 except Exception as exc:  # noqa: BLE001
