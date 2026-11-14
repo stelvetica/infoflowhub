@@ -46,10 +46,10 @@ PERSONAL_PROVIDER_CONFIG = Path.home() / ".zcode" / "v2" / "provider_config.json
 # CLI v0.16.9 的 headless 模式没有 --model 参数（传了只打帮助），执行模型只能由 personal
 # provider 配置里的 config.defaultModelSelection 决定；桌面 App 可能被用户切成别的模型，
 # 故本服务派生一份只改该字段的副本喂给子进程，把 skill 执行模型钉死。
-# 主模型 + 备用模型的默认链（逗号分隔，按顺序尝试）：2026-10-30 glm-5.3-flash 上游间歇 400，
-# 主用验证过全通的 deepseek-v4.1-flash，失败再换上游 group/freedsf4.1。
+# 主模型链（逗号分隔，按顺序尝试）。当前只钉一条：每日 skill 链按 Pro 档单跑，不要备用——
+# 多候选项一旦在 provider 列表里失效就会静默回退到列表首位，等于白配（2026-11-14 实测）。
 SKILL_MODEL_ENV = "INFOFLOW_SKILL_MODEL"  # 覆盖模型链（逗号分隔 providerId/modelId）；置空 = 关闭钉死
-DEFAULT_SKILL_MODELS = "magpie/r4coder/deepseek-v4.1-flash,magpie/group/freedsf4.1"
+DEFAULT_SKILL_MODELS = "magpie/group/pro"
 # 副本落在 runtime/（已被 .gitignore 忽略）：它含 personal 配置里的密钥，绝不能入库进日志
 PINNED_PROVIDER_CONFIG = BASE_DIR / "runtime" / "skill_provider_config.json"
 

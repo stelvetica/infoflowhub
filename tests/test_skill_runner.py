@@ -321,7 +321,7 @@ def test_pinned_personal_config_repins_default_model(tmp_path: Path, monkeypatch
     written = json.loads(pinned.read_text(encoding="utf-8"))
     assert written["config"]["defaultModelSelection"] == {
         "providerId": "magpie",
-        "modelId": "r4coder/deepseek-v4.1-flash",
+        "modelId": "group/pro",
     }
     assert written["config"]["note"] == source["config"]["note"]
     assert written["secret"] == source["secret"]
@@ -393,7 +393,7 @@ def test_provider_config_env_app_injected_keeps_builtin_but_adds_pinned_personal
     env = skill_runner._provider_config_env()
     assert skill_runner.BUILTIN_PROVIDER_CONFIG_ENV not in env  # 不覆盖 App 注入值
     assert env[skill_runner.PERSONAL_PROVIDER_CONFIG_ENV] == str(pinned)
-    assert json.loads(pinned.read_text(encoding="utf-8"))["config"]["defaultModelSelection"]["modelId"] == "r4coder/deepseek-v4.1-flash"
+    assert json.loads(pinned.read_text(encoding="utf-8"))["config"]["defaultModelSelection"]["modelId"] == "group/pro"
 
 
 def test_provider_config_env_app_injected_without_pin_returns_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -579,7 +579,7 @@ def test_model_candidates_uses_declared_chain_order(tmp_path: Path, monkeypatch:
 
 
 def test_model_candidates_default_chain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """默认链：deepseek-v4.1-flash 主用，group/freedsf4.1 备选（2026-10-30 故障后定）。"""
+    """默认链只钉 Pro 一条：每日 skill 不要备用（2026-11-14 定）。"""
     personal, _pinned = _pin_paths(tmp_path, monkeypatch)
     _write_provider_aware_config(
         personal,
@@ -589,9 +589,9 @@ def test_model_candidates_default_chain(tmp_path: Path, monkeypatch: pytest.Monk
                 "enabled": True,
                 "config": {
                     "modelOrder": [
-                        "group/freedsf4.1",
-                        "r4coder/deepseek-v4.1-flash",
-                        "r4coder/glm-5.3-flash",
+                        "group/pro",
+                        "group/flash",
+                        "group/super",
                     ]
                 },
             }
@@ -600,8 +600,7 @@ def test_model_candidates_default_chain(tmp_path: Path, monkeypatch: pytest.Monk
     )
     candidates = skill_runner._model_candidates()
     assert [(item["providerId"], item["modelId"]) for item in candidates] == [
-        ("magpie", "r4coder/deepseek-v4.1-flash"),
-        ("magpie", "group/freedsf4.1"),
+        ("magpie", "group/pro"),
     ]
 
 
