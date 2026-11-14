@@ -514,3 +514,28 @@ def test_douyin_batch_gap_has_random_jitter(monkeypatch):
     gaps = {vd._douyin_batch_gap_seconds(0) for _ in range(50)}
     assert len(gaps) > 1  # 每次都带随机量
     assert all(10 <= gap <= 22 for gap in gaps)
+
+
+def test_run_video_digest_breaks_after_consecutive_failures(tmp_path, monkeypatch):
+    db_path = tmp_path / "run3.sqlite3"
+    db = DBManager(db_path)
+    for i in range(6):
+        _add(db, f"https://www.douyin.com/video/7412345678901234{i:02d}")
+
+    _patch_tmp(monkeypatch, tmp_path)
+    monkeypatch.setattr(tagger, "load_project_env", lambda *a, **k: None)
+    monkeypatch.setattr(tagger.LLMConfig, "from_env", classmethod(lambda cls, *a, **k: object()))
+    monkeypatch.setattr(vd, "VideoDigestLLM", lambda *a, **k: FakeLLM())
+    monkeypatch.setattr(vd, "_douyin_batch_gap_seconds", lambda done: 0)
+    monkeypatch.setattr(
+        vd,
+        "process_one",
+        lambda db, row, *, llm, keep_temp=False: vd.DigestOutcome(
+            int(row["id"]), str(row["url"]), str(row["title"]), "failed", "boom"
+        ),
+    )
+
+    summary = vd.run_video_digest(db_path=db_path, limit=6)
+
+    assert len(summary.outcomes) == 3  # 第 3 条失败后立即熔断，不再消耗剩余条目
+    assert "连续 3 条抖音失败" in summary.aborted

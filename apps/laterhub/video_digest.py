@@ -54,6 +54,9 @@ FRAME_MAX_WIDTH = 512
 FRAME_EXTRACT_TIMEOUT_SECONDS = 120
 
 DOUYIN_VIDEO_PREFIX = "douyin.com/video/"
+# 连续失败熔断：抖音链路连挂 3 条就停本批。典型诱因是风控验证或 ASR 云接口限流——
+# 两种情况都不会自愈，继续跑只会白烧间隔与配额，剩下条目留给下一轮重试。
+DOUYIN_FAILURE_BREAKER = 3
 
 
 def _douyin_batch_gap_seconds(done: int) -> float:
@@ -80,6 +83,7 @@ class DigestOutcome:
 class DigestRunSummary:
     outcomes: list[DigestOutcome] = field(default_factory=list)
     reset_count: int = 0
+    aborted: str = ""  # 熔断原因；非空表示本批提前停止
 
     @property
     def ok_count(self) -> int:
@@ -564,6 +568,7 @@ def run_video_digest(
 
     previous_douyin = False
     douyin_done = 0
+    consecutive_failures = 0
     for index, row in enumerate(rows):
         if row is None:
             continue
@@ -577,6 +582,13 @@ def run_video_digest(
         previous_douyin = is_douyin
         if is_douyin:
             douyin_done += 1
+            consecutive_failures = consecutive_failures + 1 if outcome.status in ("failed", "unsupported") else 0
+            if consecutive_failures >= DOUYIN_FAILURE_BREAKER:
+                summary.aborted = (
+                    f"连续 {consecutive_failures} 条抖音失败，疑似风控或 ASR 限流，已停止本批；"
+                    "剩余条目留待下轮（失败条目用 --retry-failed 重试）"
+                )
+                break
     return summary
 
 
@@ -613,6 +625,8 @@ def main(argv: list[str] | None = None) -> int:
         marker = {"succeeded": "OK", "failed": "FAIL", "unsupported": "SKIP", "skipped": "SKIP"}.get(o.status, o.status.upper())
         print(f"[{marker}] #{o.link_id} {o.title[:40]} {o.detail}")
     print(f"完成: 成功 {summary.ok_count} / 失败 {summary.fail_count} / 共 {len(summary.outcomes)}")
+    if summary.aborted:
+        print(f"[熔断] {summary.aborted}")
     return 0 if summary.fail_count == 0 else 1
 
 
