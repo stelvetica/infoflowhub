@@ -74,11 +74,11 @@ def _setup(monkeypatch, tmp_path, *, description: str, cc: str | None, asr_error
     if asr_error:
         monkeypatch.setattr(
             vd,
-            "_transcribe_with_videocaptioner",
+            "_transcribe_media",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("videocaptioner 未识别到有效语音")),
         )
     else:
-        monkeypatch.setattr(vd, "_transcribe_with_videocaptioner", lambda *a, **k: None)
+        monkeypatch.setattr(vd, "_transcribe_media", lambda *a, **k: None)
 
     db = DBManager(tmp_path / "d.sqlite3")
     link_id = db.upsert_link(LinkRecord(url=BILI, title="视频标题", source="bilibili_watchlater"))
