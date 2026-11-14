@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import random
 import re
 import shutil
 import subprocess
@@ -40,13 +41,26 @@ DIGEST_SUBDIR = "video_digest"
 TMP_DIR = DATA_DIR / "tmp" / "video_digest"
 # 长字幕不在编排层截断：video_digest_llm 按行分批整理后再合并（见 CHUNK_MAX_CHARS）。
 ASR_TIMEOUT_SECONDS = 1800
-DOUYIN_BATCH_GAP_SECONDS = 15
+# 抖音条目之间的间隔：基础 10s，每跑满 10 条再追加 8s（上限 40s），末尾叠 0~12s 随机抖动。
+# 连续同会话导航最容易触发验证，越往后越慢；上限防止长批次被间隔拖死。
+DOUYIN_BATCH_GAP_BASE_SECONDS = 10
+DOUYIN_BATCH_GAP_STEP_SECONDS = 8
+DOUYIN_BATCH_GAP_STEP_EVERY = 10
+DOUYIN_BATCH_GAP_MAX_SECONDS = 40
+DOUYIN_BATCH_GAP_JITTER_SECONDS = 12
 # 无人声时的画面理解：均匀抽帧数。小红书式竖屏字幕一般在画面上，4 张足够覆盖片头与主体。
 FRAME_COUNT = 4
 FRAME_MAX_WIDTH = 512
 FRAME_EXTRACT_TIMEOUT_SECONDS = 120
 
 DOUYIN_VIDEO_PREFIX = "douyin.com/video/"
+
+
+def _douyin_batch_gap_seconds(done: int) -> float:
+    """第 done+1 条抖音条目开跑前等多久：基础 + 每 STEP_EVERY 条爬坡 + 随机抖动。"""
+    escalated = (done // DOUYIN_BATCH_GAP_STEP_EVERY) * DOUYIN_BATCH_GAP_STEP_SECONDS
+    base = min(DOUYIN_BATCH_GAP_BASE_SECONDS + escalated, DOUYIN_BATCH_GAP_MAX_SECONDS)
+    return base + random.uniform(0, DOUYIN_BATCH_GAP_JITTER_SECONDS)
 
 
 class NoSpeechDetected(RuntimeError):
@@ -549,16 +563,20 @@ def run_video_digest(
     llm = VideoDigestLLM(primary, backup)
 
     previous_douyin = False
+    douyin_done = 0
     for index, row in enumerate(rows):
         if row is None:
             continue
         is_douyin = DOUYIN_VIDEO_PREFIX in str(row["url"])
-        # 同会话密集访问抖音视频页会触发风控（页面不出播放器），批内抖音条目之间留间隔
+        # 同会话密集访问抖音视频页会触发风控（页面不出播放器），批内抖音条目之间留间隔；
+        # 越往后越慢（按已完成的抖音条数爬坡），末尾再叠随机抖动。
         if is_douyin and index > 0 and previous_douyin:
-            time.sleep(DOUYIN_BATCH_GAP_SECONDS)
+            time.sleep(_douyin_batch_gap_seconds(douyin_done))
         outcome = process_one(db, row, llm=llm, keep_temp=keep_temp)
         summary.outcomes.append(outcome)
         previous_douyin = is_douyin
+        if is_douyin:
+            douyin_done += 1
     return summary
 
 
