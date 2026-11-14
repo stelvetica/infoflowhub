@@ -3,7 +3,7 @@
 独立子流程，不进主流水线（apps/laterhub/pipeline.py）。链路：
 B站（bsk 页内取数，一个条目一个会话）：CC 字幕直取 → 下载视频 + videocaptioner bijian
 转录 → GLM 视频理解兜底；
-抖音无 CC 字幕：免签直链下载 → videocaptioner bijian 转录 → LLM 简报（无 GLM 兜底）。
+抖音：作品自带字幕优先（用户脚本标记里的 subtitle_infos）→ 没有才下载 + videocaptioner 转录 → LLM 简报（无 GLM 兜底）。
 LLM 基于材料产出简报 md 落 data/reports/，links 表记 digest_status。
 """
 
@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
+import re
 import shutil
 import subprocess
 import sys
@@ -18,6 +20,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from apps.laterhub.config import DATA_DIR, DB_PATH, ENV_PATH
 from apps.laterhub.db import DBManager
@@ -29,7 +32,7 @@ from apps.laterhub.video_digest_llm import (
     write_digest_report,
 )
 from connectors.bilibili import video as bili_video
-from connectors.douyin.video import download_douyin_video
+from connectors.douyin.video import download_douyin_video, fetch_douyin_subtitle_text
 
 REPORTS_DIR = DATA_DIR / "reports"
 # 简报产物独立子目录：不与其它产物混放，也不进面板「新闻公告」白名单
@@ -75,13 +78,48 @@ class DigestRunSummary:
 
 def _srt_to_text(srt_path: Path) -> str:
     """从 SRT 提取纯文本：丢序号行与时间轴行，保留文本行。"""
+    return _subtitle_lines_to_text(srt_path.read_text(encoding="utf-8", errors="replace"))
+
+
+def _subtitle_lines_to_text(raw: str) -> str:
+    """把 SRT/WebVTT 正文变成纯文本；WebVTT 的头部行（WEBVTT/NOTE/STYLE）一并丢掉。"""
     lines: list[str] = []
-    for raw in srt_path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = raw.strip()
+    for raw_line in (raw or "").splitlines():
+        line = raw_line.strip()
         if not line or line.isdigit() or "-->" in line:
             continue
-        lines.append(line)
+        if line.upper().startswith(("WEBVTT", "NOTE", "STYLE", "REGION")):
+            continue
+        lines.append(re.sub(r"<[^>]+>", "", line))
     return "\n".join(lines)
+
+
+def _subtitle_to_text(raw: str) -> str:
+    """抖音自带字幕原文 → 纯文本：兼容 JSON / SRT / WebVTT 三种格式。
+
+    抖音的 subtitle_infos 指向的字幕有时是 JSON（items 里带 text），有时是 SRT/VTT；
+    格式判断失败时按 SRT 处理，宁可少字也不让整条简报失败。
+    """
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    if text[0] in "[{":
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            data = None
+        if data is not None:
+            items = data if isinstance(data, list) else (
+                data.get("utterances") or data.get("captions") or data.get("body")
+                or data.get("subtitles") or data.get("lines") or []
+            )
+            if isinstance(items, str):
+                items = [{"text": items}]
+            lines = [str(x.get("text") or x.get("content") or "").strip() for x in items if isinstance(x, dict)]
+            joined = "\n".join(line for line in lines if line)
+            if joined.strip():
+                return joined
+    return _subtitle_lines_to_text(text)
 
 
 def _asr_min_chars(duration_seconds: int | None) -> int:
@@ -228,12 +266,44 @@ def process_one(db: DBManager, row, *, llm: VideoDigestLLM, reports_dir: Path = 
     errors: list[str] = []
     workdir = TMP_DIR / str(link_id)
 
-    # 抖音：无 CC 字幕，免签直链下载 → bijian 转录 → LLM 简报；GLM video_url 兜底不适用（直链时效短）
+    # 抖音：作品自带字幕优先 → 没有才 免签直链下载 → bijian 转录 → LLM 简报；GLM video_url 兜底不适用（直链时效短）
     if DOUYIN_VIDEO_PREFIX in url:
         step = "下载"
         try:
             workdir.mkdir(parents=True, exist_ok=True)
-            video_path, duration_seconds = download_douyin_video(url, dest_dir=workdir)
+            resolved: dict[str, Any] = {}
+            video_path, duration_seconds = download_douyin_video(url, dest_dir=workdir, resolved=resolved)
+            media = resolved.get("media")
+            # 自带字幕优先：字幕轨是现成文本，跳过整段语音转写（批量解析里最贵的一步）。
+            # 下载仍然做——用户要保留视频文件；只有字幕不可用时才走 ASR。
+            subtitle_text = ""
+            for subtitle_url in getattr(media, "subtitle_urls", None) or []:
+                try:
+                    raw_subtitle = fetch_douyin_subtitle_text(subtitle_url)
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"自带字幕下载失败: {exc}")
+                    continue
+                candidate = _subtitle_to_text(raw_subtitle)
+                if len(candidate) >= _asr_min_chars(duration_seconds):
+                    subtitle_text = candidate
+                    break
+                errors.append(f"自带字幕过短({len(candidate)}字)")
+            if subtitle_text:
+                step = "生成简报"
+                digest = llm.generate_from_subtitle(title=title, owner=None, subtitle_text=subtitle_text)
+                path = _finalize(
+                    db,
+                    link_id,
+                    row,
+                    digest,
+                    subtitle_source="douyin_subtitle",
+                    reports_dir=reports_dir,
+                    owner=None,
+                    duration_seconds=duration_seconds,
+                    process_note="使用作品自带字幕（跳过语音转写）。",
+                    source_text=subtitle_text,
+                )
+                return DigestOutcome(link_id, url, title, "succeeded", str(path))
             step = "语音转写"
             try:
                 subtitle_text = _srt_to_text(
@@ -431,6 +501,7 @@ def run_video_digest(
     limit: int = 1,
     link_id: int | None = None,
     source: str | None = None,
+    tag: str | None = None,
     retry_failed: bool = False,
     retry_unsupported: bool = False,
     dry_run: bool = False,
@@ -463,7 +534,7 @@ def run_video_digest(
             return summary
         rows = [db.get_digest_row(link_id)]
     else:
-        rows = db.list_digest_candidates(limit=limit, source=source, retry_failed=retry_failed)
+        rows = db.list_digest_candidates(limit=limit, source=source, tag=tag, retry_failed=retry_failed)
 
     if dry_run:
         for row in rows:
@@ -496,6 +567,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=1, help="最多处理 N 条（默认 1）")
     parser.add_argument("--id", type=int, default=None, help="指定 laterhub 条目 id")
     parser.add_argument("--source", default=None, help="按来源过滤（如 bilibili_watchlater）")
+    parser.add_argument("--tag", default=None, help="按标签过滤（如 技术_AI/工具/开发），只处理打了该标签的视频")
     parser.add_argument("--retry-failed", action="store_true", help="连同 failed 条目一起重试")
     parser.add_argument("--retry-unsupported", action="store_true", help="把 unsupported 视频条目重置为 pending 后重试")
     parser.add_argument("--dry-run", action="store_true", help="只列出待处理条目")
@@ -511,6 +583,7 @@ def main(argv: list[str] | None = None) -> int:
         limit=max(1, args.limit),
         link_id=args.id,
         source=args.source,
+        tag=args.tag,
         retry_failed=args.retry_failed,
         retry_unsupported=args.retry_unsupported,
         dry_run=args.dry_run,

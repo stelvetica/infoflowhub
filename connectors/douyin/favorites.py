@@ -99,19 +99,34 @@ def _install_stabilizer(page, *, attempts: int = 3) -> None:
             page.wait_for_timeout(1000)
 
 
+def _fallback_title(raw_text: str, kind: str, item_id: str) -> str:
+    """卡片标题取不到时，从卡片正文里凑一个可读标题。
+
+    收藏卡片正文以播放量开头（如「1.1万 标题…」），先剥掉计数再取前一段。
+    实在没有正文才用占位标题——**不再丢条目**：标题缺失只说明卡片没渲染完，
+    不能据此判定这条收藏不存在（旧逻辑会把 19% 的条目直接丢掉）。
+    """
+    text = re.sub(r"^[\d.]+[万亿]?\s*", "", re.sub(r"\s+", " ", raw_text or "")).strip()
+    if text:
+        return text[:120]
+    return f"抖音{'图文' if kind == 'note' else '视频'} {item_id}"
+
+
 def normalize_douyin_item(item: dict[str, Any]) -> dict[str, Any] | None:
     url = (item.get("url") or "").strip().split("?")[0]
     raw_title = (item.get("title") or item.get("raw_text") or "").strip()
     raw_text = (item.get("raw_text") or "").strip()
+    kind = "note" if "/note/" in url else "video"
 
-    if not url.startswith("https://www.douyin.com/video/"):
+    if not re.match(r"^https://www\.douyin\.com/(video|note)/\d+", url):
         return None
     if raw_title.startswith("热门") or raw_text.startswith("热门"):
         return None
 
-    title = re.sub(r"\s+", " ", raw_title).strip() or "未命名内容"
-    if re.fullmatch(r"视频_\d+", title):
-        return None
+    title = re.sub(r"\s+", " ", raw_title).strip()
+    item_id = url.rstrip("/").rsplit("/", 1)[-1]
+    if not title or re.fullmatch(r"(视频|图文)_\d+", title):
+        title = _fallback_title(raw_text, kind, item_id)
 
     return {
         "url": url,
@@ -128,28 +143,36 @@ def _extract_visible_items(page) -> list[dict[str, Any]]:
     () => {
       const results = [];
       const seen = new Set();
-      const anchors = Array.from(document.querySelectorAll('a[href*="/video/"]'));
+      const anchors = Array.from(document.querySelectorAll('a[href*="/video/"], a[href*="/note/"]'));
       for (const a of anchors) {
         const href = (a.href || '').split('?')[0];
-        const match = href.match(/\/video\/(\d+)/);
+        const match = href.match(/\/(video|note)\/(\d+)/);
         if (!match) continue;
-        const videoId = match[1];
-        if (seen.has(videoId)) continue;
-        seen.add(videoId);
-        let title = '';
+        const kind = match[1];
+        const itemId = match[2];
+        if (seen.has(itemId)) continue;
+        seen.add(itemId);
         const card = a.closest('li') || a.closest('[class*="item"]') || a.parentElement;
-        if (card) {
-          const img = card.querySelector('img');
-          if (img && img.alt && !/^[\d.万亿]+$/.test(img.alt)) {
-            title = img.alt.trim();
-          }
+        const img = card ? card.querySelector('img') : null;
+        const rawText = card ? (card.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 1000) : '';
+        let title = '';
+        // 标题优先取封面 alt；alt 是纯计数（「1.1万」）说明这张卡还没渲染出标题
+        if (img && img.alt && !/^[\d.万亿]+$/.test(img.alt.trim())) {
+          title = img.alt.trim();
         }
-        if (!title) title = `视频_${videoId}`;
+        if (!title) {
+          // 退到卡片正文：列表卡片以播放量开头，剥掉计数后取前一段
+          const text = (card ? (card.textContent || '') : '')
+            .replace(/\s+/g, ' ').trim().replace(/^[\d.]+[万亿]?\s*/, '');
+          if (text) title = text.slice(0, 120);
+        }
+        if (!title) title = (kind === 'note' ? '图文_' : '视频_') + itemId;
         results.push({
-          video_id: videoId,
+          item_id: itemId,
+          kind,
           url: href,
           title,
-          raw_text: card ? (card.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 1000) : '',
+          raw_text: rawText,
         });
       }
       return results;
@@ -232,12 +255,12 @@ def fetch_douyin_favorites(
         session = BskRunnerSession(start_url="about:blank")
         session.start()
 
-    # 已知条目按 aweme id 比对；深扫不看已知集合（必须全量到底才能判定移除）。
+    # 已知条目按 aweme id 比对（视频与图文同号段，按末段取）；深扫不看已知集合。
     known_ids = {
         tail.split("?")[0]
         for url in (known_urls or [])
-        for tail in [str(url).split("/video/")[-1]]
-        if "/video/" in str(url)
+        for tail in [re.split(r"/(?:video|note)/", str(url))[-1]]
+        if re.search(r"/(?:video|note)/", str(url))
     }
     round_unknown = 0
 
@@ -257,7 +280,7 @@ def fetch_douyin_favorites(
             nonlocal round_unknown
             added = 0
             for item in extracted:
-                key = str(item.get("video_id") or item.get("url") or "").strip()
+                key = str(item.get("item_id") or item.get("url") or "").strip()
                 if not key or key in seen:
                     continue
                 seen[key] = item

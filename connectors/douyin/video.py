@@ -28,7 +28,7 @@ import json
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import requests
@@ -66,19 +66,26 @@ _MARKER_TAG_RE = re.compile(r"""<meta[^>]*\bid=["']ifh-douyin-media["'][^>]*>"""
 _MARKER_CONTENT_RE = re.compile(r"""\bcontent=["']([^"']*)["']""", re.IGNORECASE)
 # 只接受这两个域名的 https 直链：标记来自页面 DOM，属于不可信输入，不能把任意地址交给下载器
 _MEDIA_HOST_RE = re.compile(r"^https://([a-z0-9.-]+\.)?(douyinvod\.com|douyin\.com)/", re.IGNORECASE)
+# 字幕轨在抖音各家 CDN 上（douyinvod / ixigua / byteimg / douyinpic）；同样按白名单收，
+# 标记里的 URL 不可信。
+_SUBTITLE_HOST_RE = re.compile(
+    r"^https://([a-z0-9.-]+\.)?"
+    r"(douyinvod\.com|douyin\.com|douyinpic\.com|ixigua\.com|byteimg\.com|bytegecko\.com|snssdk\.com|bytetos\.com)/",
+    re.IGNORECASE,
+)
 
 
-def _media_urls_from_marker(page: BskPage, video_id: str) -> list[str]:
-    """读用户脚本的 DOM 标记（主通道）。标记里没有目标视频或校验不过时返回空表。
+def _marker_entry(page: BskPage, video_id: str) -> dict[str, Any] | None:
+    """从用户脚本的 DOM 标记里取出目标视频那一条（没有则 None）。
 
     取 HTML 不依赖 cooperate 上下文，所以页面在播放也读得到——这正是它优于 evaluate 的地方。
     """
     if not video_id:
-        return []
+        return None
     try:
         text = page.content()
     except BskError:
-        return []
+        return None
     for tag in _MARKER_TAG_RE.findall(text):
         match = _MARKER_CONTENT_RE.search(tag)
         if not match:
@@ -90,15 +97,23 @@ def _media_urls_from_marker(page: BskPage, video_id: str) -> list[str]:
         # current 是脚本按 URL 认定的当前视频（不参与淘汰）；entries 是最近几条（含相关推荐）
         candidates = [data.get("current")] + list(data.get("entries") or [])
         for entry in candidates:
-            if not isinstance(entry, dict) or str(entry.get("id") or "") != video_id:
-                continue
-            urls = [
-                url for url in (entry.get("playUrls") or [])
-                if isinstance(url, str) and _MEDIA_HOST_RE.match(url)
-            ]
-            if urls:
-                return urls
-    return []
+            if isinstance(entry, dict) and str(entry.get("id") or "") == video_id:
+                return entry
+    return None
+
+
+def _allowed_urls(entry: dict[str, Any], key: str, host_re: re.Pattern[str]) -> list[str]:
+    return [url for url in (entry.get(key) or []) if isinstance(url, str) and host_re.match(url)]
+
+
+def _media_urls_from_marker(page: BskPage, video_id: str) -> list[str]:
+    """标记里的播放直链（主通道）；没有目标视频或校验不过时返回空表。"""
+    return _allowed_urls(_marker_entry(page, video_id) or {}, "playUrls", _MEDIA_HOST_RE)
+
+
+def _subtitle_urls_from_marker(page: BskPage, video_id: str) -> list[str]:
+    """标记里的作品自带字幕地址（用户脚本 1.1.0 起写入）；没有就返回空表。"""
+    return _allowed_urls(_marker_entry(page, video_id) or {}, "subtitleUrls", _SUBTITLE_HOST_RE)
 
 
 def _split_media_urls(media_urls: list[str]) -> tuple[str | None, str | None]:
@@ -167,6 +182,24 @@ def _media_urls_from_html(page: BskPage) -> list[str]:
 class DouyinVideoMedia:
     video_url: str | None  # douyinvod 视频流直链
     audio_url: str | None  # 音频流直链（分离流时非 None；合流场景可能为 None）
+    # 作品自带字幕（作者上传或抖音自动生成）的地址；非空时上层可跳过语音转写。
+    subtitle_urls: list[str] = field(default_factory=list)
+
+
+def fetch_douyin_subtitle_text(url: str, *, timeout: float = 30.0) -> str:
+    """下载字幕文本（SRT/VTT/JSON 原样返回）；非 200 或空内容抛 RuntimeError。
+
+    字幕 CDN 不需要 Cookie，只认 Referer（实测与播放直链一致）；调用方负责解析格式。
+    """
+    if not _SUBTITLE_HOST_RE.match(url or ""):
+        raise RuntimeError(f"非白名单字幕地址: {url[:120]}")
+    response = _build_download_session().get(url, timeout=timeout)
+    if response.status_code != 200:
+        raise RuntimeError(f"字幕下载失败 HTTP {response.status_code}: {url[:120]}")
+    text = response.text
+    if not text.strip():
+        raise RuntimeError(f"字幕内容为空: {url[:120]}")
+    return text
 
 
 def is_douyin_video_url(url: str) -> bool:
@@ -204,6 +237,7 @@ def resolve_douyin_video_media(
     try:
         page = session.acquire_page()
         media_urls: list[str] = []
+        subtitle_urls: list[str] = []
         evaluate_error = ""
         navigated = False
         video_id = extract_douyin_video_id(url)
@@ -227,7 +261,10 @@ def resolve_douyin_video_media(
                 # 主通道：用户脚本写进 DOM 的 play_addr（已合流、多 CDN）。只读一次，
                 # 脚本要在页面加载后 1~2 个轮询周期内才写好，首次 6s 等待足够覆盖。
                 if index == 0:
-                    media_urls = _media_urls_from_marker(page, video_id)
+                    # 一次取标签页 HTML，同时拿播放直链与自带字幕，避免每轮重复读整页
+                    entry = _marker_entry(page, video_id) or {}
+                    media_urls = _allowed_urls(entry, "playUrls", _MEDIA_HOST_RE)
+                    subtitle_urls = _allowed_urls(entry, "subtitleUrls", _SUBTITLE_HOST_RE)
                     if media_urls:
                         break
                 media_urls = _media_urls_from_network(page, exclude=stale_media)
@@ -262,6 +299,7 @@ def resolve_douyin_video_media(
         return DouyinVideoMedia(
             video_url=str(video_url or audio_url),
             audio_url=str(audio_url) if audio_url else None,
+            subtitle_urls=subtitle_urls,
         )
     finally:
         if own_session:
@@ -350,14 +388,20 @@ def download_douyin_video(
     session: BskRunnerSession | None = None,
     max_bytes: int = 2**31,
     timeout: float = 1800.0,
+    resolved: dict[str, Any] | None = None,
 ) -> tuple[Path, int | None]:
     """下载抖音视频到 dest_dir/<视频id>.mp4，返回 (path, duration_seconds)。
 
     resolve 后立即流式下载（直链时效约几分钟，不能等）；video+audio 都有则 ffmpeg 合流，
     仅 video 则单流转 mp4 容器。任一响应非 200 / 超 max_bytes / ffmpeg 失败：清理半成品并抛
     RuntimeError。ffprobe 失败不抛，duration 返回 None。
+
+    resolved 非 None 时把解析结果（含字幕地址）写回该字典的 "media" 键：调用方
+    （video_digest）要拿字幕决定是否跳过转写，而解析只在下载前做一次，不能重复导航。
     """
     media = resolve_douyin_video_media(url, session=session, timeout=min(timeout, 60.0))
+    if resolved is not None:
+        resolved["media"] = media
     video_id = extract_douyin_video_id(url)
     if not video_id:
         raise RuntimeError(f"无法从链接解析出抖音视频 ID: {url}")
