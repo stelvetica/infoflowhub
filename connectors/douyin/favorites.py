@@ -143,8 +143,27 @@ def _extract_visible_items(page) -> list[dict[str, Any]]:
     () => {
       const results = [];
       const seen = new Set();
-      const anchors = Array.from(document.querySelectorAll('a[href*="/video/"], a[href*="/note/"]'));
-      for (const a of anchors) {
+      // 收藏页上不止一处视频链接：真正的收藏网格在 ul[data-e2e="scroll-list"]，
+      // 侧栏的抖音热榜/推荐是零散 <span> 里的单条链接（实测 8 条，标题是时事词条）。
+      // 全页取锚点会把热榜当收藏入库（2026-11-14 用户现场发现），故先按容器分组，
+      // 只取「列表容器中最大的那一组」。
+      const groups = new Map();
+      for (const a of document.querySelectorAll('a[href*="/video/"], a[href*="/note/"]')) {
+        const box = a.closest('ul') || a.closest('ol') || a.parentElement;
+        if (!box) continue;
+        if (!groups.has(box)) groups.set(box, []);
+        groups.get(box).push(a);
+      }
+      let best = null;
+      for (const [box, list] of groups) {
+        const isList = box.tagName === 'UL' || box.tagName === 'OL';
+        // 列表容器优先（+1000），同类型再比条目数
+        const score = list.length + (isList ? 1000 : 0);
+        if (!best || score > best.score) best = { box, list, score, isList };
+      }
+      // 没有列表容器、且分组又很小 → 只可能是热榜/推荐，宁可不取也不污染收藏
+      if (!best || (!best.isList && best.list.length < 10)) return [];
+      for (const a of best.list) {
         const href = (a.href || '').split('?')[0];
         const match = href.match(/\/(video|note)\/(\d+)/);
         if (!match) continue;
