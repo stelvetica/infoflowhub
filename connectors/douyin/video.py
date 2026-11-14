@@ -258,15 +258,14 @@ def resolve_douyin_video_media(
             navigated = True
             for index in range(3):
                 page.wait_for_timeout(PLAYER_WAIT_MS)
-                # 主通道：用户脚本写进 DOM 的 play_addr（已合流、多 CDN）。只读一次，
-                # 脚本要在页面加载后 1~2 个轮询周期内才写好，首次 6s 等待足够覆盖。
-                if index == 0:
-                    # 一次取标签页 HTML，同时拿播放直链与自带字幕，避免每轮重复读整页
-                    entry = _marker_entry(page, video_id) or {}
-                    media_urls = _allowed_urls(entry, "playUrls", _MEDIA_HOST_RE)
-                    subtitle_urls = _allowed_urls(entry, "subtitleUrls", _SUBTITLE_HOST_RE)
-                    if media_urls:
-                        break
+                # 主通道：用户脚本写进 DOM 的 play_addr（已合流、多 CDN）。每轮都回读：
+                # 脚本是异步写到标记里的，页面渲染慢时（本地 whisper 占满 CPU 的批量场景）
+                # 6 秒时还没写好，只读第一轮会把「来晚的直链」误判成「视频不可下载」。
+                entry = _marker_entry(page, video_id) or {}
+                media_urls = _allowed_urls(entry, "playUrls", _MEDIA_HOST_RE)
+                subtitle_urls = _allowed_urls(entry, "subtitleUrls", _SUBTITLE_HOST_RE) or subtitle_urls
+                if media_urls:
+                    break
                 media_urls = _media_urls_from_network(page, exclude=stale_media)
                 if media_urls:
                     break

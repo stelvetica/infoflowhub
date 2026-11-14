@@ -221,6 +221,21 @@ def test_resolve_raises_when_first_navigation_denied():
 MARKER_URL = "https://v26-web.douyinvod.com/mark/.../video/tos/cn/y/?a=1&br=1141"
 
 
+class SlowMarkerPage(FakePage):
+    """前 N 次读 HTML 时标记还没写入（模拟页面渲染慢时用户脚本晚到）。"""
+
+    def __init__(self, html: str, *, empty_until: int = 2, **kwargs) -> None:
+        super().__init__(html, **kwargs)
+        self._empty_until = empty_until
+        self.content_calls = 0
+
+    def content(self) -> str:
+        self.content_calls += 1
+        if self.content_calls <= self._empty_until:
+            return "<html><head></head><body></body></html>"
+        return self._html
+
+
 def _marker_html(entries: list[dict], current: dict | None = None) -> str:
     payload = {"entries": entries}
     if current is not None:
@@ -279,3 +294,11 @@ def test_marker_finds_current_even_after_entries_evicted():
     noise = [{"id": f"70000{i}", "playUrls": [f"https://v26-web.douyinvod.com/{i}/v/"]} for i in range(5)]
     html = _marker_html(noise, current={"id": VIDEO_ID, "playUrls": [MARKER_URL]})
     assert _media_urls_from_marker(FakePage(html), VIDEO_ID) == [MARKER_URL]
+
+
+def test_marker_is_reread_on_later_rounds():
+    # 页面渲染慢时用户脚本晚写标记：前两轮读不到，第三轮才出现，仍必须取到直链
+    html = _marker_html([{"id": VIDEO_ID, "playUrls": [MARKER_URL]}])
+    page = SlowMarkerPage(html, empty_until=2, evaluate_error=True)
+    media = resolve_douyin_video_media(URL, session=FakeSession(page))
+    assert media.video_url == MARKER_URL
