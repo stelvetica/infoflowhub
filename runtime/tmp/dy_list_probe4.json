@@ -1,0 +1,38 @@
+{
+  "entry_count": 48,
+  "keys": [
+    "kind",
+    "method",
+    "mime_type",
+    "resource_type",
+    "sequence",
+    "status",
+    "status_text",
+    "timestamp",
+    "truncated",
+    "url"
+  ],
+  "entry": {
+    "sequence": 6,
+    "kind": "response",
+    "method": "OPTIONS",
+    "url": "https://www-hj.douyin.com/aweme/v1/web/aweme/listcollection/?device_platform=webapp&aid=6383&channel=channel_pc_web&publ",
+    "status": 200,
+    "status_text": "",
+    "mime_type": "application/octet-stream",
+    "resource_type": "Preflight",
+    "timestamp": 63972.268264,
+    "truncated": false
+  },
+  "url_len": 1580,
+  "replay": {
+    "bytes": 875555,
+    "count": 0,
+    "cursor": null,
+    "first": null,
+    "first_keys": [],
+    "has_more": null,
+    "head": "<!DOCTYPE html><html dark=\"true\"><head><link rel=\"dns-prefetch\" href=\"//p-pc-weboff.byteimg.com\"/><link rel=\"dns-prefetch\" href=\"//lf-douyin-pc-web.douyinstatic.com\"/><link rel=\"dns-prefetch\" href=\"//",
+    "status": 200
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "entries": [
+    {
+      "path": "https://www.douyin.com/webcast/web/feed/follow/",
+      "status": 200,
+      "len": 0,
+      "head": ""
+    },
+    {
+      "path": "https://www-hj.douyin.com/aweme/v1/web/aweme/listcollection/",
+      "status": 200,
+      "len": 0,
+      "head": ""
+    },
+    {
+      "path": "https://www.douyin.com/aweme/v1/web/activity/pull/carnival/",
+      "status": 200,
+      "len": 0,
+      "head": ""
+    }
+  ],
+  "perf": [
+    "https://p3-pc-sign.douyinpic.com/aweme/100x100/aweme-avatar/tos-cn-i-0813c000-ce_ogAQgIFA7yfITAlefAGvGykYgSJGBFLdOG4JKN.jpeg",
+    "https://www.douyin.com/aweme/v1/web/social/count",
+    "https://www.douyin.com/aweme/v1/web/multicast/query/",
+    "https://www.douyin.com/aweme/v1/web/page/turn/offline",
+    "https://p3-pc-sign.douyinpic.com/aweme-avatar/tos-cn-i-0813c000-ce_ogAQgIFA7yfITAlefAGvGykYgSJGBFLdOG4JKN~tplv-8yspqt5zfm-300x300.webp",
+    "https://www.douyin.com/aweme/v1/web/emoji/list",
+    "https://www.douyin.com/webcast/web/feed/follow/",
+    "https://www.douyin.com/aweme/v1/web/user/settings/",
+    "https://www.douyin.com/aweme/v1/web/seo/inner/link/",
+    "https://www.douyin.com/aweme/v1/web/user/dashboard",
+    "https://www.douyin.com/aweme/v1/web/get/user/settings/",
+    "https://www-hj.douyin.com/aweme/v1/web/query/user/",
+    "https://www-hj.douyin.com/aweme/v1/web/app/installed/",
+    "https://www.douyin.com/aweme/v1/web/creator/overview/dashboard/"
+  ]
+}

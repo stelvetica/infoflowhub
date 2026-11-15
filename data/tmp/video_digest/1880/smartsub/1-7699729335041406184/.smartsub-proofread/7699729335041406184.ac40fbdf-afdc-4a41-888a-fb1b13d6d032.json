@@ -1,0 +1,115 @@
+{
+  "version": 2,
+  "meta": {
+    "createdAt": "2026-11-14T10:05:46.590Z",
+    "updatedAt": "2026-11-14T10:05:46.602Z",
+    "sourceLanguage": "zh",
+    "targetLanguage": "zh",
+    "translateContent": "sourceAndTranslate",
+    "outputFormat": "srt",
+    "sourceFile": "C:\\Users\\ETT\\Playground\\infoflowhub\\data\\tmp\\video_digest\\1880\\smartsub\\1-7699729335041406184\\7699729335041406184.zh.srt",
+    "sourceSubtitleFiles": [
+      "C:\\Users\\ETT\\Playground\\infoflowhub\\data\\tmp\\video_digest\\1880\\smartsub\\1-7699729335041406184\\7699729335041406184.zh.srt"
+    ],
+    "translatedSubtitleFiles": []
+  },
+  "speakers": [],
+  "cues": [
+    {
+      "id": "1",
+      "startMs": 2214,
+      "endMs": 3676,
+      "source": "yeah",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "2",
+      "startMs": 10150,
+      "endMs": 11996,
+      "source": "嗯",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "3",
+      "startMs": 24262,
+      "endMs": 32988,
+      "source": "啦啦啦",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "4",
+      "startMs": 49766,
+      "endMs": 62492,
+      "source": "so",
+      "target": "",
+      "translationStatus": "success"
+    }
+  ],
+  "missedSpeechWarnings": [
+    {
+      "id": "missed-speech:4300:7120",
+      "startMs": 4300,
+      "endMs": 7120,
+      "level": "medium",
+      "signals": [
+        "energySpeech",
+        "subtitleGap"
+      ],
+      "cueIds": []
+    },
+    {
+      "id": "missed-speech:15000:15820",
+      "startMs": 15000,
+      "endMs": 15820,
+      "level": "medium",
+      "signals": [
+        "energySpeech",
+        "subtitleGap"
+      ],
+      "cueIds": []
+    },
+    {
+      "id": "missed-speech:17040:24112",
+      "startMs": 17040,
+      "endMs": 24112,
+      "level": "medium",
+      "signals": [
+        "energySpeech",
+        "subtitleGap"
+      ],
+      "cueIds": []
+    },
+    {
+      "id": "missed-speech:33138:39400",
+      "startMs": 33138,
+      "endMs": 39400,
+      "level": "medium",
+      "signals": [
+        "energySpeech",
+        "subtitleGap"
+      ],
+      "cueIds": []
+    },
+    {
+      "id": "missed-speech:41920:49616",
+      "startMs": 41920,
+      "endMs": 49616,
+      "level": "medium",
+      "signals": [
+        "energySpeech",
+        "subtitleGap"
+      ],
+      "cueIds": []
+    }
+  ],
+  "missedSpeechSummary": {
+    "count": 5,
+    "highestLevel": "medium",
+    "startMs": 4300,
+    "endMs": 49616,
+    "engineVadAvailable": true
+  }
+}

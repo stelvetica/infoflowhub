@@ -1,0 +1,9 @@
+{
+  "plugins": {
+    "enabledPlugins": {
+      "video2code@zcode-plugins-official": false,
+      "wind@zcode-plugins-official": false,
+      "hexin@zcode-plugins-official": false
+    }
+  }
+}

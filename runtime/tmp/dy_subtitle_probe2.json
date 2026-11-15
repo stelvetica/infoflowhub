@@ -1,0 +1,40 @@
+{
+  "videos": [
+    {
+      "url": "https://www.douyin.com/video/7705709382827555327",
+      "total_entries": 200,
+      "hits": [
+        {
+          "url": "https://www.douyin.com/aweme/v1/web/aweme/related/",
+          "query_len": 800,
+          "status": 200
+        }
+      ],
+      "media_count": 8
+    },
+    {
+      "url": "https://www.douyin.com/video/7703823523478883610",
+      "total_entries": 200,
+      "hits": [
+        {
+          "url": "https://www.douyin.com/aweme/v1/web/aweme/related/",
+          "query_len": 800,
+          "status": 200
+        }
+      ],
+      "media_count": 8
+    },
+    {
+      "url": "https://www.douyin.com/video/7676816287078616329",
+      "total_entries": 200,
+      "hits": [
+        {
+          "url": "https://www.douyin.com/aweme/v1/web/aweme/related/",
+          "query_len": 800,
+          "status": 200
+        }
+      ],
+      "media_count": 9
+    }
+  ]
+}

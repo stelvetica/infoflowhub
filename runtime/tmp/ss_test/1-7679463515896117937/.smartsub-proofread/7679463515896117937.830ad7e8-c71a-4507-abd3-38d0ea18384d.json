@@ -1,0 +1,248 @@
+{
+  "version": 2,
+  "meta": {
+    "createdAt": "2026-11-14T09:53:36.124Z",
+    "updatedAt": "2026-11-14T09:53:36.142Z",
+    "sourceLanguage": "zh",
+    "targetLanguage": "zh",
+    "translateContent": "sourceAndTranslate",
+    "outputFormat": "srt",
+    "sourceFile": "C:\\Users\\ETT\\Playground\\infoflowhub\\runtime\\tmp\\ss_test\\1-7679463515896117937\\7679463515896117937.zh.srt",
+    "sourceSubtitleFiles": [
+      "C:\\Users\\ETT\\Playground\\infoflowhub\\runtime\\tmp\\ss_test\\1-7679463515896117937\\7679463515896117937.zh.srt"
+    ],
+    "translatedSubtitleFiles": []
+  },
+  "speakers": [],
+  "cues": [
+    {
+      "id": "1",
+      "startMs": 262,
+      "endMs": 6748,
+      "source": "大家一定要去看看李校来老师和托宝花的这些长谈这些长谈啊大约两个小时左右全程没有一句废话",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "2",
+      "startMs": 6854,
+      "endMs": 8764,
+      "source": "先给大家分享一下第一部分",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "3",
+      "startMs": 8998,
+      "endMs": 15676,
+      "source": "这部分内容呀表面是在聊无痛戒烟但真正讲的是呀一个人到底怎么改变习惯",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "4",
+      "startMs": 15814,
+      "endMs": 50844,
+      "source": "怎样重新拿回自己的人生控制权想必很多人都有这种体验道理都懂但就是做不到想早睡刷手机刷到半夜想健身办了卡可能去不了几次针对这种情况李晓伟老师在这期长谈里面讲了一个很重要的观点他说不是你意志力差而是你用错了方法因为习惯不是你清醒的的时候的选择习惯是通过重复形成的潜意识行为这是著名的心理学家威廉詹姆斯在一百年前的定义这可能也是习惯最基础最基本的一个定义了潜意识也往往比你的理性更早启动",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "5",
+      "startMs": 50918,
+      "endMs": 53916,
+      "source": "要早个大概零点五到十秒钟所以",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "6",
+      "startMs": 54022,
+      "endMs": 58172,
+      "source": "你要靠我坚持我一定要戒掉大概率是赢不了的",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "7",
+      "startMs": 58246,
+      "endMs": 63164,
+      "source": "那怎么办呢李老师的方法是自我兑换方法其实很简单一共我就三步",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "8",
+      "startMs": 63302,
+      "endMs": 102876,
+      "source": "我使用了这个方法养成了早起读书和跑步的习惯亲测有效第一步先定义身份不要说我要戒烟要说我是一个从来不抽烟的人再比如我想养成跑步的习惯不要说我要跑步要说我是一个每天跑三公里的人我想瘦下来让自己变美不要说我要减肥要说我是一个不吃精神碳水呃不喝饮料不吃垃圾食品的人这一波非常关键因为大脑不是按愿望行动的大脑更容易按照身份去行动我自己就是这样做的我现在每天六点早起读书已经是第五十二天每周坚持一百五十分钟的有氧运动已经持续了三个月也成功",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "9",
+      "startMs": 103174,
+      "endMs": 104284,
+      "source": "减肥了十公斤",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "10",
+      "startMs": 104870,
+      "endMs": 105532,
+      "source": "当我想",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "11",
+      "startMs": 105606,
+      "endMs": 110844,
+      "source": "出来的时候我会告诉自己我是一个热爱阅读的人我是一个好榜样我要在读书这件事上",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "12",
+      "startMs": 110982,
+      "endMs": 118556,
+      "source": "给我儿子做个好榜样这句话呀特别有用对我来说因为他不是在逼我坚持而是在提醒我我到底",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "13",
+      "startMs": 118822,
+      "endMs": 128796,
+      "source": "想成为一个什么样的人第二步就是给自己的身份加个理由嗯我是一个热爱阅读的人有用但是如果你再加个因为效果会更好比如说",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "14",
+      "startMs": 128902,
+      "endMs": 135132,
+      "source": "我是一个热爱阅读的人因为我要让自己知识渊博富有诗书气自华大脑呀",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "15",
+      "startMs": 135366,
+      "endMs": 136924,
+      "source": "天然喜欢英国",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "16",
+      "startMs": 137254,
+      "endMs": 140892,
+      "source": "只要你给他一个理由他就更容易接受这个信的身份",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "17",
+      "startMs": 141094,
+      "endMs": 146780,
+      "source": "李老师的方法是我是一个从不抽烟的因为我讨厌被剥削的感觉提到剥削啊",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "18",
+      "startMs": 147046,
+      "endMs": 148636,
+      "source": "李老师在访谈里介绍的",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "19",
+      "startMs": 149030,
+      "endMs": 156668,
+      "source": "呃说他最多时候一天要抽掉好几盒价格两百块钱的烟那每天光抽烟就花掉一千多块",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "20",
+      "startMs": 156838,
+      "endMs": 158172,
+      "source": "这不是剥削是什么",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "21",
+      "startMs": 158342,
+      "endMs": 159196,
+      "source": "第三步呀",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "22",
+      "startMs": 159430,
+      "endMs": 167260,
+      "source": "要自己说出来就反复的说是我对话最关键的地方就是一定是自己对自己说最好是说出声因为大脑的",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "23",
+      "startMs": 167334,
+      "endMs": 177916,
+      "source": "熟悉原则越熟悉的信息越容易被大脑的潜意识而吸收自己的声音大脑肯定是最熟悉的我们要把这句话控制在十秒以内赶在潜意识反应的前面",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "24",
+      "startMs": 178214,
+      "endMs": 182876,
+      "source": "我是个热爱阅读的人因为我要让自己知识渊博我要为我儿子做好榜样",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "25",
+      "startMs": 182982,
+      "endMs": 234044,
+      "source": "你起不来的时候说一遍想偷懒的时候说一遍睡觉的时候说一遍反复的说不是喊口号而是给自己的大脑潜意识去洗类似于洗脑你发现没有我们多次提到了大脑因为啊这些都是脑科学的研究成果不是在信口开火所以啊这个访谈真正厉害的地方不是叫你戒烟啊而是告诉你改变习惯不是靠意志的硬扛可以用一种科学的方法要自我对话重新定义自己最后总结一下一共三步第一步先定义身份我是什么样的人第二步给身份加点理由我是什么样的人因为什么什么第三步要自己说出来反复的说你不需要一下子变成完美的人你你只需要先写下一个自我定义然后让自己慢慢的变成那个人其实非常感谢李小然老师最近三个月吧",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "26",
+      "startMs": 234214,
+      "endMs": 240636,
+      "source": "看下他两本书他的价值观呀和方法论让我养成了读书跑步和拍视频的习惯",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "27",
+      "startMs": 240742,
+      "endMs": 248380,
+      "source": "那 ok 今天是我早起读书的第五十二天感谢每天六点爬起来的自己做时间的朋友终身成长",
+      "target": "",
+      "translationStatus": "success"
+    },
+    {
+      "id": "28",
+      "startMs": 248454,
+      "endMs": 250816,
+      "source": "让我们一起慢慢变好谢谢大家",
+      "target": "",
+      "translationStatus": "success"
+    }
+  ],
+  "missedSpeechWarnings": [],
+  "missedSpeechSummary": {
+    "count": 0,
+    "engineVadAvailable": true
+  }
+}

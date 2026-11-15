@@ -1,0 +1,10 @@
+[bsk] cmd=status exit=0 dur=0.03s
+[bsk] cmd=session start exit=0 dur=0.14s
+[bsk] cmd=navigate url=https://www.douyin.com/user/self?from_tab_name=main&showTab=favorite_collection exit=0 dur=1.55s
+[bsk] cmd=wait-ms dur=7000ms exit=0 dur=7.05s
+[bsk] cmd=cooperate sync exit=1 dur=3.50s err=permission_denied
+[bsk] cmd=cooperate sync exit=0 dur=0.77s
+[bsk] cmd=evaluate exit=0 dur=1.12s
+[bsk] cmd=cooperate sync exit=0 dur=0.53s
+[bsk] cmd=evaluate exit=0 dur=1.00s
+[bsk] cmd=session stop exit=0 dur=0.14s

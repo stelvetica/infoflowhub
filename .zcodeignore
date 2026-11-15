@@ -1,0 +1,87 @@
+.agents/
+.env
+.env.local
+.env.*.local
+!laterhub/.env.example
+
+.venv/
+node_modules/
+.next/
+out/
+
+__pycache__/
+*.py[cod]
+
+data/*.sqlite3
+data/*.db
+data/*.sqlite3.bak
+data/alphapai_markdown/
+data/reports/
+data/jiuyangongshe_markdown/
+# 指向外部业务目录（坚果云同步）的符号链接，本机专属，不入库
+data/标的观察
+runtime/browser_profiles/
+runtime/python-portable/
+runtime/wheels/
+runtime/debug/
+runtime/logs/
+runtime/health/*.json
+!runtime/health/*.example.json
+runtime/auth/
+runtime/tmp_chrome_probe.mjs
+web/__pycache__/
+
+# 调试 / 会话产物，不入库
+.playwright-mcp/
+.zcode/plans/
+# skill 发现位：全是指向 ../../skills/ 的符号链接，源文件才入库
+.zcode/skills/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+*.log
+.DS_Store
+Thumbs.db
+
+# 认证/凭据文件与临时基线：绝不入库
+runtime/*_auth.json
+runtime/auth/
+runtime/migration_baseline.json
+
+# 仓库根的临时杂物文件（非本仓产物）
+test_localsystem.txt
+
+# bsk 更新检查时间戳（运行时状态，每次检查都变）
+runtime/bsk_update_last_check.txt
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+bower_components/
+jspm_packages/
+site-packages/
+venv/
+coverage/
+htmlcov/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）
