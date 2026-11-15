@@ -20,6 +20,8 @@ data/alphapai_markdown/
 data/reports/
 data/jiuyangongshe_markdown/
 data/laterhub_attachments/
+# 视频简报的临时下载：单文件可达数百 MB，超出 GitHub 100MB 限制
+data/tmp/**/*.mp4
 # 指向外部业务目录（坚果云同步）的符号链接，本机专属，不入库
 data/标的观察
 runtime/browser_profiles/
